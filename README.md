@@ -1,20 +1,45 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Keyword Intelligence Dashboard
 
-# Run and deploy your AI Studio app
+A real-time keyword research tool powered by Gemini AI.
 
-This contains everything you need to run your app locally.
+## Vercel Deployment
 
-View your app in AI Studio: https://ai.studio/apps/09a68f5a-36a8-4950-bb1b-62ca11e2ad57
+To deploy this application to Vercel, follow these steps:
 
-## Run Locally
+1.  **Push your code to a GitHub repository.**
+2.  **Import the project into Vercel.**
+3.  **Configure Environment Variables:**
+    In the Vercel project settings, add the following environment variables:
+    -   `GEMINI_API_KEY`: Your Google Gemini API Key.
+    -   `VITE_FIREBASE_API_KEY`: (Optional) Your Firebase API Key.
+    -   `VITE_FIREBASE_AUTH_DOMAIN`: (Optional) Your Firebase Auth Domain.
+    -   `VITE_FIREBASE_PROJECT_ID`: (Optional) Your Firebase Project ID.
+    -   `VITE_FIREBASE_STORAGE_BUCKET`: (Optional) Your Firebase Storage Bucket.
+    -   `VITE_FIREBASE_MESSAGING_SENDER_ID`: (Optional) Your Firebase Messaging Sender ID.
+    -   `VITE_FIREBASE_APP_ID`: (Optional) Your Firebase App ID.
 
-**Prerequisites:**  Node.js
+    *Note: If Firebase variables are not provided, the app will skip the login screen and use a guest session.*
 
+4.  **Build Settings:**
+    -   Framework Preset: `Vite`
+    -   Build Command: `npm run build`
+    -   Output Directory: `dist`
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Features
+
+-   **Real-time Analysis:** Get instant search volume, difficulty, and CPC data.
+-   **Trend Visualization:** Interactive charts showing search interest over multiple timeframes (1h to 5y).
+-   **Global Reach:** Interactive world map with regional interest tooltips.
+-   **Competitor Insights:** Identify top domains ranking for your target keywords.
+-   **Local Search:** Integrated Google Maps results for local intent keywords.
+-   **AI Landscape Analysis:** Deep dive into keyword opportunities and threats.
+
+## Tech Stack
+
+-   React 19
+-   TypeScript
+-   Tailwind CSS
+-   Gemini AI API
+-   Recharts
+-   Framer Motion
+-   Lucide Icons
