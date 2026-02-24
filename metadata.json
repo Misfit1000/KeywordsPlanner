@@ -1,0 +1,5 @@
+{
+  "name": "Keyword Intelligence",
+  "description": "A modern, highly interactive Keyword Planning Web Application with real-time data visualization.",
+  "requestFramePermissions": ["geolocation"]
+}
