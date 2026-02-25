@@ -56,9 +56,9 @@ export default function CommandPalette({ isOpen, onClose, onSearch }: CommandPal
             initial={{ opacity: 0, scale: 0.95, y: -20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: -20 }}
-            className="fixed top-[15%] left-1/2 -translate-x-1/2 w-full max-w-2xl bg-slate-900 dark:bg-slate-900 light:bg-white border border-white/10 dark:border-white/10 light:border-slate-200 rounded-2xl shadow-2xl z-[101] overflow-hidden"
+            className="fixed top-[15%] left-1/2 -translate-x-1/2 w-full max-w-2xl bg-card border border-border rounded-2xl shadow-2xl z-[101] overflow-hidden"
           >
-            <div className="p-4 border-b border-white/10 dark:border-white/10 light:border-slate-200 flex items-center gap-3">
+            <div className="p-4 border-b border-border flex items-center gap-3">
               <Search className="w-5 h-5 text-slate-400" />
               <input
                 ref={inputRef}
@@ -67,13 +67,13 @@ export default function CommandPalette({ isOpen, onClose, onSearch }: CommandPal
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && query && handleSearch(query)}
-                className="flex-1 bg-transparent border-none outline-none text-white dark:text-white light:text-slate-900 placeholder:text-slate-500 text-lg"
+                className="flex-1 bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground text-lg"
               />
-              <div className="flex items-center gap-1 px-2 py-1 bg-slate-800 dark:bg-slate-800 light:bg-slate-100 rounded text-[10px] font-mono text-slate-400">
+              <div className="flex items-center gap-1 px-2 py-1 bg-muted rounded text-[10px] font-mono text-muted-foreground">
                 <Command className="w-3 h-3" />
                 <span>K</span>
               </div>
-              <button onClick={onClose} className="p-1 hover:bg-white/5 dark:hover:bg-white/5 light:hover:bg-slate-100 rounded-lg transition-colors">
+              <button onClick={onClose} className="p-1 hover:bg-muted rounded-lg transition-colors">
                 <X className="w-5 h-5 text-slate-500" />
               </button>
             </div>
@@ -88,9 +88,9 @@ export default function CommandPalette({ isOpen, onClose, onSearch }: CommandPal
                         <button
                           key={s}
                           onClick={() => handleSearch(s)}
-                          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 dark:hover:bg-white/5 light:hover:bg-slate-50 text-slate-300 dark:text-slate-300 light:text-slate-600 group transition-colors"
+                          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted text-foreground group transition-colors"
                         >
-                          <History className="w-4 h-4 text-slate-500 group-hover:text-blue-400" />
+                          <History className="w-4 h-4 text-muted-foreground group-hover:text-accent" />
                           <span className="text-sm">{s}</span>
                         </button>
                       ))}
@@ -103,9 +103,9 @@ export default function CommandPalette({ isOpen, onClose, onSearch }: CommandPal
                         <button
                           key={s}
                           onClick={() => handleSearch(s)}
-                          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 dark:hover:bg-white/5 light:hover:bg-slate-50 text-slate-300 dark:text-slate-300 light:text-slate-600 group transition-colors"
+                          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted text-foreground group transition-colors"
                         >
-                          <TrendingUp className="w-4 h-4 text-slate-500 group-hover:text-emerald-400" />
+                          <TrendingUp className="w-4 h-4 text-muted-foreground group-hover:text-emerald-500" />
                           <span className="text-sm">{s}</span>
                         </button>
                       ))}
@@ -128,12 +128,12 @@ export default function CommandPalette({ isOpen, onClose, onSearch }: CommandPal
               )}
             </div>
 
-            <div className="p-3 bg-slate-950/50 dark:bg-slate-950/50 light:bg-slate-50 border-t border-white/5 dark:border-white/5 light:border-slate-200 flex items-center justify-between text-[10px] text-slate-500">
+            <div className="p-3 bg-muted/50 border-t border-border flex items-center justify-between text-[10px] text-muted-foreground">
               <div className="flex items-center gap-4">
-                <span className="flex items-center gap-1"><kbd className="px-1 bg-slate-800 dark:bg-slate-800 light:bg-slate-200 rounded">↵</kbd> to select</span>
-                <span className="flex items-center gap-1"><kbd className="px-1 bg-slate-800 dark:bg-slate-800 light:bg-slate-200 rounded">↑↓</kbd> to navigate</span>
+                <span className="flex items-center gap-1"><kbd className="px-1 bg-muted rounded border border-border">↵</kbd> to select</span>
+                <span className="flex items-center gap-1"><kbd className="px-1 bg-muted rounded border border-border">↑↓</kbd> to navigate</span>
               </div>
-              <span>Press <kbd className="px-1 bg-slate-800 dark:bg-slate-800 light:bg-slate-200 rounded">ESC</kbd> to close</span>
+              <span>Press <kbd className="px-1 bg-muted rounded border border-border">ESC</kbd> to close</span>
             </div>
           </motion.div>
         </>

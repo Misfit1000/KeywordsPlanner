@@ -41,8 +41,13 @@ export interface KeywordData {
     title: string;
     url: string;
     traffic: number;
+    trafficValue: number;
     backlinks: number;
     wordCount: number;
+    domainAuthority: number;
+    pageAuthority: number;
+    topKeywordDifficulty: number;
+    serpFeatures?: string[];
   }[];
   analysis: {
     summary: string;
@@ -77,7 +82,7 @@ export async function fetchKeywordData(
   } else if (location && location !== "Current Location") {
     locationContext = ` Specifically tailor the data, search volume, CPC, and related keywords for the location: ${location}.`;
   }
-  const prompt = `Act as an expert SEO tool like SEMrush. Provide highly accurate, realistic estimated SEO metrics for the keyword "${keyword}".${locationContext} Include total monthly search volume, keyword difficulty (0-100), average CPC in USD, primary search intent, a breakdown of search intent percentages (must sum to 100), trend data for multiple timeframes (1 hour, 24 hours, 7 days, 30 days, 1 year, 5 years) where each timeframe is an array of objects with 'time' and 'volume' properties, a list of AT LEAST 50 highly relevant related keywords with their metrics (including a 12-month trend array of numbers), a list of top 5 competitor domains ranking for this keyword with their estimated monthly traffic, keyword overlap percentage, top 3 keywords they rank for, and estimated domain authority (0-100), a list of SERP features present (e.g., 'Featured Snippet', 'People Also Ask', 'Video', 'Local Pack'), a list of the top 3 ranking pages with their title, URL, estimated traffic, backlinks, and estimated word count, an in-depth analysis object containing a brief summary of the keyword landscape, a list of 2-3 SEO opportunities, and a list of 1-2 potential threats or challenges, and finally, a regional interest breakdown showing the top 10 countries with the highest search volume for this keyword, including the country name, estimated volume, and percentage of total global volume.`;
+  const prompt = `Act as an expert SEO tool like SEMrush. Provide highly accurate, realistic estimated SEO metrics for the keyword "${keyword}".${locationContext} Include total monthly search volume, keyword difficulty (0-100), average CPC in USD, primary search intent, a breakdown of search intent percentages (must sum to 100), trend data for multiple timeframes (1 hour, 24 hours, 7 days, 30 days, 1 year, 5 years) where each timeframe is an array of objects with 'time' and 'volume' properties, a list of AT LEAST 50 highly relevant related keywords with their metrics (including a 12-month trend array of numbers), a list of top 5 competitor domains ranking for this keyword with their estimated monthly traffic, keyword overlap percentage, top 3 keywords they rank for, and estimated domain authority (0-100), a list of SERP features present (e.g., 'Featured Snippet', 'People Also Ask', 'Video', 'Local Pack'), an advanced SERP analysis listing the top 10 ranking pages with their title, URL, estimated organic traffic, estimated traffic value in USD (traffic * CPC), backlinks, estimated word count, domain authority (0-100), page authority (0-100), the top keyword difficulty (0-100) for that page, and an array of SERP features specific to that page (e.g., 'Featured Snippet', 'Video'), an in-depth analysis object containing a brief summary of the keyword landscape, a list of 2-3 SEO opportunities, and a list of 1-2 potential threats or challenges, and finally, a regional interest breakdown showing the top 10 countries with the highest search volume for this keyword, including the country name, estimated volume, and percentage of total global volume.`;
 
   const response = await generateWithRetry({
     model: "gemini-3-flash-preview",
@@ -179,11 +184,16 @@ export async function fetchKeywordData(
               properties: {
                 title: { type: Type.STRING },
                 url: { type: Type.STRING },
-                traffic: { type: Type.NUMBER },
+                traffic: { type: Type.NUMBER, description: "Organic traffic estimate" },
+                trafficValue: { type: Type.NUMBER, description: "Estimated traffic value in USD" },
                 backlinks: { type: Type.NUMBER },
                 wordCount: { type: Type.NUMBER },
+                domainAuthority: { type: Type.NUMBER, description: "Domain Authority 0-100" },
+                pageAuthority: { type: Type.NUMBER, description: "Page Authority 0-100" },
+                topKeywordDifficulty: { type: Type.NUMBER, description: "Top Keyword Difficulty 0-100" },
+                serpFeatures: { type: Type.ARRAY, items: { type: Type.STRING }, description: "SERP features present for this page (e.g., 'Featured Snippet', 'Video', 'People Also Ask')" },
               },
-              required: ["title", "url", "traffic", "backlinks", "wordCount"],
+              required: ["title", "url", "traffic", "trafficValue", "backlinks", "wordCount", "domainAuthority", "pageAuthority", "topKeywordDifficulty"],
             },
           },
           analysis: {

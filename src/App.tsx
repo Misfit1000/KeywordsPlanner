@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, Activity, LogOut, User, MapPin, Sun, Moon, Command } from 'lucide-react';
+import { Search, Activity, LogOut, User, MapPin, Sun, Moon, Command, Menu } from 'lucide-react';
 import Dashboard from './components/Dashboard';
+import KeywordTable from './components/KeywordTable';
+import PositionTracking from './components/PositionTracking';
+import BacklinkAnalytics from './components/BacklinkAnalytics';
 import Login from './components/Login';
 import Register from './components/Register';
 import Sidebar from './components/Sidebar';
@@ -9,6 +12,8 @@ import CountrySelect from './components/CountrySelect';
 import CommandPalette from './components/CommandPalette';
 import { useAuth } from './contexts/AuthContext';
 import { useTheme } from './contexts/ThemeContext';
+
+export type TabType = 'dashboard' | 'keyword-magic' | 'position-tracking' | 'backlink-analytics';
 
 const LOCATIONS = [
   { code: 'US', name: 'United States' },
@@ -69,6 +74,24 @@ export default function App() {
   const [searchedLatLng, setSearchedLatLng] = useState<{latitude: number, longitude: number} | null>(null);
   const [isLocating, setIsLocating] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [activeTab, setActiveTab] = useState<TabType>('dashboard');
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 1024) {
+        setIsSidebarOpen(false);
+      } else {
+        setIsSidebarOpen(true);
+      }
+    };
+
+    // Set initial state
+    handleResize();
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -164,12 +187,52 @@ export default function App() {
     );
   }
 
+  const renderContent = () => {
+    const locationName = searchedLocation.startsWith('CURRENT_LOCATION') 
+      ? (searchedLocation.split(':')[1] || 'Current Location') 
+      : LOCATIONS.find(l => l.code === searchedLocation)?.name;
+
+    switch (activeTab) {
+      case 'dashboard':
+        return (
+          <Dashboard 
+            keyword={searchedKeyword} 
+            location={locationName} 
+            latLng={searchedLatLng}
+            onLocationChange={(newLocationCode) => {
+              setLocation(newLocationCode);
+              setSearchedLocation(newLocationCode);
+              setSearchedLatLng(null);
+            }}
+          />
+        );
+      case 'keyword-magic':
+        return (
+          <div className="space-y-6">
+            <h2 className="text-3xl font-bold text-foreground mb-2 flex items-center gap-3">
+              Keyword Magic Tool for{" "}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-accent to-indigo-400">
+                "{searchedKeyword}"
+              </span>
+            </h2>
+            <KeywordTable keyword={searchedKeyword} location={locationName} latLng={searchedLatLng} />
+          </div>
+        );
+      case 'position-tracking':
+        return <PositionTracking keyword={searchedKeyword} location={locationName} />;
+      case 'backlink-analytics':
+        return <BacklinkAnalytics keyword={searchedKeyword} />;
+      default:
+        return null;
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-background text-foreground font-sans overflow-x-hidden selection:bg-blue-500/30 transition-colors duration-300">
+    <div className="min-h-screen bg-background text-foreground font-sans overflow-x-hidden selection:bg-accent/30 transition-colors duration-300">
       {/* Background Glow */}
       <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-blue-600/20 dark:bg-blue-600/20 light:bg-blue-400/10 blur-[120px] rounded-full mix-blend-screen dark:mix-blend-screen light:mix-blend-multiply" />
-        <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-indigo-600/20 dark:bg-indigo-600/20 light:bg-indigo-400/10 blur-[120px] rounded-full mix-blend-screen dark:mix-blend-screen light:mix-blend-multiply" />
+        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-accent/10 blur-[120px] rounded-full mix-blend-screen dark:mix-blend-screen" />
+        <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-indigo-600/10 blur-[120px] rounded-full mix-blend-screen dark:mix-blend-screen" />
       </div>
 
       <CommandPalette 
@@ -191,16 +254,16 @@ export default function App() {
               <div className="absolute top-6 right-6 flex items-center gap-4">
                 <button 
                   onClick={toggleTheme}
-                  className="p-2 rounded-full bg-slate-900/50 dark:bg-slate-900/50 light:bg-white border border-white/5 dark:border-white/5 light:border-slate-200 text-slate-400 hover:text-white dark:hover:text-white light:hover:text-blue-600 transition-colors"
+                  className="p-2 rounded-full bg-card/50 backdrop-blur-md border border-border text-muted-foreground hover:text-foreground transition-colors"
                   title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
                 >
                   {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
                 </button>
-                <div className="flex items-center gap-2 text-slate-300 dark:text-slate-300 light:text-slate-600 bg-slate-900/50 dark:bg-slate-900/50 light:bg-white backdrop-blur-md border border-white/5 dark:border-white/5 light:border-slate-200 px-4 py-2 rounded-full cursor-pointer hover:bg-slate-800/50 transition-colors">
+                <div className="flex items-center gap-2 text-foreground bg-card/50 backdrop-blur-md border border-border px-4 py-2 rounded-full cursor-pointer hover:bg-muted/50 transition-colors">
                   <User className="w-4 h-4" />
                   <span className="text-sm font-medium">{user?.username || 'Pro Account'}</span>
                 </div>
-                <button onClick={handleLogout} className="text-slate-400 hover:text-white dark:hover:text-white light:hover:text-red-500 transition-colors p-2 rounded-full hover:bg-white/5" title="Sign out">
+                <button onClick={handleLogout} className="text-muted-foreground hover:text-red-500 transition-colors p-2 rounded-full hover:bg-muted/50" title="Sign out">
                   <LogOut className="w-5 h-5" />
                 </button>
               </div>
@@ -211,30 +274,30 @@ export default function App() {
                 transition={{ delay: 0.2, duration: 0.8, ease: "easeOut" }}
                 className="text-center mb-12"
               >
-                <h1 className="text-5xl md:text-7xl font-bold tracking-tighter mb-4 bg-gradient-to-br from-white via-blue-100 to-blue-500 dark:from-white dark:via-blue-100 dark:to-blue-500 light:from-slate-900 light:via-slate-800 light:to-blue-600 bg-clip-text text-transparent drop-shadow-[0_0_30px_rgba(59,130,246,0.5)]">
+                <h1 className="text-5xl md:text-7xl font-bold tracking-tighter mb-4 bg-gradient-to-br from-foreground via-foreground/80 to-foreground/50 bg-clip-text text-transparent">
                   Keyword Intelligence
                 </h1>
-                <p className="text-slate-400 dark:text-slate-400 light:text-slate-500 text-lg md:text-xl max-w-2xl mx-auto font-light">
+                <p className="text-muted-foreground text-lg md:text-xl max-w-2xl mx-auto font-light">
                   Uncover real-time search volumes, trends, and difficulty in a seamless, unified interface.
                 </p>
               </motion.div>
 
               <form onSubmit={handleSearch} className="w-full max-w-3xl relative group">
-                <motion.div layoutId="search-container" className="relative flex items-center bg-slate-900/80 dark:bg-slate-900/80 light:bg-white backdrop-blur-xl border border-white/10 dark:border-white/10 light:border-slate-200 rounded-2xl p-2 shadow-2xl z-20">
-                  <Search className="w-6 h-6 text-blue-400 ml-4" />
+                <motion.div layoutId="search-container" className="relative flex items-center bg-card/80 backdrop-blur-xl border border-border rounded-2xl p-2 shadow-sm z-20">
+                  <Search className="w-6 h-6 text-muted-foreground ml-4" />
                   <input
                     type="text"
                     value={keyword}
                     onChange={(e) => setKeyword(e.target.value)}
                     placeholder="Enter a keyword (e.g., artificial intelligence)..."
-                    className="w-full bg-transparent border-none outline-none text-xl text-white dark:text-white light:text-slate-900 px-4 py-4 placeholder:text-slate-500 font-light"
+                    className="w-full bg-transparent border-none outline-none text-xl text-foreground px-4 py-4 placeholder:text-muted-foreground font-light"
                     autoFocus
                   />
-                  <div className="hidden md:flex items-center gap-2 px-3 py-1 bg-slate-800 dark:bg-slate-800 light:bg-slate-100 rounded-lg text-[10px] font-mono text-slate-500 border border-white/5 dark:border-white/5 light:border-slate-200">
+                  <div className="hidden md:flex items-center gap-2 px-3 py-1 bg-muted rounded-lg text-[10px] font-mono text-muted-foreground border border-border">
                     <Command className="w-3 h-3" />
                     <span>K</span>
                   </div>
-                  <div className="h-8 w-px bg-white/10 dark:bg-white/10 light:bg-slate-200 mx-2 hidden md:block"></div>
+                  <div className="h-8 w-px bg-border mx-2 hidden md:block"></div>
                   <div className="hidden md:flex items-center px-4 border-l border-transparent">
                     <CountrySelect 
                       locations={LOCATIONS}
@@ -246,12 +309,23 @@ export default function App() {
                   </div>
                   <button
                     type="submit"
-                    className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-xl font-medium transition-colors duration-200 shadow-[0_0_20px_rgba(37,99,235,0.4)] ml-2"
+                    className="bg-foreground text-background hover:bg-foreground/90 px-8 py-3 rounded-xl font-medium transition-colors duration-200 ml-2"
                   >
                     Analyze
                   </button>
                 </motion.div>
-                <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200 z-10" />
+                
+                {/* Search suggestions/recent could go here */}
+                <div className="absolute top-full left-0 w-full pt-4 opacity-0 group-focus-within:opacity-100 transition-opacity duration-300 pointer-events-none group-focus-within:pointer-events-auto z-10">
+                  <div className="flex items-center justify-center gap-4 text-sm text-muted-foreground">
+                    <span className="flex items-center gap-1"><Activity className="w-4 h-4" /> Trending:</span>
+                    <button type="button" onClick={() => setKeyword('machine learning')} className="hover:text-foreground transition-colors">machine learning</button>
+                    <span className="w-1 h-1 rounded-full bg-border"></span>
+                    <button type="button" onClick={() => setKeyword('saas marketing')} className="hover:text-foreground transition-colors">saas marketing</button>
+                    <span className="w-1 h-1 rounded-full bg-border"></span>
+                    <button type="button" onClick={() => setKeyword('seo tools')} className="hover:text-foreground transition-colors">seo tools</button>
+                  </div>
+                </div>
               </form>
             </motion.div>
           ) : (
@@ -265,33 +339,41 @@ export default function App() {
               {/* Header */}
               <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border py-4 px-6 md:px-8 flex items-center justify-between transition-colors duration-300">
                 <div className="flex items-center gap-6 flex-1">
-                  <motion.div 
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.2 }}
-                    className="flex items-center gap-2 text-blue-400 font-bold text-xl tracking-tight cursor-pointer" 
-                    onClick={() => setIsSearching(false)}
-                  >
-                    <Activity className="w-6 h-6" />
-                    <span className="hidden md:inline">KeywordIntel</span>
-                  </motion.div>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                      className="p-2 -ml-2 rounded-full hover:bg-muted/50 text-muted-foreground transition-colors"
+                    >
+                      <Menu className="w-5 h-5" />
+                    </button>
+                    <motion.div 
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.2 }}
+                      className="flex items-center gap-2 text-accent font-bold text-xl tracking-tight cursor-pointer" 
+                      onClick={() => setIsSearching(false)}
+                    >
+                      <Activity className="w-6 h-6" />
+                      <span className="hidden md:inline">KeywordIntel</span>
+                    </motion.div>
+                  </div>
                   
                   <form onSubmit={handleSearch} className="flex-1 max-w-3xl relative group">
-                    <motion.div layoutId="search-container" className="relative flex items-center bg-slate-900/80 dark:bg-slate-900/80 light:bg-white backdrop-blur-md border border-white/10 dark:border-white/10 light:border-slate-200 rounded-xl p-1 z-20">
-                      <Search className="w-5 h-5 text-blue-400 ml-3" />
+                    <motion.div layoutId="search-container" className="relative flex items-center bg-card/80 backdrop-blur-md border border-border rounded-xl p-1 z-20">
+                      <Search className="w-5 h-5 text-accent ml-3" />
                       <input
                         type="text"
                         value={keyword}
                         onChange={(e) => setKeyword(e.target.value)}
-                        className="w-full bg-transparent border-none outline-none text-white dark:text-white light:text-slate-900 px-3 py-2 placeholder:text-slate-500"
+                        className="w-full bg-transparent border-none outline-none text-foreground px-3 py-2 placeholder:text-muted-foreground"
                         onFocus={() => setIsCommandPaletteOpen(true)}
                         readOnly
                       />
-                      <div className="hidden sm:flex items-center gap-1 px-2 py-1 bg-slate-800 dark:bg-slate-800 light:bg-slate-100 rounded text-[10px] font-mono text-slate-500">
+                      <div className="hidden sm:flex items-center gap-1 px-2 py-1 bg-muted rounded text-[10px] font-mono text-muted-foreground">
                         <Command className="w-3 h-3" />
                         <span>K</span>
                       </div>
-                      <div className="h-6 w-px bg-white/10 dark:bg-white/10 light:bg-slate-200 mx-2 hidden sm:block"></div>
+                      <div className="h-6 w-px bg-border mx-2 hidden sm:block"></div>
                       <div className="hidden sm:flex items-center px-2">
                         <CountrySelect 
                           locations={LOCATIONS}
@@ -304,7 +386,6 @@ export default function App() {
                       </div>
                       <button type="submit" className="hidden"></button>
                     </motion.div>
-                    <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl blur opacity-20 group-hover:opacity-40 transition duration-500 z-10" />
                   </form>
                 </div>
                 
@@ -316,42 +397,38 @@ export default function App() {
                 >
                   <button 
                     onClick={toggleTheme}
-                    className="p-2 rounded-full bg-slate-900/50 dark:bg-slate-900/50 light:bg-white border border-white/5 dark:border-white/5 light:border-slate-200 text-slate-400 hover:text-white dark:hover:text-white light:hover:text-blue-600 transition-colors"
+                    className="p-2 rounded-full bg-card/50 border border-border text-muted-foreground hover:text-foreground transition-colors"
                     title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
                   >
                     {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
                   </button>
-                  <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm font-medium">
+                  <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-sm font-medium">
                     <span className="relative flex h-2 w-2">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                     </span>
                     Live Data
                   </div>
-                  <div className="h-6 w-px bg-white/10 dark:bg-white/10 light:bg-slate-200 hidden md:block"></div>
-                  <div className="hidden md:flex items-center gap-2 text-slate-300 dark:text-slate-300 light:text-slate-600 bg-slate-900/50 dark:bg-slate-900/50 light:bg-white backdrop-blur-md border border-white/5 dark:border-white/5 light:border-slate-200 px-3 py-1.5 rounded-full">
+                  <div className="h-6 w-px bg-border hidden md:block"></div>
+                  <div className="hidden md:flex items-center gap-2 text-foreground bg-card/50 backdrop-blur-md border border-border px-3 py-1.5 rounded-full">
                     <User className="w-4 h-4" />
                     <span className="text-xs font-medium truncate max-w-[100px]">{user?.username || 'Pro Account'}</span>
                   </div>
-                  <button onClick={handleLogout} className="text-slate-400 hover:text-white dark:hover:text-white light:hover:text-red-500 transition-colors p-2 rounded-full hover:bg-white/5" title="Sign out">
+                  <button onClick={handleLogout} className="text-muted-foreground hover:text-red-500 transition-colors p-2 rounded-full hover:bg-muted/50" title="Sign out">
                     <LogOut className="w-5 h-5" />
                   </button>
                 </motion.div>
               </header>
 
-              <div className="flex flex-1">
-                <Sidebar />
+              <div className="flex flex-1 relative">
+                <Sidebar 
+                  isOpen={isSidebarOpen} 
+                  onClose={() => setIsSidebarOpen(false)} 
+                  activeTab={activeTab}
+                  setActiveTab={setActiveTab}
+                />
                 <main className="flex-1 p-6 md:p-8 max-w-7xl mx-auto w-full">
-                  <Dashboard 
-                    keyword={searchedKeyword} 
-                    location={searchedLocation.startsWith('CURRENT_LOCATION') ? (searchedLocation.split(':')[1] || 'Current Location') : LOCATIONS.find(l => l.code === searchedLocation)?.name} 
-                    latLng={searchedLatLng}
-                    onLocationChange={(newLocationCode) => {
-                      setLocation(newLocationCode);
-                      setSearchedLocation(newLocationCode);
-                      setSearchedLatLng(null);
-                    }}
-                  />
+                  {renderContent()}
                 </main>
               </div>
             </motion.div>

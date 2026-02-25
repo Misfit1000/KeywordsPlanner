@@ -49,7 +49,7 @@ export default memo(function LocalMapResults({ keyword, location, latLng }: { ke
     return (
       <div className="bg-card/50 backdrop-blur-xl border border-border rounded-3xl p-6 flex flex-col items-center justify-center min-h-[200px] shadow-sm">
         <Loader2 className="w-8 h-8 text-blue-500 animate-spin mb-4" />
-        <p className="text-slate-500 dark:text-slate-400 text-sm">Finding local map results...</p>
+        <p className="text-muted-foreground text-sm">Finding local map results...</p>
       </div>
     );
   }
@@ -72,7 +72,7 @@ export default memo(function LocalMapResults({ keyword, location, latLng }: { ke
           </div>
           <h3 className="text-lg font-bold text-foreground">Local Map Results</h3>
           {location && (
-            <span className="text-sm text-slate-500 dark:text-slate-400 ml-auto flex items-center gap-1">
+            <span className="text-sm text-muted-foreground ml-auto flex items-center gap-1">
               <MapPin className="w-4 h-4" /> {location}
             </span>
           )}
@@ -88,13 +88,13 @@ export default memo(function LocalMapResults({ keyword, location, latLng }: { ke
             target="_blank"
             rel="noopener noreferrer"
             whileHover={{ y: -5, scale: 1.02 }}
-            className="flex flex-col p-4 rounded-2xl bg-slate-100 dark:bg-white/[0.02] border border-border hover:bg-slate-200 dark:hover:bg-white/[0.04] hover:border-blue-500/30 transition-all group"
+            className="flex flex-col p-4 rounded-2xl bg-card border border-border hover:bg-muted hover:border-accent/30 transition-all group"
           >
-            <h4 className="text-foreground font-medium mb-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors line-clamp-2">
+            <h4 className="text-foreground font-medium mb-2 group-hover:text-accent transition-colors line-clamp-2">
               {result.title}
             </h4>
-            <div className="mt-auto flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 pt-2">
-              <span className="flex items-center gap-1 text-blue-600/80 dark:text-blue-400/80 group-hover:text-blue-600 dark:group-hover:text-blue-400">
+            <div className="mt-auto flex items-center justify-between text-xs text-muted-foreground pt-2">
+              <span className="flex items-center gap-1 text-accent/80 group-hover:text-accent">
                 <Navigation className="w-3 h-3" /> View on Maps
               </span>
             </div>

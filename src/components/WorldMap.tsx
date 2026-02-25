@@ -55,7 +55,7 @@ const WorldMap = ({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6 }}
-      className="bg-slate-900/50 dark:bg-slate-900/50 light:bg-white backdrop-blur-xl border border-white/5 dark:border-white/5 light:border-slate-200 rounded-3xl p-6 relative overflow-hidden shadow-sm"
+      className="bg-card/50 backdrop-blur-xl border border-border rounded-3xl p-6 relative overflow-hidden shadow-sm"
     >
       {loading && (
         <div className="absolute inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center">
@@ -67,7 +67,7 @@ const WorldMap = ({
           <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400">
             <Globe className="w-5 h-5" />
           </div>
-          <h3 className="text-lg font-bold text-white dark:text-white light:text-slate-900">Global Interest Map</h3>
+          <h3 className="text-lg font-bold text-foreground">Global Interest Map</h3>
           <p className="text-sm text-slate-400 ml-auto hidden sm:block">
             Click a country to view regional data
           </p>
@@ -75,26 +75,26 @@ const WorldMap = ({
         <p className="text-slate-500 text-xs mt-2">Geographic distribution of search volume across the globe.</p>
       </div>
 
-      <div className="w-full h-[300px] md:h-[400px] bg-slate-950/50 dark:bg-slate-950/50 light:bg-slate-50 rounded-2xl overflow-hidden border border-white/5 dark:border-white/5 light:border-slate-200 relative">
+      <div className="w-full h-[300px] md:h-[400px] bg-muted/50 rounded-2xl overflow-hidden border border-border relative">
         {/* Zoom Controls */}
         <div className="absolute bottom-4 right-4 z-20 flex flex-col gap-2">
           <button 
             onClick={handleZoomIn}
-            className="p-2 bg-slate-900/80 dark:bg-slate-900/80 light:bg-white border border-white/10 dark:border-white/10 light:border-slate-200 rounded-lg text-slate-400 hover:text-white dark:hover:text-white light:hover:text-blue-600 transition-colors shadow-lg"
+            className="p-2 bg-card/80 border border-border rounded-lg text-muted-foreground hover:text-foreground transition-colors shadow-sm"
             title="Zoom In"
           >
             <Plus className="w-4 h-4" />
           </button>
           <button 
             onClick={handleZoomOut}
-            className="p-2 bg-slate-900/80 dark:bg-slate-900/80 light:bg-white border border-white/10 dark:border-white/10 light:border-slate-200 rounded-lg text-slate-400 hover:text-white dark:hover:text-white light:hover:text-blue-600 transition-colors shadow-lg"
+            className="p-2 bg-card/80 border border-border rounded-lg text-muted-foreground hover:text-foreground transition-colors shadow-sm"
             title="Zoom Out"
           >
             <Minus className="w-4 h-4" />
           </button>
           <button 
             onClick={handleReset}
-            className="p-2 bg-slate-900/80 dark:bg-slate-900/80 light:bg-white border border-white/10 dark:border-white/10 light:border-slate-200 rounded-lg text-slate-400 hover:text-white dark:hover:text-white light:hover:text-blue-600 transition-colors shadow-lg"
+            className="p-2 bg-card/80 border border-border rounded-lg text-muted-foreground hover:text-foreground transition-colors shadow-sm"
             title="Reset View"
           >
             <RotateCcw className="w-4 h-4" />

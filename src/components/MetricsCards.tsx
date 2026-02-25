@@ -102,8 +102,8 @@ export default memo(function MetricsCards({ data, loading }: { data: KeywordData
         <div className="flex justify-between items-start mb-4">
           <div>
             <div className="flex items-center gap-1.5 mb-1">
-              <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">Total Volume</p>
-              <Info className="w-3 h-3 text-slate-400 dark:text-slate-600" />
+              <p className="text-muted-foreground text-sm font-medium">Total Volume</p>
+              <Info className="w-3 h-3 text-muted-foreground/60" />
             </div>
             <h3 className="text-3xl font-bold text-foreground tracking-tight">
               <AnimatedNumber value={data.volume} format={(v) => Math.round(v).toLocaleString()} />
@@ -115,9 +115,9 @@ export default memo(function MetricsCards({ data, loading }: { data: KeywordData
           </div>
         </div>
         <div className="flex items-center gap-2 text-sm mt-4">
-          <TrendingUp className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
-          <span className="text-emerald-600 dark:text-emerald-400 font-medium">+12.5%</span>
-          <span className="text-slate-500">vs last month</span>
+          <TrendingUp className="w-4 h-4 text-emerald-500" />
+          <span className="text-emerald-500 font-medium">+12.5%</span>
+          <span className="text-muted-foreground">vs last month</span>
         </div>
       </motion.div>
 
@@ -139,11 +139,11 @@ export default memo(function MetricsCards({ data, loading }: { data: KeywordData
         <div className="flex justify-between items-start mb-4">
           <div>
             <div className="flex items-center gap-1.5 mb-1">
-              <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">Keyword Difficulty</p>
-              <Info className="w-3 h-3 text-slate-400 dark:text-slate-600" />
+              <p className="text-muted-foreground text-sm font-medium">Keyword Difficulty</p>
+              <Info className="w-3 h-3 text-muted-foreground/60" />
             </div>
             <div className="flex items-baseline gap-2 mt-2">
-              <span className={`${getKdColor(data.kd).replace('500', '600')} dark:${getKdColor(data.kd).replace('500', '400')} font-medium text-lg`}>{getKdLabel(data.kd)}</span>
+              <span className={`${getKdColor(data.kd)} font-medium text-lg`}>{getKdLabel(data.kd)}</span>
             </div>
             <p className="text-[10px] text-slate-500 mt-1 uppercase tracking-wider font-semibold">Ranking Competition</p>
           </div>
@@ -172,8 +172,8 @@ export default memo(function MetricsCards({ data, loading }: { data: KeywordData
         <div className="flex justify-between items-start mb-4">
           <div>
             <div className="flex items-center gap-1.5 mb-1">
-              <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">Average CPC</p>
-              <Info className="w-3 h-3 text-slate-400 dark:text-slate-600" />
+              <p className="text-muted-foreground text-sm font-medium">Average CPC</p>
+              <Info className="w-3 h-3 text-muted-foreground/60" />
             </div>
             <h3 className="text-3xl font-bold text-foreground tracking-tight flex items-center">
               $<AnimatedNumber value={data.cpc} format={(v) => v.toFixed(2)} />
@@ -185,7 +185,7 @@ export default memo(function MetricsCards({ data, loading }: { data: KeywordData
           </div>
         </div>
         <div className="flex items-center gap-2 text-sm mt-4">
-          <span className="text-slate-500 dark:text-slate-400 font-medium">High commercial value</span>
+          <span className="text-muted-foreground font-medium">High commercial value</span>
         </div>
       </motion.div>
 
@@ -207,8 +207,8 @@ export default memo(function MetricsCards({ data, loading }: { data: KeywordData
         <div className="flex justify-between items-start mb-4">
           <div>
             <div className="flex items-center gap-1.5 mb-1">
-              <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">Search Intent</p>
-              <Info className="w-3 h-3 text-slate-400 dark:text-slate-600" />
+              <p className="text-muted-foreground text-sm font-medium">Search Intent</p>
+              <Info className="w-3 h-3 text-muted-foreground/60" />
             </div>
             <h3 className="text-2xl font-bold text-foreground tracking-tight mt-1">
               {intentLabel}
@@ -220,7 +220,7 @@ export default memo(function MetricsCards({ data, loading }: { data: KeywordData
           </div>
         </div>
         <div>
-          <div className="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-2 mt-4 overflow-hidden flex">
+          <div className="w-full bg-muted rounded-full h-2 mt-4 overflow-hidden flex">
             <motion.div 
               initial={{ width: 0 }} animate={{ width: `${data.intentBreakdown.info}%` }} transition={{ duration: 1, delay: 0.8 }}
               className="bg-purple-500 h-full" title={`Informational ${data.intentBreakdown.info}%`} 
@@ -248,7 +248,7 @@ export default memo(function MetricsCards({ data, loading }: { data: KeywordData
 
       <Tooltip 
         id="metric-tooltip" 
-        className="!bg-slate-900/95 dark:!bg-slate-900/95 light:!bg-white !backdrop-blur-md !border !border-white/10 dark:!border-white/10 light:!border-slate-200 !rounded-xl !shadow-2xl !p-3 !z-50 !max-w-[200px] !text-xs !leading-relaxed !text-slate-300 dark:!text-slate-300 light:!text-slate-600"
+        className="!bg-card/95 !backdrop-blur-md !border !border-border !rounded-xl !shadow-sm !p-3 !z-50 !max-w-[200px] !text-xs !leading-relaxed !text-muted-foreground"
       />
     </motion.div>
   );

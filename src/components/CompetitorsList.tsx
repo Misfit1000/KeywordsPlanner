@@ -16,7 +16,7 @@ export default memo(function CompetitorsList({ data, loading }: { data: KeywordD
           <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
         </div>
       )}
-      <div className="p-6 border-b border-border bg-slate-100/50 dark:bg-slate-800/20 relative z-10">
+      <div className="p-6 border-b border-border bg-muted/50 relative z-10">
         <div className="flex justify-between items-center mb-1">
           <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
             <ShieldAlert className="w-5 h-5 text-blue-500" />
@@ -36,19 +36,19 @@ export default memo(function CompetitorsList({ data, loading }: { data: KeywordD
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.8 + index * 0.1 }}
               whileHover={{ scale: 1.02, x: 5 }}
-              className="flex flex-col p-4 rounded-2xl bg-slate-100 dark:bg-white/[0.02] border border-border hover:bg-slate-200 dark:hover:bg-white/[0.04] hover:border-blue-500/30 transition-all group cursor-pointer"
+              className="flex flex-col p-4 rounded-2xl bg-card border border-border hover:bg-muted hover:border-accent/30 transition-all group cursor-pointer"
             >
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold text-sm border border-blue-500/20 group-hover:bg-blue-500/20 transition-colors">
+                  <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center text-accent font-bold text-sm border border-accent/20 group-hover:bg-accent/20 transition-colors">
                     {index + 1}
                   </div>
                   <div>
-                    <div className="text-foreground font-medium flex items-center gap-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                    <div className="text-foreground font-medium flex items-center gap-2 group-hover:text-accent transition-colors">
                       {competitor.domain}
-                      <ExternalLink className="w-3 h-3 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <ExternalLink className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
-                    <div className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-3 mt-1">
+                    <div className="text-sm text-muted-foreground flex items-center gap-3 mt-1">
                       <span className="flex items-center gap-1" title="Estimated Monthly Traffic">
                         <Users className="w-3 h-3" />
                         {competitor.traffic.toLocaleString()}
@@ -66,17 +66,17 @@ export default memo(function CompetitorsList({ data, loading }: { data: KeywordD
                     <BarChart className="w-3 h-3" />
                     Overlap
                   </div>
-                  <div className="text-foreground font-mono font-medium group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                  <div className="text-foreground font-mono font-medium group-hover:text-accent transition-colors">
                     {competitor.overlap}%
                   </div>
                 </div>
               </div>
               
               <div className="mt-2 pt-3 border-t border-border">
-                <div className="text-xs text-slate-500 mb-2 font-medium uppercase tracking-wider">Top Shared Keywords</div>
+                <div className="text-xs text-muted-foreground mb-2 font-medium uppercase tracking-wider">Top Shared Keywords</div>
                 <div className="flex flex-wrap gap-2">
                   {competitor.topKeywords.map((kw, i) => (
-                    <span key={i} className="px-2 py-1 bg-slate-200 dark:bg-slate-800/50 rounded-md text-xs text-slate-600 dark:text-slate-300 border border-border">
+                    <span key={i} className="px-2 py-1 bg-muted rounded-md text-xs text-foreground border border-border">
                       {kw}
                     </span>
                   ))}

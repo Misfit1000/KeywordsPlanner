@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { motion } from "motion/react";
-import { Lock, User, Loader2, ShieldCheck } from "lucide-react";
+import { Lock, Mail, Loader2, ShieldCheck } from "lucide-react";
 
 export default function Login({ onToggle }: { onToggle: () => void }) {
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -15,7 +15,7 @@ export default function Login({ onToggle }: { onToggle: () => void }) {
     setLoading(true);
     setError(null);
     try {
-      await login(username, password);
+      await login(email, password);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -40,15 +40,15 @@ export default function Login({ onToggle }: { onToggle: () => void }) {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-300 ml-1">Username</label>
+            <label className="text-sm font-medium text-slate-300 ml-1">Email</label>
             <div className="relative">
-              <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
               <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="w-full bg-slate-950/50 border border-white/10 rounded-xl py-3 pl-11 pr-4 text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
-                placeholder="Enter your username"
+                placeholder="Enter your email"
                 required
               />
             </div>

@@ -19,9 +19,9 @@ const SparklineTooltip = memo(({ active, payload }: any) => {
         initial={{ opacity: 0, scale: 0.8 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.2 }}
-        className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200 dark:border-white/10 px-2 py-1 rounded shadow-xl text-xs"
+        className="bg-card/90 backdrop-blur-md border border-border px-2 py-1 rounded shadow-sm text-xs"
       >
-        <span className="text-blue-600 dark:text-blue-400 font-bold">{payload[0].value.toLocaleString()}</span>
+        <span className="text-accent font-bold">{payload[0].value.toLocaleString()}</span>
       </motion.div>
     );
   }
@@ -104,23 +104,23 @@ export default memo(function KeywordTable({ data, loading }: { data: KeywordData
 
   const getIntentColor = (intent: string) => {
     switch (intent) {
-      case 'Info': return 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20';
-      case 'Nav': return 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
-      case 'Com': return 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20';
-      case 'Tx': return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20';
-      default: return 'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20';
+      case 'Info': return 'bg-purple-500/10 text-purple-600 border-purple-500/20';
+      case 'Nav': return 'bg-amber-500/10 text-amber-600 border-amber-500/20';
+      case 'Com': return 'bg-blue-500/10 text-blue-600 border-blue-500/20';
+      case 'Tx': return 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20';
+      default: return 'bg-muted text-muted-foreground border-border';
     }
   };
 
   const getKdColor = (kd: number) => {
-    if (kd > 70) return 'text-orange-600 dark:text-orange-400';
-    if (kd > 40) return 'text-amber-600 dark:text-amber-400';
-    return 'text-emerald-600 dark:text-emerald-400';
+    if (kd > 70) return 'text-orange-500';
+    if (kd > 40) return 'text-amber-500';
+    return 'text-emerald-500';
   };
 
   const SortIcon = ({ columnKey }: { columnKey: keyof KeywordData['relatedKeywords'][0] }) => {
-    if (sortConfig?.key !== columnKey) return <ArrowUpDown className="w-3 h-3 text-slate-600 ml-1" />;
-    return sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3 text-blue-400 ml-1" /> : <ArrowDown className="w-3 h-3 text-blue-400 ml-1" />;
+    if (sortConfig?.key !== columnKey) return <ArrowUpDown className="w-3 h-3 text-muted-foreground ml-1" />;
+    return sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3 text-accent ml-1" /> : <ArrowDown className="w-3 h-3 text-accent ml-1" />;
   };
 
   return (
@@ -140,9 +140,9 @@ export default memo(function KeywordTable({ data, loading }: { data: KeywordData
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-4">
               <h3 className="text-lg font-bold text-foreground whitespace-nowrap">Keyword Magic</h3>
-              <div className="text-sm text-slate-500 dark:text-slate-400 whitespace-nowrap">{tableData.length} keywords found</div>
+              <div className="text-sm text-muted-foreground whitespace-nowrap">{tableData.length} keywords found</div>
             </div>
-            <p className="text-slate-500 text-xs">Explore related terms, variations, and semantic keywords.</p>
+            <p className="text-muted-foreground text-xs">Explore related terms, variations, and semantic keywords.</p>
           </div>
           
           <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -153,14 +153,14 @@ export default memo(function KeywordTable({ data, loading }: { data: KeywordData
                 placeholder="Filter keywords..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-slate-100 dark:bg-slate-950/50 border border-slate-200 dark:border-white/10 rounded-xl py-2 pl-9 pr-4 text-sm text-slate-900 dark:text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                className="w-full bg-muted border border-border rounded-xl py-2 pl-9 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all"
               />
             </div>
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={handleExport}
-              className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-white/5 hover:bg-slate-50 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-white rounded-xl text-sm font-medium transition-colors border border-slate-200 dark:border-white/5 whitespace-nowrap shadow-sm"
+              className="flex items-center gap-2 px-4 py-2 bg-card hover:bg-muted text-muted-foreground hover:text-accent rounded-xl text-sm font-medium transition-colors border border-border whitespace-nowrap shadow-sm"
             >
               <Download className="w-4 h-4" />
               Export CSV
@@ -170,11 +170,11 @@ export default memo(function KeywordTable({ data, loading }: { data: KeywordData
         
         <div className="flex flex-wrap items-center gap-4 pt-2">
           <div className="flex items-center gap-2">
-            <label className="text-xs text-slate-500 dark:text-slate-400 font-medium">Intent:</label>
+            <label className="text-xs text-muted-foreground font-medium">Intent:</label>
             <select 
               value={intentFilter} 
               onChange={(e) => setIntentFilter(e.target.value)}
-              className="bg-slate-100 dark:bg-slate-950/50 border border-slate-200 dark:border-white/10 rounded-lg py-1.5 px-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 transition-colors"
+              className="bg-muted border border-border rounded-lg py-1.5 px-3 text-sm text-foreground focus:outline-none focus:border-accent transition-colors"
             >
               <option value="All">All Intents</option>
               <option value="Info">Informational</option>
@@ -184,13 +184,13 @@ export default memo(function KeywordTable({ data, loading }: { data: KeywordData
             </select>
           </div>
           <div className="flex items-center gap-2">
-            <label className="text-xs text-slate-500 dark:text-slate-400 font-medium">Min Volume:</label>
+            <label className="text-xs text-muted-foreground font-medium">Min Volume:</label>
             <input 
               type="number" 
               value={minVolume}
               onChange={(e) => setMinVolume(e.target.value)}
               placeholder="e.g. 1000"
-              className="bg-slate-100 dark:bg-slate-950/50 border border-slate-200 dark:border-white/10 rounded-lg py-1.5 px-3 w-28 text-sm text-slate-900 dark:text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 transition-colors"
+              className="bg-muted border border-border rounded-lg py-1.5 px-3 w-28 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-accent transition-colors"
             />
           </div>
         </div>
@@ -199,7 +199,7 @@ export default memo(function KeywordTable({ data, loading }: { data: KeywordData
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse">
           <thead>
-            <tr className="border-b border-border text-sm text-slate-500 dark:text-slate-400">
+            <tr className="border-b border-border text-sm text-muted-foreground">
               <th className="p-4 font-medium cursor-pointer hover:text-foreground transition-colors" onClick={() => handleSort('keyword')}>
                 <div className="flex items-center">Keyword <SortIcon columnKey="keyword" /></div>
               </th>
@@ -233,9 +233,9 @@ export default memo(function KeywordTable({ data, loading }: { data: KeywordData
                     layout: { type: "spring", stiffness: 300, damping: 30 },
                     opacity: { duration: 0.2 }
                   }}
-                  className="border-b border-border hover:bg-slate-100 dark:hover:bg-white/[0.02] transition-colors group"
+                  className="border-b border-border hover:bg-muted/50 transition-colors group"
                 >
-                  <td className="p-4 text-foreground font-medium group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                  <td className="p-4 text-foreground font-medium group-hover:text-accent transition-colors">
                     {row.keyword}
                   </td>
                   <td className="p-4">
@@ -243,7 +243,7 @@ export default memo(function KeywordTable({ data, loading }: { data: KeywordData
                       {row.intent}
                     </span>
                   </td>
-                  <td className="p-4 text-right text-slate-600 dark:text-slate-300 font-mono">
+                  <td className="p-4 text-right text-muted-foreground font-mono">
                     {row.volume.toLocaleString()}
                   </td>
                   <td className="p-4 w-32">
@@ -274,7 +274,7 @@ export default memo(function KeywordTable({ data, loading }: { data: KeywordData
                   <td className="p-4 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <span className={`font-mono ${getKdColor(row.kd)}`}>{row.kd}</span>
-                      <div className="w-12 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                      <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden">
                         <motion.div 
                           initial={{ width: 0 }}
                           animate={{ width: `${row.kd}%` }}
@@ -285,7 +285,7 @@ export default memo(function KeywordTable({ data, loading }: { data: KeywordData
                       </div>
                     </div>
                   </td>
-                  <td className="p-4 text-right text-slate-600 dark:text-slate-300 font-mono">
+                  <td className="p-4 text-right text-muted-foreground font-mono">
                     ${row.cpc.toFixed(2)}
                   </td>
                 </motion.tr>
@@ -295,8 +295,8 @@ export default memo(function KeywordTable({ data, loading }: { data: KeywordData
         </table>
       </div>
       
-      <div className="p-4 border-t border-border flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/20">
-        <div className="text-sm text-slate-500 dark:text-slate-400">
+      <div className="p-4 border-t border-border flex items-center justify-between bg-muted/30">
+        <div className="text-sm text-muted-foreground">
           Showing <span className="font-medium text-foreground">{(currentPage - 1) * itemsPerPage + 1}</span> to <span className="font-medium text-foreground">{Math.min(currentPage * itemsPerPage, tableData.length)}</span> of <span className="font-medium text-foreground">{tableData.length}</span> results
         </div>
         
@@ -323,8 +323,8 @@ export default memo(function KeywordTable({ data, loading }: { data: KeywordData
                   onClick={() => setCurrentPage(pageNum)}
                   className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${
                     currentPage === pageNum
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'border border-border bg-card hover:bg-slate-100 dark:hover:bg-white/5 text-slate-600 dark:text-slate-400'
+                      ? 'bg-accent text-accent-foreground border-accent'
+                      : 'border border-border bg-card hover:bg-muted text-muted-foreground'
                   }`}
                 >
                   {pageNum}

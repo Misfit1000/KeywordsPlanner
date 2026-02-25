@@ -24,12 +24,12 @@ const CustomTooltip = ({ active, payload, label }: any) => {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 10, scale: 0.95 }}
           transition={{ duration: 0.2 }}
-          className="bg-slate-900/90 dark:bg-slate-900/90 light:bg-white/90 backdrop-blur-md border border-white/10 dark:border-white/10 light:border-slate-200 p-4 rounded-xl shadow-2xl"
+          className="bg-card/90 backdrop-blur-md border border-border p-4 rounded-xl shadow-sm"
         >
-          <p className="text-slate-400 dark:text-slate-400 light:text-slate-500 text-sm mb-1">{label}</p>
-          <p className="text-blue-400 dark:text-blue-400 light:text-blue-600 font-bold text-xl">
+          <p className="text-muted-foreground text-sm mb-1">{label}</p>
+          <p className="text-accent font-bold text-xl">
             {payload[0].value.toLocaleString()}{" "}
-            <span className="text-sm font-normal text-slate-300 dark:text-slate-300 light:text-slate-500">searches</span>
+            <span className="text-sm font-normal text-muted-foreground">searches</span>
           </p>
         </motion.div>
       )}
@@ -88,15 +88,15 @@ export default memo(function TrendChart({
           <p className="text-xs text-slate-500">Historical search interest over selected timeframe.</p>
         </div>
 
-        <div className="flex items-center bg-slate-950/50 dark:bg-slate-950/50 light:bg-slate-100 border border-white/10 dark:border-white/10 light:border-slate-200 rounded-lg p-1">
+        <div className="flex items-center bg-muted border border-border rounded-lg p-1">
           {TIMEFRAMES.map((tf) => (
             <button
               key={tf.value}
               onClick={() => setTimeframe(tf.value)}
               className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                 timeframe === tf.value
-                  ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
-                  : "text-slate-500 dark:text-slate-400 hover:text-white dark:hover:text-white light:hover:text-blue-600 hover:bg-white/5 dark:hover:bg-white/5 light:hover:bg-white border border-transparent"
+                  ? "bg-accent/20 text-accent border border-accent/30"
+                  : "text-muted-foreground hover:text-foreground hover:bg-card border border-transparent"
               }`}
             >
               {tf.label}

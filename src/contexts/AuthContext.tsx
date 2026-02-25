@@ -1,15 +1,24 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged,
+  User as FirebaseUser
+} from "firebase/auth";
+import { auth } from "../firebase";
 
 interface User {
-  id: number;
+  id: string;
   username: string;
+  email: string;
 }
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (username: string, password: string) => Promise<void>;
-  register: (username: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   error: string | null;
 }
@@ -22,54 +31,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    checkAuth();
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser: FirebaseUser | null) => {
+      if (firebaseUser) {
+        setUser({
+          id: firebaseUser.uid,
+          username: firebaseUser.email?.split('@')[0] || 'User',
+          email: firebaseUser.email || '',
+        });
+      } else {
+        setUser(null);
+      }
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  const checkAuth = async () => {
+  const login = async (email: string, password: string) => {
+    setError(null);
     try {
-      const res = await fetch("/api/auth/me");
-      if (res.ok) {
-        const data = await res.json();
-        setUser(data.user);
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (err: any) {
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        throw new Error("Email or password is incorrect");
       }
-    } catch (err) {
-      console.error("Auth check failed", err);
-    } finally {
-      setLoading(false);
+      throw new Error(err.message || "Login failed");
     }
   };
 
-  const login = async (username: string, password: string) => {
+  const register = async (email: string, password: string) => {
     setError(null);
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
-    });
-    const data = await res.json();
-    if (res.ok) {
-      setUser(data.user);
-    } else {
-      throw new Error(data.error || "Login failed");
-    }
-  };
-
-  const register = async (username: string, password: string) => {
-    setError(null);
-    const res = await fetch("/api/auth/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || "Registration failed");
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
+    } catch (err: any) {
+      if (err.code === 'auth/email-already-in-use') {
+        throw new Error("User already exists. Please sign in");
+      }
+      throw new Error(err.message || "Registration failed");
     }
   };
 
   const logout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
-    setUser(null);
+    await signOut(auth);
   };
 
   return (
