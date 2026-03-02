@@ -84,7 +84,12 @@ const POPULAR_KEYWORDS = [
 export default function App() {
   const { user, loading: authLoading, logout, unverifiedEmail, setUnverifiedEmail } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const [authMode, setAuthMode] = useState<'login' | 'register' | null>(null);
+  const [authMode, setAuthMode] = useState<'login' | 'register' | null>(() => {
+    if (window.location.pathname === '/admin/login') {
+      return 'login';
+    }
+    return null;
+  });
   const [isSearching, setIsSearching] = useState(false);
   const [keyword, setKeyword] = useState('');
   const [searchedKeyword, setSearchedKeyword] = useState('');
@@ -123,7 +128,7 @@ export default function App() {
   }, []);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>(() => {
-    if (window.location.pathname === '/admin') {
+    if (window.location.pathname.startsWith('/admin')) {
       return 'admin-dashboard';
     }
     return 'dashboard';
@@ -132,11 +137,15 @@ export default function App() {
 
   useEffect(() => {
     if (activeTab === 'admin-dashboard') {
-      window.history.replaceState(null, '', '/admin');
+      if (authMode === 'login') {
+        window.history.replaceState(null, '', '/admin/login');
+      } else {
+        window.history.replaceState(null, '', '/admin');
+      }
     } else {
       window.history.replaceState(null, '', '/');
     }
-  }, [activeTab]);
+  }, [activeTab, authMode]);
 
   useEffect(() => {
     const handleResize = () => {
