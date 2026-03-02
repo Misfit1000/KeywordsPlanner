@@ -58,6 +58,13 @@ export interface KeywordData {
     country: string;
     volume: number;
     percentage: number;
+    cities?: {
+      name: string;
+      state: string;
+      volume: number;
+      percentage: number;
+      coordinates: [number, number];
+    }[];
   }[];
 }
 
@@ -84,10 +91,10 @@ export async function fetchKeywordData(
     locationContext = ` Specifically tailor the data, search volume, CPC, and related keywords for the location: ${location}.`;
   }
   
-  let prompt = `Act as an expert SEO tool like SEMrush. Provide highly accurate, realistic estimated SEO metrics for the keyword "${keyword}".${locationContext} Include total monthly search volume, keyword difficulty (0-100), average CPC in USD, primary search intent, a breakdown of search intent percentages (must sum to 100), trend data for multiple timeframes (1 hour, 24 hours, 7 days, 30 days, 1 year, 5 years) where each timeframe is an array of objects with 'time', 'volume', and 'cpc' properties, a list of 15 highly relevant related keywords with their metrics (including a 12-month trend array of numbers), a list of top 3 competitor domains ranking for this keyword with their estimated monthly traffic, keyword overlap percentage, top 3 keywords they rank for, and estimated domain authority (0-100), a list of SERP features present (e.g., 'Featured Snippet', 'People Also Ask', 'Video', 'Local Pack'), an advanced SERP analysis listing the top 5 ranking pages with their title, URL, estimated organic traffic, estimated traffic value in USD (traffic * CPC), backlinks, estimated word count, domain authority (0-100), page authority (0-100), the top keyword difficulty (0-100) for that page, and an array of SERP features specific to that page (e.g., 'Featured Snippet', 'Video'), an in-depth analysis object containing a brief summary of the keyword landscape, a list of 2-3 SEO opportunities, and a list of 1-2 potential threats or challenges, and finally, a regional interest breakdown showing the top 5 countries with the highest search volume for this keyword, including the country name, estimated volume, and percentage of total global volume.`;
+  let prompt = `Act as an expert SEO tool like SEMrush. Provide highly accurate, realistic estimated SEO metrics for the keyword "${keyword}".${locationContext} Include total monthly search volume, keyword difficulty (0-100), average CPC in USD, primary search intent, a breakdown of search intent percentages (must sum to 100), trend data for multiple timeframes (1 hour, 24 hours, 7 days, 30 days, 1 year, 5 years) where each timeframe is an array of objects with 'time', 'volume', and 'cpc' properties, a list of 15 highly relevant related keywords with their metrics (including a 12-month trend array of numbers), a list of top 3 competitor domains ranking for this keyword with their estimated monthly traffic, keyword overlap percentage, top 3 keywords they rank for, and estimated domain authority (0-100), a list of SERP features present (e.g., 'Featured Snippet', 'People Also Ask', 'Video', 'Local Pack'), an advanced SERP analysis listing the top 5 ranking pages with their title, URL, estimated organic traffic, estimated traffic value in USD (traffic * CPC), backlinks, estimated word count, domain authority (0-100), page authority (0-100), the top keyword difficulty (0-100) for that page, and an array of SERP features specific to that page (e.g., 'Featured Snippet', 'Video'), an in-depth analysis object containing a brief summary of the keyword landscape, a list of 2-3 SEO opportunities, and a list of 1-2 potential threats or challenges, and finally, a regional interest breakdown showing the top 5 countries with the highest search volume for this keyword, including the country name, estimated volume, and percentage of total global volume, and for each country, provide up to 3 top cities with their name, state/region, estimated volume, percentage of the country's volume, and their geographic coordinates [longitude, latitude].`;
 
   if (!inDepth) {
-    prompt = `Act as an expert SEO tool like SEMrush. Provide highly accurate, realistic estimated SEO metrics for the keyword "${keyword}".${locationContext} Include total monthly search volume, keyword difficulty (0-100), average CPC in USD, primary search intent, a breakdown of search intent percentages (must sum to 100), trend data for multiple timeframes (1 hour, 24 hours, 7 days, 30 days, 1 year, 5 years) where each timeframe is an array of objects with 'time', 'volume', and 'cpc' properties, a list of 5 highly relevant related keywords with their metrics (including a 12-month trend array of numbers), a list of top 3 competitor domains ranking for this keyword with their estimated monthly traffic, keyword overlap percentage, top 3 keywords they rank for, and estimated domain authority (0-100), a list of SERP features present (e.g., 'Featured Snippet', 'People Also Ask', 'Video', 'Local Pack'), an advanced SERP analysis listing the top 3 ranking pages with their title, URL, estimated organic traffic, estimated traffic value in USD (traffic * CPC), backlinks, estimated word count, domain authority (0-100), page authority (0-100), the top keyword difficulty (0-100) for that page, and an array of SERP features specific to that page (e.g., 'Featured Snippet', 'Video'), an in-depth analysis object containing a brief summary of the keyword landscape, a list of 1 SEO opportunities, and a list of 1 potential threats or challenges, and finally, a regional interest breakdown showing the top 5 countries with the highest search volume for this keyword, including the country name, estimated volume, and percentage of total global volume. Keep the response concise as this is a basic analysis.`;
+    prompt = `Act as an expert SEO tool like SEMrush. Provide highly accurate, realistic estimated SEO metrics for the keyword "${keyword}".${locationContext} Include total monthly search volume, keyword difficulty (0-100), average CPC in USD, primary search intent, a breakdown of search intent percentages (must sum to 100), trend data for multiple timeframes (1 hour, 24 hours, 7 days, 30 days, 1 year, 5 years) where each timeframe is an array of objects with 'time', 'volume', and 'cpc' properties, a list of 5 highly relevant related keywords with their metrics (including a 12-month trend array of numbers), a list of top 3 competitor domains ranking for this keyword with their estimated monthly traffic, keyword overlap percentage, top 3 keywords they rank for, and estimated domain authority (0-100), a list of SERP features present (e.g., 'Featured Snippet', 'People Also Ask', 'Video', 'Local Pack'), an advanced SERP analysis listing the top 3 ranking pages with their title, URL, estimated organic traffic, estimated traffic value in USD (traffic * CPC), backlinks, estimated word count, domain authority (0-100), page authority (0-100), the top keyword difficulty (0-100) for that page, and an array of SERP features specific to that page (e.g., 'Featured Snippet', 'Video'), an in-depth analysis object containing a brief summary of the keyword landscape, a list of 1 SEO opportunities, and a list of 1 potential threats or challenges, and finally, a regional interest breakdown showing the top 5 countries with the highest search volume for this keyword, including the country name, estimated volume, and percentage of total global volume, and for each country, provide up to 3 top cities with their name, state/region, estimated volume, percentage of the country's volume, and their geographic coordinates [longitude, latitude]. Keep the response concise as this is a basic analysis.`;
   }
 
   try {
@@ -223,6 +230,24 @@ export async function fetchKeywordData(
                 },
                 volume: { type: Type.NUMBER },
                 percentage: { type: Type.NUMBER },
+                cities: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      name: { type: Type.STRING },
+                      state: { type: Type.STRING },
+                      volume: { type: Type.NUMBER },
+                      percentage: { type: Type.NUMBER },
+                      coordinates: {
+                        type: Type.ARRAY,
+                        items: { type: Type.NUMBER },
+                        description: "[longitude, latitude]"
+                      }
+                    },
+                    required: ["name", "state", "volume", "percentage", "coordinates"]
+                  }
+                }
               },
               required: ["country", "volume", "percentage"],
             },

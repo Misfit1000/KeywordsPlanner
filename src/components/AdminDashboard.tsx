@@ -18,7 +18,15 @@ export default function AdminDashboard() {
  </div>
  <div className="text-center">
  <h3 className="text-2xl font-bold text-foreground mb-2">Access Denied</h3>
- <p className="text-muted-foreground max-w-md">You do not have permission to view this page.</p>
+ <p className="text-muted-foreground max-w-md mb-6">You do not have permission to view this page.</p>
+ {!user && (
+   <button
+     onClick={() => window.dispatchEvent(new CustomEvent('open-login'))}
+     className="px-6 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors"
+   >
+     Log In
+   </button>
+ )}
  </div>
  </div>
  );

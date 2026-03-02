@@ -122,8 +122,21 @@ export default function App() {
     return () => window.removeEventListener('recentSearchesUpdated', loadRecent);
   }, []);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [activeTab, setActiveTab] = useState<TabType>('dashboard');
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    if (window.location.pathname === '/admin') {
+      return 'admin-dashboard';
+    }
+    return 'dashboard';
+  });
   const [inDepthAnalysis, setInDepthAnalysis] = useState(false);
+
+  useEffect(() => {
+    if (activeTab === 'admin-dashboard') {
+      window.history.replaceState(null, '', '/admin');
+    } else {
+      window.history.replaceState(null, '', '/');
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     const handleResize = () => {

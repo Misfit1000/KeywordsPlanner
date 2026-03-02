@@ -332,45 +332,7 @@ export default function Dashboard({
  regionalInterest={data.regionalInterest}
  />
 
- {/* SERP Features */}
- <motion.div
- initial={{ opacity: 0, y: 20 }}
- animate={{ opacity: 1, y: 0 }}
- transition={{ duration: 0.6, delay: 0.7 }}
- >
- <motion.div
- whileHover={{ y: -5 }}
- transition={{ type:"spring", stiffness: 400, damping: 25 }}
- className="bg-card border border-border rounded-3xl p-6 hover:border-accent/30 transition-colors group relative overflow-hidden shadow-2xl"
- >
- {loading && (
- <div className="absolute inset-0 z-50 bg-background/50 backdrop-blur-sm flex items-center justify-center">
- <Loader2 className="w-8 h-8 text-accent animate-spin"/>
- </div>
- )}
- <div className="flex items-center gap-3 mb-2">
- <div className="p-2 bg-accent/10 rounded-lg text-accent group-hover:scale-110 transition-transform duration-300">
- <LayoutTemplate className="w-5 h-5"/>
- </div>
- <h3 className="text-xl font-bold text-foreground">SERP Features</h3>
- </div>
- <p className="text-muted-foreground text-xs mb-6">Special elements appearing on the Search Engine Results Page.</p>
- <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
- {data.serpFeatures.map((feature, i) => (
- <motion.div
- key={i}
- whileHover={{ scale: 1.02, x: 4 }}
- className="p-3 bg-muted/50 border border-border rounded-xl text-sm text-foreground flex items-center gap-3 hover:bg-accent/10 hover:text-accent hover:border-accent/30 transition-all cursor-default group/feature"
- >
- <div className="p-1.5 bg-card rounded-lg text-muted-foreground group-hover/feature:text-accent shadow-sm transition-colors">
- {getSerpFeatureIcon(feature)}
- </div>
- <span className="font-medium">{feature}</span>
- </motion.div>
- ))}
- </div>
- </motion.div>
- </motion.div>
+
  </div>
 
  <div className="lg:col-span-1">

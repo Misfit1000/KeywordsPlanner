@@ -11,7 +11,6 @@ const navItems: { icon: any, label: string, id: TabType, adminOnly?: boolean }[]
  { icon: Target, label: 'Tracked Competitors', id: 'tracked-competitors' },
  { icon: Link, label: 'Backlink Analytics', id: 'backlink-analytics' },
  { icon: User, label: 'User Profile', id: 'user-profile' },
- { icon: ShieldAlert, label: 'Admin Dashboard', id: 'admin-dashboard', adminOnly: true },
 ];
 
 interface SidebarProps {
