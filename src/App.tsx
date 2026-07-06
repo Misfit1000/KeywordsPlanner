@@ -75,19 +75,6 @@ const LOCATIONS = [
   { code: 'NP', name: 'Nepal' },
 ];
 
-const POPULAR_KEYWORDS = [
-  "artificial intelligence", "machine learning", "saas marketing", "seo tools",
-  "content marketing", "digital marketing", "social media marketing", "email marketing",
-  "affiliate marketing", "ecommerce seo", "local seo", "link building",
-  "keyword research", "technical seo", "on-page seo", "python programming",
-  "javascript frameworks", "react js", "next js", "tailwind css",
-  "web development", "app development", "ui ux design", "graphic design",
-  "video editing", "data science", "data analytics", "business intelligence",
-  "cloud computing", "cybersecurity", "blockchain technology", "cryptocurrency",
-  "personal finance", "investing strategies", "real estate", "fitness tips",
-  "healthy recipes", "weight loss", "mental health", "travel destinations",
-  "photography tips", "home decor", "diy projects", "parenting advice", "pet care"
-];
 
 export default function App() {
   const { user, loading: authLoading, logout, unverifiedEmail, setUnverifiedEmail } = useAuth();
@@ -108,16 +95,6 @@ export default function App() {
   const [isLocating, setIsLocating] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (keyword.trim()) {
-      const filtered = POPULAR_KEYWORDS.filter(k => k.toLowerCase().includes(keyword.toLowerCase()) && k.toLowerCase() !== keyword.toLowerCase()).slice(0, 3);
-      setSuggestions(filtered);
-    } else {
-      setSuggestions([]);
-    }
-  }, [keyword]);
 
   useEffect(() => {
     const loadRecent = () => {
@@ -515,7 +492,7 @@ export default function App() {
                       type="text"
                       value={keyword}
                       onChange={(e) => setKeyword(e.target.value)}
-                      placeholder="Search keywords..."
+                      placeholder="Search audits, reports, pages..."
                       className="flex-1 bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground px-3 py-2 text-sm font-medium min-w-0"
                     />
                     <div className="flex items-center gap-1 pr-2 flex-shrink-0">

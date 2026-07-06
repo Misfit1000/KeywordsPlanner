@@ -24,7 +24,7 @@ export interface CrawledPageInfo {
 
 export interface FullAuditResult {
   jobId: string;
-  targetUrl: string;
+  url: string;
   status: 'pending' | 'crawling' | 'analyzing' | 'completed' | 'failed';
   startedAt: string;
   completedAt?: string;

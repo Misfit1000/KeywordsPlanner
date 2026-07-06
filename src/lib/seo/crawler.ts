@@ -64,7 +64,7 @@ export async function crawlDomain(startUrl: string, options: CrawlOptions = {}):
     const processQueue = async () => {
       if (options.auditId) {
         auditStore.appendAuditEvent(options.auditId, {
-          type: 'page_discovered',
+          type: 'progress_update' as any,
           pagesDiscovered: visited.size + toVisit.length,
           pagesCrawled: results.length,
           progress: 15 + Math.floor((results.length / maxPages) * 40)
@@ -174,8 +174,15 @@ export async function crawlDomain(startUrl: string, options: CrawlOptions = {}):
                 const normalized = normalizeUrl(link.href, response.url);
                 if (normalized && isSameDomain(normalized, startUrl)) {
                   const cleanUrl = stripTrackingParams(normalized);
-                  if (!visited.has(cleanUrl)) {
+                  if (!visited.has(cleanUrl) && !toVisit.some(item => item.url === cleanUrl)) {
                     toVisit.push({ url: cleanUrl, depth: depth + 1, discoveredFrom: url });
+                    if (options.auditId) {
+                      eventEmitter.emitPageDiscovered(options.auditId, cleanUrl, {
+                        crawlDepth: depth + 1,
+                        discoveredFrom: url,
+                        pagesDiscovered: visited.size + toVisit.length
+                      });
+                    }
                   }
                 }
               }
