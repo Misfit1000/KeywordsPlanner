@@ -1,3 +1,5 @@
+import { API_ROUTES } from '../lib/api/routes';
+import { safeJsonFetch } from '../lib/http/safe-json';
 import React, { useState } from 'react';
 import { Search, Loader2, Download, TrendingUp, BarChart } from 'lucide-react';
 import { KeywordResult } from '../lib/keywords/generator';
@@ -15,14 +17,14 @@ export default function KeywordResearch({ keyword: initialKeyword }: { keyword?:
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/tools/keyword/research', {
+      const dataResp = await safeJsonFetch<any>(API_ROUTES.keywordResearch, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ seed: keyword })
       });
-      if (!response.ok) throw new Error('Failed to fetch keywords');
+      if (!dataResp.success) throw new Error((dataResp as any).error || 'Failed to fetch keywords');
       
-      const data = await response.json();
+      const data = dataResp.data;
       setResults(data.data.keywords || []);
     } catch (err: any) {
       setError(err.message);

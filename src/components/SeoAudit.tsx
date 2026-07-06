@@ -1,9 +1,12 @@
+import { API_ROUTES } from '../lib/api/routes';
+import { safeJsonFetch } from '../lib/http/safe-json';
+import { LiveAuditProgress } from './audit/LiveAuditProgress';
 import React, { useState, useEffect } from 'react';
 import { Activity, Play, RefreshCw, AlertTriangle, CheckCircle2, Globe, Clock, Layers, ShieldAlert, Zap } from 'lucide-react';
 import { FullAuditResult, AuditIssue } from '../lib/audit/types';
 
-export default function SeoAudit() {
-  const [url, setUrl] = useState('');
+export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
+  const [url, setUrl] = useState(initialUrl || '');
   const [maxPages, setMaxPages] = useState(25);
   const [loading, setLoading] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
@@ -12,56 +15,36 @@ export default function SeoAudit() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let interval: any;
-    if (jobId && (status === 'pending' || status === 'crawling' || status === 'analyzing')) {
-      interval = setInterval(async () => {
-        try {
-          const res = await fetch(`/api/tools/audit/status/${jobId}`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.success && data.data) {
-              setStatus(data.data.status);
-              
-              if (data.data.status === 'completed' || data.data.status === 'failed') {
-                clearInterval(interval);
-                const resultRes = await fetch(`/api/tools/audit/result/${jobId}`);
-                if (resultRes.ok) {
-                  const resultData = await resultRes.json();
-                  if (resultData.success) {
-                    setAuditResult(resultData.data);
-                  }
-                }
-                setLoading(false);
-              }
-            }
-          }
-        } catch(e) {
-          console.error(e);
-        }
-      }, 2000);
+    if (initialUrl && !loading && !jobId && !auditResult) {
+      startAudit();
     }
-    return () => clearInterval(interval);
-  }, [jobId, status]);
+  }, [initialUrl]);
 
-  const startAudit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const startAudit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!url.trim()) return;
     
     let targetUrl = url.trim();
-    if (!targetUrl.startsWith('http')) targetUrl = 'https://' + targetUrl;
+    if (!targetUrl.startsWith('http')) {
+      targetUrl = 'https://' + targetUrl;
+    }
     
     setLoading(true);
+    setAuditResult(null);
+    setJobId(null);
+    setError(null);
+
     setError(null);
     setAuditResult(null);
     setStatus('pending');
     
     try {
-      const res = await fetch('/api/tools/audit/start', {
+      const dataResp = await safeJsonFetch<any>(API_ROUTES.auditStart, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: targetUrl, maxPages })
       });
-      const data = await res.json();
+      const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
       if (!data.success) throw new Error(data.error);
       setJobId(data.data.jobId);
     } catch(err: any) {
@@ -117,17 +100,22 @@ export default function SeoAudit() {
         </div>
       )}
       
-      {loading && !auditResult && (
-        <div className="bg-card border border-border p-12 rounded-2xl flex flex-col items-center justify-center space-y-4">
-          <div className="relative">
-            <div className="w-16 h-16 border-4 border-muted rounded-full"></div>
-            <div className="w-16 h-16 border-4 border-accent border-t-transparent rounded-full animate-spin absolute inset-0"></div>
-          </div>
-          <h2 className="text-xl font-semibold">Running Audit...</h2>
-          <p className="text-muted-foreground">Status: <span className="text-accent font-medium">{status}</span></p>
-          <p className="text-sm text-muted-foreground">This may take a minute depending on crawl limit.</p>
-        </div>
-      )}
+      {jobId && !auditResult && (
+  <LiveAuditProgress 
+    auditId={jobId} 
+     
+    onComplete={async () => {
+      try {
+        const dataResp = await safeJsonFetch<any>(API_ROUTES.auditResult(jobId));
+        const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
+        if (data.success) {
+          setAuditResult(data.data);
+          setJobId(null);
+        }
+      } catch(e) {}
+    }} 
+  />
+)}
 
       {auditResult && auditResult.status === 'completed' && (
         <div className="space-y-6">

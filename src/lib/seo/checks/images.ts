@@ -1,7 +1,7 @@
 import { AuditIssue } from '../../audit/types';
 import { CHECK_REGISTRY } from './registry';
 
-export function run(pageData: any): AuditIssue[] {
+export function run(pageData: any, auditId?: string): AuditIssue[] {
   const issues: AuditIssue[] = [];
   const url = pageData.url || '';
   const d = pageData;

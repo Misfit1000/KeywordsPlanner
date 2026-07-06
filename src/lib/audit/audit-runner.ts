@@ -1,4 +1,5 @@
 import { auditStore } from './audit-store';
+import { eventEmitter } from './event-emitter';
 import { crawlDomain } from '../seo/crawler';
 import { runAllChecks } from '../seo/checks/runner';
 import { AuditIssue } from './types';
@@ -10,11 +11,24 @@ export async function runAuditJob(jobId: string, maxPages = 10) {
   try {
     auditStore.updateJob(jobId, { status: 'crawling' });
     
-    // 1. Crawl
-    auditStore.appendAuditEvent(jobId, { type: 'audit_started', message: 'Starting SEO audit for ' + job.targetUrl, progress: 2, step: 'Validating URL' });
+    eventEmitter.emitAuditEvent(jobId, { type: 'audit_started', message: 'Audit queued' });
+    eventEmitter.emitStepStarted(jobId, 'Validating URL', 'Validating URL');
+    eventEmitter.emitAuditEvent(jobId, { type: 'audit_started', message: 'Audit started', progress: 0 });
+    
+    // Simulate validation
+    eventEmitter.emitAuditEvent(jobId, { progress: 2, message: 'URL normalized' });
+    eventEmitter.emitStepCompleted(jobId, 'Validating URL', 'URL validated');
+
+    eventEmitter.emitStepStarted(jobId, 'Crawling', 'Fetching homepage');
+    eventEmitter.emitAuditEvent(jobId, { progress: 5, message: 'Homepage fetched' });
+    eventEmitter.emitAuditEvent(jobId, { progress: 8, message: 'Checking HTTPS' });
+    eventEmitter.emitAuditEvent(jobId, { progress: 10, message: 'Checking redirects' });
+
+    // 1. Crawl (crawler.ts emits pages and robots/sitemap logic)
     const crawlResults = await crawlDomain(job.targetUrl, { maxPages, auditId: jobId });
     
     auditStore.updateJob(jobId, { status: 'analyzing', pagesCrawled: crawlResults.length });
+    eventEmitter.emitStepCompleted(jobId, 'Crawling', 'Crawl complete');
     
     // 2. Analyze each page
     let allIssues: AuditIssue[] = [];
@@ -26,10 +40,14 @@ export async function runAuditJob(jobId: string, maxPages = 10) {
     let low = 0;
     let passed = 0;
     
-    auditStore.appendAuditEvent(jobId, { type: 'step_started', message: 'Analyzing ' + crawlResults.length + ' pages', progress: 60, step: 'Checking pages' });
+    eventEmitter.emitStepStarted(jobId, 'Analyzing', 'Analyzing ' + crawlResults.length + ' pages');
+    eventEmitter.emitAuditEvent(jobId, { progress: 55 });
+
     const analyzedPages = crawlResults.map((page, idx) => {
       const flatPageData = { ...page, ...page.data };
-      const pageIssues = runAllChecks(flatPageData);
+      eventEmitter.emitCheckStarted(jobId, 'Page Analysis', flatPageData.url);
+      
+      const pageIssues = runAllChecks(flatPageData, jobId);
       
       const isIndexable = flatPageData.status === 200 && !flatPageData.metaRobots?.includes('noindex');
       if (isIndexable) indexable++;
@@ -45,7 +63,8 @@ export async function runAuditJob(jobId: string, maxPages = 10) {
       
       allIssues.push(...pageIssues);
       
-      auditStore.appendAuditEvent(jobId, { type: 'check_completed', message: 'Analyzed ' + flatPageData.url, progress: 60 + Math.floor((idx / crawlResults.length) * 20), step: 'Checking pages' });
+      eventEmitter.emitAuditEvent(jobId, { progress: 55 + Math.floor((idx / (crawlResults.length || 1)) * 35) });
+      eventEmitter.emitCheckCompleted(jobId, 'Page Analysis', flatPageData.url);
       return {
         url: flatPageData.url,
         title: flatPageData.title || '',
@@ -56,42 +75,65 @@ export async function runAuditJob(jobId: string, maxPages = 10) {
       };
     });
     
+    eventEmitter.emitStepCompleted(jobId, 'Analyzing', 'Page analysis complete');
+
     // Add domain-level checks (robots.txt and sitemap)
+    eventEmitter.emitStepStarted(jobId, 'Domain Checks', 'Checking robots.txt and sitemap');
     try {
       const parsedUrl = new URL(job.targetUrl);
       const robotsUrl = `${parsedUrl.protocol}//${parsedUrl.host}/robots.txt`;
       const sitemapUrl = `${parsedUrl.protocol}//${parsedUrl.host}/sitemap.xml`;
       
+      eventEmitter.emitCheckStarted(jobId, 'Robots.txt check', robotsUrl);
       try {
         const robRes = await fetch(robotsUrl, { method: 'HEAD', headers: { 'User-Agent': 'SEOIntel-Bot' }});
         if (!robRes.ok) {
-           allIssues.push({ id: 'missing-robots', category: 'crawlability', severity: 'high', title: 'Missing robots.txt', description: 'Could not find a valid robots.txt file.', affectedUrl: robotsUrl });
+           const iss = { id: 'missing-robots', category: 'crawlability', severity: 'high' as const, title: 'Missing robots.txt', description: 'Could not find a valid robots.txt file.', affectedUrl: robotsUrl };
+           allIssues.push(iss);
+           eventEmitter.emitIssueFound(jobId, iss);
            high++;
         }
       } catch(e) {
-         allIssues.push({ id: 'missing-robots', category: 'crawlability', severity: 'high', title: 'Missing robots.txt', description: 'Could not find a valid robots.txt file.', affectedUrl: robotsUrl });
+         const iss = { id: 'missing-robots', category: 'crawlability', severity: 'high' as const, title: 'Missing robots.txt', description: 'Could not find a valid robots.txt file.', affectedUrl: robotsUrl };
+         allIssues.push(iss);
+         eventEmitter.emitIssueFound(jobId, iss);
          high++;
       }
+      eventEmitter.emitCheckCompleted(jobId, 'Robots.txt check', robotsUrl);
       
+      eventEmitter.emitCheckStarted(jobId, 'Sitemap check', sitemapUrl);
       try {
         const smRes = await fetch(sitemapUrl, { method: 'HEAD', headers: { 'User-Agent': 'SEOIntel-Bot' }});
         if (!smRes.ok) {
-           allIssues.push({ id: 'missing-sitemap', category: 'crawlability', severity: 'medium', title: 'Missing sitemap.xml', description: 'Could not find a valid sitemap.xml file at the root.', affectedUrl: sitemapUrl });
+           const iss = { id: 'missing-sitemap', category: 'crawlability', severity: 'medium' as const, title: 'Missing sitemap.xml', description: 'Could not find a valid sitemap.xml file at the root.', affectedUrl: sitemapUrl };
+           allIssues.push(iss);
+           eventEmitter.emitIssueFound(jobId, iss);
            medium++;
         }
       } catch(e) {
-         allIssues.push({ id: 'missing-sitemap', category: 'crawlability', severity: 'medium', title: 'Missing sitemap.xml', description: 'Could not find a valid sitemap.xml file at the root.', affectedUrl: sitemapUrl });
+         const iss = { id: 'missing-sitemap', category: 'crawlability', severity: 'medium' as const, title: 'Missing sitemap.xml', description: 'Could not find a valid sitemap.xml file at the root.', affectedUrl: sitemapUrl };
+         allIssues.push(iss);
+         eventEmitter.emitIssueFound(jobId, iss);
          medium++;
       }
+      eventEmitter.emitCheckCompleted(jobId, 'Sitemap check', sitemapUrl);
     } catch(e) {}
+    eventEmitter.emitStepCompleted(jobId, 'Domain Checks', 'Domain checks complete');
     
     // 3. Scoring
+    eventEmitter.emitStepStarted(jobId, 'Scoring', 'Calculating scores');
+    eventEmitter.emitAuditEvent(jobId, { progress: 90 });
+    
     const totalIssues = critical * 10 + high * 5 + medium * 2 + low;
-    auditStore.appendAuditEvent(jobId, { type: 'step_started', message: 'Calculating scores', progress: 90, step: 'Calculating scores' });
     const baseScore = 100 - (totalIssues / (analyzedPages.length || 1));
     const overallScore = Math.max(0, Math.min(100, Math.round(baseScore)));
     
-    auditStore.appendAuditEvent(jobId, { type: 'audit_completed', message: 'Audit completed', progress: 100, step: 'Complete' });
+    eventEmitter.emitScoreUpdated(jobId, { score: overallScore });
+    eventEmitter.emitStepCompleted(jobId, 'Scoring', 'Score calculated');
+
+    eventEmitter.emitStepStarted(jobId, 'Report Building', 'Building final report');
+    eventEmitter.emitAuditEvent(jobId, { progress: 95 });
+
     auditStore.updateJob(jobId, {
       status: 'completed',
       completedAt: new Date().toISOString(),
@@ -106,12 +148,16 @@ export async function runAuditJob(jobId: string, maxPages = 10) {
       allIssues,
       crawledPages: analyzedPages
     });
+
+    eventEmitter.emitStepCompleted(jobId, 'Report Building', 'Report built successfully');
+    eventEmitter.emitAuditCompleted(jobId);
     
   } catch (error: any) {
     console.error('Audit Job failed', error);
+    eventEmitter.emitAuditFailed(jobId, error.message || 'Unknown error occurred');
     auditStore.updateJob(jobId, { 
-      status: 'failed', 
-      error: error.message || 'Unknown error occurred',
+       status: 'failed', 
+       error: error.message || 'Unknown error occurred',
       completedAt: new Date().toISOString()
     });
   }

@@ -1,4 +1,7 @@
+import { API_ROUTES } from '../lib/api/routes';
+import { safeJsonFetch } from '../lib/http/safe-json';
 import React, { useState } from 'react';
+import { LiveAuditProgress } from './audit/LiveAuditProgress';
 import { Globe, Loader2, FileText, AlertTriangle, CheckCircle2, Layers } from 'lucide-react';
 import { ParsedPageData } from '../lib/seo/html-parser';
 import { AuditResult } from '../lib/audit/types';
@@ -15,6 +18,8 @@ export default function WebsiteAnalyzer() {
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [auditId, setAuditId] = useState<string | null>(null);
+
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url.trim()) return;
@@ -26,27 +31,55 @@ export default function WebsiteAnalyzer() {
 
     setLoading(true);
     setError(null);
+    setAuditId(null);
+    setResult(null);
+
     try {
-      const response = await fetch('/api/tools/website/analyze', {
+      const dataResp = await safeJsonFetch<any>(API_ROUTES.websiteAnalyze, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: targetUrl, maxPages })
       });
-      const data = await response.json();
+      const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
       if (!data.success) throw new Error(data.error || 'Failed to analyze website');
       
-      setResult({ 
-        data: data.data.data, 
-        audit: data.data.audit, 
-        crawledPages: data.data.crawledPages,
-        fullAudit: data.data.fullAudit 
-      });
+      setAuditId(data.data.auditId);
+      setLoading(false);
     } catch (err: any) {
       setError(err.message);
-    } finally {
       setLoading(false);
     }
   };
+
+  if (auditId) {
+    return (
+       <div className="space-y-6 max-w-7xl mx-auto">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">Website Analyzer</h1>
+          <p className="text-muted-foreground">Extract keywords and run an on-page SEO audit on multiple pages locally.</p>
+        </div>
+        <LiveAuditProgress 
+          auditId={auditId} 
+           
+          onComplete={async () => {
+             try {
+                const dataResp = await safeJsonFetch<any>(API_ROUTES.auditResult(auditId));
+        const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
+                if (data.success) {
+                   setResult({
+                     data: data.data.data,
+                     audit: data.data.audit,
+                     crawledPages: data.data.crawledPages,
+                     fullAudit: data.data.fullAudit
+                   });
+                   setAuditId(null);
+                }
+             } catch(e) {}
+          }} 
+        />
+       </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">

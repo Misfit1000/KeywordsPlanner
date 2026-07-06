@@ -1,5 +1,6 @@
 import { SecurityIssue } from '../types';
 import { auditStore } from '../../audit/audit-store';
+import { eventEmitter } from '../../audit/event-emitter';
 
 const SAFE_PATHS = [
   '/.git/config',
@@ -14,9 +15,7 @@ export async function run(pageData: any, auditId?: string): Promise<SecurityIssu
   const origin = new URL(pageData.url).origin;
   
   for (const path of SAFE_PATHS) {
-    if (auditId) {
-      auditStore.appendAuditEvent(auditId, { type: 'check_started', message: `Checking ${path}`, step: 'Security Checks' });
-    }
+    // Check handled by outer loop
     
     try {
       const url = `${origin}${path}`;
@@ -36,9 +35,7 @@ export async function run(pageData: any, auditId?: string): Promise<SecurityIssu
           weight: 10
         });
         
-        if (auditId) {
-          auditStore.appendAuditEvent(auditId, { type: 'issue_found', severity: 'critical', message: `Exposed file found: ${path}`, affectedUrl: url });
-        }
+        // Issue emission is handled by outer loop
       }
       
       // Rate limit

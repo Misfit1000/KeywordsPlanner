@@ -4,7 +4,7 @@ import { FullAuditResult } from './types';
 export interface AuditJob {
   id: string;
   url: string;
-  type: 'seo' | 'security' | 'combined';
+  type: 'seo' | 'security' | 'combined' | 'competitor-gap' | 'website-analyzer';
   status: 'queued' | 'running' | 'crawling' | 'analyzing' | 'completed' | 'failed' | 'pending';
   progress: number;
   currentStep: string;
@@ -16,6 +16,11 @@ export interface AuditJob {
   startedAt: string;
   completedAt?: string;
   result?: any;
+  fullAudit?: any;
+  audit?: any;
+  gaps?: any;
+  crawledCounts?: any;
+  data?: any;
   error?: string;
   jobId?: string; // legacy support
 }
@@ -25,7 +30,7 @@ const eventsStore = new Map<string, AuditLiveEvent[]>();
 const subscriptions = new Map<string, Set<(event: AuditLiveEvent) => void>>();
 
 export const auditStore = {
-  createAudit(input: { url: string; type: 'seo' | 'security' | 'combined' }): string {
+  createAudit(input: { url: string; type: 'seo' | 'security' | 'combined' | 'competitor-gap' | 'website-analyzer' }): string {
     const id = Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
     const newJob: AuditJob = {
       id,

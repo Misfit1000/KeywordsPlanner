@@ -6,6 +6,7 @@ import Register from './components/Register';
 import Sidebar from './components/Sidebar';
 import CountrySelect from './components/CountrySelect';
 import CommandPalette from './components/CommandPalette';
+import LandingPage from './components/LandingPage';
 import { useAuth } from './contexts/AuthContext';
 import { useTheme } from './contexts/ThemeContext';
 
@@ -358,7 +359,7 @@ export default function App() {
       case 'content-briefs':
         return <ContentBriefs />;
       case 'seo-audit':
-        return <SeoAudit />;
+        return <SeoAudit initialUrl={searchedKeyword} />;
       case 'security-audit':
         return <SecurityAudit />;
       case 'rank-tracker':
@@ -463,109 +464,18 @@ export default function App() {
                 )}
               </div>
 
-              <motion.div
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.2, duration: 0.8, ease: "easeOut" }}
-                className="text-center mb-16"
-              >
-                <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-accent/10 text-accent text-sm font-medium mb-8 border border-accent/20">
-                  <TrendingUp className="w-4 h-4" />
-                  <span>Professional SEO Intelligence</span>
-                </div>
-                <h1 className="text-6xl md:text-8xl font-bold tracking-tighter mb-6 text-foreground font-display">
-                  SEO<span className="text-accent">Intel</span> <br/>
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-accent to-blue-400">Technical SEO Auditor.</span>
-                </h1>
-                <p className="text-muted-foreground text-lg md:text-2xl max-w-3xl mx-auto font-light leading-relaxed">
-                  Deterministic, rule-based SEO auditing, performance testing, and technical analysis. Import real metrics, crawl sites locally, and own your data.
-                </p>
-              </motion.div>
-
-              <form onSubmit={handleSearch} className="w-full max-w-4xl relative group">
-                <motion.div layoutId="search-container" className="relative flex flex-col md:flex-row items-center bg-card/80 backdrop-blur-xl border border-border rounded-3xl p-2 shadow-2xl z-20 transition-all duration-300 focus-within:ring-2 focus-within:ring-accent/50 focus-within:border-accent">
-                  <div className="absolute -inset-1 bg-gradient-to-r from-accent to-blue-500 rounded-3xl blur opacity-10 group-hover:opacity-30 transition duration-500 -z-10"></div>
-                  <div className="flex items-center w-full flex-1 px-4 py-4">
-                    <Search className="w-8 h-8 text-muted-foreground mr-4" />
-                    <input
-                      type="text"
-                      value={keyword}
-                      onChange={(e) => setKeyword(e.target.value)}
-                      placeholder="Enter a keyword (e.g., react server components)..."
-                      className="w-full bg-transparent border-none outline-none text-2xl text-foreground placeholder:text-muted-foreground/50 font-light"
-                      autoFocus
-                    />
-                  </div>
-                  
-                  <div className="w-full md:w-px h-px md:h-12 bg-border my-2 md:my-0 mx-2"></div>
-                  
-                  <div className="flex items-center justify-between w-full md:w-auto px-4 py-2 md:py-0">
-                    <CountrySelect 
-                      locations={LOCATIONS}
-                      value={location}
-                      onChange={setLocation}
-                      onGetLocation={handleGetLocation}
-                      isLocating={isLocating}
-                    />
-                  </div>
-                  
-                  <div className="flex items-center gap-2 w-full md:w-auto mt-4 md:mt-0 px-2 md:px-0">
-                    <button
-                      type="submit"
-                      className="flex-1 md:flex-none bg-muted text-foreground hover:bg-muted/80 px-6 py-3 rounded-2xl font-medium transition-colors duration-200 whitespace-nowrap"
-                    >
-                      Basic
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => handleSearch(e, undefined, true)}
-                      className="flex-1 md:flex-none bg-accent text-accent-foreground hover:bg-accent/90 px-6 py-3 rounded-2xl font-bold transition-colors duration-200 whitespace-nowrap flex items-center justify-center gap-2"
-                    >
-                      <TrendingUp className="w-5 h-5" />
-                      In-Depth
-                    </button>
-                  </div>
-                </motion.div>
-                
-                {/* Search suggestions/recent could go here */}
-                <div className="absolute top-full left-0 w-full pt-4 opacity-0 group-focus-within:opacity-100 transition-opacity duration-300 pointer-events-none group-focus-within:pointer-events-auto z-10">
-                  <div className="flex items-center justify-center gap-4 text-sm text-muted-foreground flex-wrap">
-                    {keyword.trim() ? (
-                      suggestions.length > 0 ? (
-                        <>
-                          <span className="flex items-center gap-1"><Search className="w-4 h-4" /> Suggestions:</span>
-                          {suggestions.map((search, index) => (
-                            <React.Fragment key={search}>
-                              <button type="button" onMouseDown={(e) => { e.preventDefault(); setKeyword(search); handleSearch(undefined, search); }} className="hover:text-foreground transition-colors">{search}</button>
-                              {index < suggestions.length - 1 && <span className="w-1 h-1 rounded-full bg-border"></span>}
-                            </React.Fragment>
-                          ))}
-                        </>
-                      ) : null
-                    ) : (
-                      <>
-                        <span className="flex items-center gap-1"><TrendingUp className="w-4 h-4" /> {recentSearches.length > 0 ? 'Recent:' : 'Trending:'}</span>
-                        {recentSearches.length > 0 ? (
-                          recentSearches.slice(0, 3).map((search, index) => (
-                            <React.Fragment key={search}>
-                              <button type="button" onMouseDown={(e) => { e.preventDefault(); setKeyword(search); handleSearch(undefined, search); }} className="hover:text-foreground transition-colors">{search}</button>
-                              {index < Math.min(recentSearches.length, 3) - 1 && <span className="w-1 h-1 rounded-full bg-border"></span>}
-                            </React.Fragment>
-                          ))
-                        ) : (
-                          <>
-                            <button type="button" onMouseDown={(e) => { e.preventDefault(); setKeyword('machine learning'); handleSearch(undefined, 'machine learning'); }} className="hover:text-foreground transition-colors">machine learning</button>
-                            <span className="w-1 h-1 rounded-full bg-border"></span>
-                            <button type="button" onMouseDown={(e) => { e.preventDefault(); setKeyword('saas marketing'); handleSearch(undefined, 'saas marketing'); }} className="hover:text-foreground transition-colors">saas marketing</button>
-                            <span className="w-1 h-1 rounded-full bg-border"></span>
-                            <button type="button" onMouseDown={(e) => { e.preventDefault(); setKeyword('seo tools'); handleSearch(undefined, 'seo tools'); }} className="hover:text-foreground transition-colors">seo tools</button>
-                          </>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </div>
-              </form>
+              <LandingPage 
+                onStartAudit={(url) => {
+                  setKeyword(url);
+                  setSearchedKeyword(url);
+                  setActiveTab('seo-audit');
+                  setIsSearching(true);
+                }}
+                onExploreFeatures={() => {
+                  setActiveTab('dashboard');
+                  setIsSearching(true);
+                }}
+              />
             </motion.div>
           ) : (
             <motion.div

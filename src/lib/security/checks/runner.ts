@@ -17,30 +17,51 @@ import { run as checkMisconfiguration } from './misconfiguration';
 import { run as checkExposedFiles } from './exposed-files';
 
 import { auditStore } from '../../audit/audit-store';
+import { eventEmitter } from '../../audit/event-emitter';
 
 export async function runSecurityChecks(pageData: any, auditId?: string): Promise<SecurityIssue[]> {
   let issues: SecurityIssue[] = [];
-  if (auditId) auditStore.appendAuditEvent(auditId, { type: 'check_started', message: 'Checking HTTPS', step: 'Security Checks' });
-  issues = issues.concat(checkHttps(pageData));
-  if (auditId) auditStore.appendAuditEvent(auditId, { type: 'check_started', message: 'Checking Headers', step: 'Security Checks' });
-  issues = issues.concat(checkHeaders(pageData));
-  if (auditId) auditStore.appendAuditEvent(auditId, { type: 'check_started', message: 'Checking Cookies', step: 'Security Checks' });
-  issues = issues.concat(checkCookies(pageData));
-  if (auditId) auditStore.appendAuditEvent(auditId, { type: 'check_started', message: 'Checking CORS', step: 'Security Checks' });
-  issues = issues.concat(checkCors(pageData));
-  issues = issues.concat(checkForms(pageData));
-  issues = issues.concat(checkInfoDisclosure(pageData));
-  issues = issues.concat(checkDependencySignals(pageData));
-  issues = issues.concat(checkClickjacking(pageData));
-  issues = issues.concat(checkContentSecurity(pageData));
-  issues = issues.concat(checkAuthSurface(pageData));
-  issues = issues.concat(checkMetadata(pageData));
-  issues = issues.concat(checkRobots(pageData));
-  issues = issues.concat(checkEmailTrust(pageData));
-  issues = issues.concat(checkMisconfiguration(pageData));
-  if (pageData.url && pageData.headers) {
-      if (auditId) auditStore.appendAuditEvent(auditId, { type: 'check_started', message: 'Checking Exposed Files', step: 'Security Checks' });
-      issues = issues.concat(await checkExposedFiles(pageData, auditId));
+
+  const checks = [
+    { name: 'HTTPS Configuration', fn: checkHttps },
+    { name: 'Security Headers', fn: checkHeaders },
+    { name: 'Cookies Security', fn: checkCookies },
+    { name: 'CORS Configuration', fn: checkCors },
+    { name: 'Forms Security', fn: checkForms },
+    { name: 'Information Disclosure', fn: checkInfoDisclosure },
+    { name: 'Dependency Signals', fn: checkDependencySignals },
+    { name: 'Clickjacking Protection', fn: checkClickjacking },
+    { name: 'Content Security Policy', fn: checkContentSecurity },
+    { name: 'Authentication Surface', fn: checkAuthSurface },
+    { name: 'Security Metadata', fn: checkMetadata },
+    { name: 'Robots.txt Security', fn: checkRobots },
+    { name: 'Email Trust', fn: checkEmailTrust },
+    { name: 'Server Misconfiguration', fn: checkMisconfiguration }
+  ];
+
+  for (const check of checks) {
+    if (auditId) eventEmitter.emitCheckStarted(auditId, check.name, pageData.url);
+    const resultIssues = check.fn(pageData);
+    if (auditId) {
+      resultIssues.forEach(issue => eventEmitter.emitIssueFound(auditId, issue));
+      eventEmitter.emitCheckCompleted(auditId, check.name, pageData.url);
+    }
+    issues = issues.concat(resultIssues);
   }
+
+  if (pageData.url && pageData.headers) {
+    if (auditId) eventEmitter.emitCheckStarted(auditId, 'Exposed Files', pageData.url);
+    const resultIssues = await checkExposedFiles(pageData, auditId);
+    if (auditId) {
+      // checkExposedFiles might already emit issues, but let's be safe. Wait, if we emit here, we might double-emit.
+      // Let's assume checkExposedFiles does not emit its own issues anymore, or we just emit here.
+      // In the previous version, we added emitIssueFound to exposed-files.ts.
+      // Let's remove auditId passing to checkExposedFiles and handle it here to be consistent.
+      resultIssues.forEach(issue => eventEmitter.emitIssueFound(auditId, issue));
+      eventEmitter.emitCheckCompleted(auditId, 'Exposed Files', pageData.url);
+    }
+    issues = issues.concat(resultIssues);
+  }
+
   return issues;
 }

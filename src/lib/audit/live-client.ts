@@ -1,3 +1,5 @@
+import { safeJsonFetch } from '../http/safe-json';
+import { API_ROUTES } from '../api/routes';
 import { AuditLiveEvent } from './events';
 
 export class LiveAuditClient {
@@ -16,7 +18,7 @@ export class LiveAuditClient {
   ) {}
 
   connect() {
-    this.eventSource = new EventSource(`/api/tools/audit/events/${this.auditId}`);
+    this.eventSource = new EventSource(API_ROUTES.auditEvents(this.auditId));
     
     this.eventSource.addEventListener('audit-event', (e) => {
       try {
@@ -48,8 +50,9 @@ export class LiveAuditClient {
 
   private async pollStatus() {
     try {
-      const res = await fetch(`/api/tools/audit/status/${this.auditId}`);
-      const data = await res.json();
+      const dataResp = await safeJsonFetch<any>(API_ROUTES.auditStatus(this.auditId));
+      if (!dataResp.success) throw new Error((dataResp as any).error);
+      const data = dataResp.data;
       if (data.success) {
         this.callbacks.onStatusUpdate(data.data);
         if (data.data.latestEvents) {

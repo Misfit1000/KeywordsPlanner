@@ -1,3 +1,5 @@
+import { API_ROUTES } from '../lib/api/routes';
+import { safeJsonFetch } from '../lib/http/safe-json';
 import React, { useState } from 'react';
 import { Layers, Loader2, Search, Download } from 'lucide-react';
 import { Cluster } from '../lib/keywords/clustering';
@@ -31,13 +33,13 @@ export default function KeywordClusters() {
       const genData = await genResponse.json();
       
       if (genData.keywords) {
-         const response = await fetch('/api/tools/clusters', {
+         const dataResp = await safeJsonFetch<any>(API_ROUTES.clusters, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ keywords: genData.keywords })
         });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Failed to cluster keywords');
+      const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
+        if (!dataResp.success) throw new Error(data.error || 'Failed to cluster keywords');
         setResults(data.data.clusters);
       }
     } catch (err: any) {

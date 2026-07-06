@@ -1,3 +1,5 @@
+import { API_ROUTES } from '../lib/api/routes';
+import { safeJsonFetch } from '../lib/http/safe-json';
 import React, { useState } from 'react';
 import { FileText, Loader2, Download, Search } from 'lucide-react';
 import { ContentBrief } from '../lib/keywords/content-brief';
@@ -27,13 +29,13 @@ export default function ContentBriefs() {
         suggestedContentType: 'Blog Post'
       };
 
-      const response = await fetch('/api/tools/content-brief', {
+      const dataResp = await safeJsonFetch<any>(API_ROUTES.contentBrief, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cluster: mockCluster })
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to generate brief');
+      const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
+      if (!dataResp.success) throw new Error(data.error || 'Failed to generate brief');
       
       setBrief(data.data.brief);
     } catch (err: any) {

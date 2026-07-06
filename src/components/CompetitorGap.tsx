@@ -1,4 +1,7 @@
+import { API_ROUTES } from '../lib/api/routes';
+import { safeJsonFetch } from '../lib/http/safe-json';
 import React, { useState } from 'react';
+import { LiveAuditProgress } from './audit/LiveAuditProgress';
 import { Target, Loader2, Search, ArrowRight, Download, Layers } from 'lucide-react';
 
 interface GapKeyword {
@@ -17,35 +20,64 @@ export default function CompetitorGap() {
   const [results, setResults] = useState<{gaps: GapKeyword[], crawledCounts: Record<string, number>} | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [auditId, setAuditId] = useState<string | null>(null);
+
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!myUrl.trim() || !comp1.trim()) return;
-
+    
     let targetUrl = myUrl.trim().startsWith('http') ? myUrl.trim() : 'https://' + myUrl.trim();
     let c1Url = comp1.trim().startsWith('http') ? comp1.trim() : 'https://' + comp1.trim();
     let c2Url = comp2.trim() ? (comp2.trim().startsWith('http') ? comp2.trim() : 'https://' + comp2.trim()) : undefined;
-
     const competitorUrls = [c1Url];
     if (c2Url) competitorUrls.push(c2Url);
-
+    
     setLoading(true);
     setError(null);
+    setAuditId(null);
+    setResults(null);
+    
     try {
-      const response = await fetch('/api/tools/competitor-gap', {
+      const dataResp = await safeJsonFetch<any>(API_ROUTES.competitorGap, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ myUrl: targetUrl, competitorUrls, maxPages })
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to analyze competitor gap');
+      const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
+      if (!dataResp.success) throw new Error(data.error || 'Failed to analyze competitor gap');
       
-      setResults({ gaps: data.data.gaps, crawledCounts: data.data.crawledCounts });
+      setAuditId(data.data.auditId);
+      setLoading(false);
     } catch (err: any) {
       setError(err.message);
-    } finally {
       setLoading(false);
     }
   };
+  
+  if (auditId) {
+    return (
+       <div className="space-y-6 max-w-7xl mx-auto">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">Competitor Keyword Gap</h1>
+          <p className="text-muted-foreground">Extract and compare content keyword gaps from website copy locally.</p>
+        </div>
+        <LiveAuditProgress 
+          auditId={auditId} 
+           // competitor-gap is a subset of seo
+          onComplete={async () => {
+             try {
+                const dataResp = await safeJsonFetch<any>(API_ROUTES.auditResult(auditId));
+        const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
+                if (data.success) {
+                   setResults({ gaps: data.data.gaps, crawledCounts: data.data.crawledCounts });
+                   setAuditId(null);
+                }
+             } catch(e) {}
+          }} 
+        />
+       </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">

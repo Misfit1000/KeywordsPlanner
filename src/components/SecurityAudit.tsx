@@ -1,3 +1,5 @@
+import { API_ROUTES } from '../lib/api/routes';
+import { safeJsonFetch } from '../lib/http/safe-json';
 import React, { useState } from 'react';
 import { LiveAuditProgress } from './audit/LiveAuditProgress';
 import { ShieldCheck, ShieldAlert, AlertTriangle, Info, CheckCircle2, Loader2, Lock, Download, Printer } from 'lucide-react';
@@ -19,13 +21,12 @@ export default function SecurityAudit() {
     setResult(null);
     
     try {
-      const res = await fetch('/api/tools/audit/start', {
+      const dataResp = await safeJsonFetch<any>(API_ROUTES.auditStart, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: url.trim(), type: 'security', options: {} })
       });
-      
-      const data = await res.json();
+      const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
       if (!data.success) throw new Error(data.error);
       
       setAuditId(data.data.auditId);
@@ -68,8 +69,8 @@ export default function SecurityAudit() {
         <LiveAuditProgress 
           auditId={auditId} 
           onComplete={async () => {
-            const res = await fetch(`/api/tools/audit/result/${auditId}`);
-            const data = await res.json();
+            const dataResp = await safeJsonFetch<any>(API_ROUTES.auditResult(auditId));
+        const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
             if (data.success) {
               setResult(data.data.result || data.data);
               setAuditId(null);
