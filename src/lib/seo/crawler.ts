@@ -2,6 +2,7 @@
 import { parseHtml, ParsedPageData } from './html-parser';
 import { normalizeUrl, isSameDomain, stripTrackingParams } from './url-utils';
 import { fetchRobotsTxt, isBlockedByRobots, getSitemapUrlsFromRobots, parseRobotsTxt } from './robots';
+import { auditStore } from '../audit/audit-store';
 
 export interface CrawlResult {
   url: string;
@@ -19,6 +20,7 @@ export interface CrawlResult {
 }
 
 export interface CrawlOptions {
+  auditId?: string;
   maxPages?: number;
   timeoutMs?: number;
   concurrency?: number;
@@ -38,6 +40,7 @@ export async function crawlDomain(startUrl: string, options: CrawlOptions = {}):
   const respectRobots = options.respectRobots !== false;
   
   let robotsTxt = '';
+  if (options.auditId) auditStore.appendAuditEvent(options.auditId, { type: 'step_started', message: 'Fetching robots.txt', step: 'Checking robots.txt', progress: 5 });
   if (respectRobots) {
     const origin = new URL(startUrl).origin;
     const r = await fetchRobotsTxt(origin);
@@ -55,6 +58,14 @@ export async function crawlDomain(startUrl: string, options: CrawlOptions = {}):
   
   return new Promise((resolve) => {
     const processQueue = async () => {
+      if (options.auditId) {
+        auditStore.appendAuditEvent(options.auditId, {
+          type: 'page_discovered',
+          pagesDiscovered: visited.size + toVisit.length,
+          pagesCrawled: results.length,
+          progress: 15 + Math.floor((results.length / maxPages) * 40)
+        });
+      }
       if (visited.size >= maxPages && activeWorkers === 0) {
         if (!isDone) {
           isDone = true;
@@ -97,6 +108,7 @@ export async function crawlDomain(startUrl: string, options: CrawlOptions = {}):
 
         activeWorkers++;
         
+        if (options.auditId) auditStore.appendAuditEvent(options.auditId, { type: 'page_crawling', message: 'Crawling ' + currentUrl, affectedUrl: currentUrl });
         // Use an IIFE so the async work doesn't block this while-loop execution.
         (async (url, depth, discoveredFrom) => {
           try {
@@ -114,6 +126,7 @@ export async function crawlDomain(startUrl: string, options: CrawlOptions = {}):
             const contentType = headers['content-type'] || '';
             
             if (!contentType.includes('text/html')) {
+              if (options.auditId) auditStore.appendAuditEvent(options.auditId, { type: 'page_crawled', message: 'Crawled ' + url, affectedUrl: url });
               results.push({
                 url,
                 finalUrl: response.url,
@@ -156,6 +169,7 @@ export async function crawlDomain(startUrl: string, options: CrawlOptions = {}):
               }
             }
           } catch (error: any) {
+            if (options.auditId) auditStore.appendAuditEvent(options.auditId, { type: 'page_failed', message: 'Failed to crawl ' + url + ': ' + error.message, affectedUrl: url, severity: 'medium' });
             results.push({
               url,
               finalUrl: url,

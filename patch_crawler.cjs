@@ -1,188 +1,48 @@
 const fs = require('fs');
+let code = fs.readFileSync('src/lib/seo/crawler.ts', 'utf8');
 
-const code = `
-import { parseHtml, ParsedPageData } from './html-parser';
-import { normalizeUrl, isSameDomain, stripTrackingParams } from './url-utils';
-import { fetchRobotsTxt, isBlockedByRobots, getSitemapUrlsFromRobots } from './robots';
-import { discoverSitemaps } from './sitemap';
+code = code.replace(
+  `import { fetchRobotsTxt, isBlockedByRobots, getSitemapUrlsFromRobots, parseRobotsTxt } from './robots';`,
+  `import { fetchRobotsTxt, isBlockedByRobots, getSitemapUrlsFromRobots, parseRobotsTxt } from './robots';\nimport { auditStore } from '../audit/audit-store';`
+);
 
-export interface CrawlResult {
-  url: string;
-  finalUrl: string;
-  status: number;
-  success: boolean;
-  error?: string;
-  data?: ParsedPageData;
-  headers: Record<string, string>;
-  loadTimeMs: number;
-  pageSizeBytes: number;
-  contentType: string;
-  depth?: number;
-  discoveredFrom?: string;
-}
+code = code.replace(
+  `export interface CrawlOptions {`,
+  `export interface CrawlOptions {\n  auditId?: string;`
+);
 
-export interface CrawlOptions {
-  maxPages?: number;
-  timeoutMs?: number;
-  concurrency?: number;
-  respectRobots?: boolean;
-}
+code = code.replace(
+  `let robotsTxt = '';
+  if (respectRobots) {`,
+  `let robotsTxt = '';
+  if (options.auditId) auditStore.appendAuditEvent(options.auditId, { type: 'step_started', message: 'Fetching robots.txt', step: 'Checking robots.txt', progress: 5 });
+  if (respectRobots) {`
+);
 
-interface QueueItem {
-  url: string;
-  depth: number;
-  discoveredFrom?: string;
-}
+code = code.replace(
+  `const processQueue = async () => {`,
+  `const processQueue = async () => {\n      if (options.auditId) {\n        auditStore.appendAuditEvent(options.auditId, {\n          type: 'page_discovered',\n          pagesDiscovered: visited.size + toVisit.length,\n          pagesCrawled: results.length,\n          progress: 15 + Math.floor((results.length / maxPages) * 40)\n        });\n      }`
+);
 
-export async function crawlDomain(startUrl: string, options: CrawlOptions = {}): Promise<CrawlResult[]> {
-  const maxPages = options.maxPages || 25;
-  const timeoutMs = options.timeoutMs || 10000;
-  const concurrency = options.concurrency || 3;
-  const respectRobots = options.respectRobots !== false;
-  
-  let robotsTxt = '';
-  if (respectRobots) {
-    const origin = new URL(startUrl).origin;
-    const r = await fetchRobotsTxt(origin + '/robots.txt');
-    if (r.found && r.content) {
-      robotsTxt = r.content;
-    }
-  }
+code = code.replace(
+  `// Use an IIFE`,
+  `if (options.auditId) auditStore.appendAuditEvent(options.auditId, { type: 'page_crawling', message: 'Crawling ' + currentUrl, affectedUrl: currentUrl });
+        // Use an IIFE`
+);
 
-  const visited = new Set<string>();
-  const toVisit: QueueItem[] = [{ url: startUrl, depth: 0 }];
-  const results: CrawlResult[] = [];
-  
-  let activeWorkers = 0;
-  let isDone = false;
-  
-  return new Promise((resolve) => {
-    const processQueue = async () => {
-      if (visited.size >= maxPages && activeWorkers === 0) {
-        if (!isDone) {
-          isDone = true;
-          resolve(results);
-        }
-        return;
-      }
-      
-      if (toVisit.length === 0 && activeWorkers === 0) {
-        if (!isDone) {
-          isDone = true;
-          resolve(results);
-        }
-        return;
-      }
-      
-      while (activeWorkers < concurrency && toVisit.length > 0 && visited.size < maxPages) {
-        const item = toVisit.shift()!;
-        let currentUrl = stripTrackingParams(item.url);
-        
-        if (visited.has(currentUrl)) continue;
-        visited.add(currentUrl);
-        
-        if (respectRobots && robotsTxt && isBlockedByRobots(robotsTxt, 'SEOIntelBot', currentUrl)) {
-          results.push({
-            url: currentUrl,
-            finalUrl: currentUrl,
-            status: 403,
-            success: false,
-            error: 'Blocked by robots.txt',
-            headers: {},
-            loadTimeMs: 0,
-            pageSizeBytes: 0,
-            contentType: '',
-            depth: item.depth,
-            discoveredFrom: item.discoveredFrom
-          });
-          continue;
-        }
+code = code.replace(
+  `results.push({
+                url,`,
+  `if (options.auditId) auditStore.appendAuditEvent(options.auditId, { type: 'page_crawled', message: 'Crawled ' + url, affectedUrl: url });\n              results.push({\n                url,`
+);
 
-        activeWorkers++;
-        
-        // Use an IIFE so the async work doesn't block this while-loop execution.
-        (async (url, depth, discoveredFrom) => {
-          try {
-            const startTime = Date.now();
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), timeoutMs);
-            const response = await fetch(url, {
-              headers: { 'User-Agent': 'SEOIntelBot/1.0 (Local Analysis Tools)' },
-              signal: controller.signal
-            });
-            clearTimeout(timeout);
-            const loadTimeMs = Date.now() - startTime;
-            const headers: Record<string, string> = {};
-            response.headers.forEach((val, key) => { headers[key.toLowerCase()] = val; });
-            const contentType = headers['content-type'] || '';
-            
-            if (!contentType.includes('text/html')) {
-              results.push({
-                url,
-                finalUrl: response.url,
-                status: response.status,
-                success: true,
-                headers,
-                loadTimeMs,
-                pageSizeBytes: 0,
-                contentType,
-                depth,
-                discoveredFrom
-              });
-            } else {
-              const html = await response.text();
-              const pageSizeBytes = Buffer.byteLength(html, 'utf8');
-              const parsedData = parseHtml(html, response.url);
-              
-              results.push({
-                url,
-                finalUrl: response.url,
-                status: response.status,
-                success: true,
-                data: parsedData,
-                headers,
-                loadTimeMs,
-                pageSizeBytes,
-                contentType,
-                depth,
-                discoveredFrom
-              });
-              
-              for (const link of parsedData.internalLinks) {
-                const normalized = normalizeUrl(link.href, response.url);
-                if (normalized && isSameDomain(normalized, startUrl)) {
-                  const cleanUrl = stripTrackingParams(normalized);
-                  if (!visited.has(cleanUrl)) {
-                    toVisit.push({ url: cleanUrl, depth: depth + 1, discoveredFrom: url });
-                  }
-                }
-              }
-            }
-          } catch (error: any) {
-            results.push({
+code = code.replace(
+  `results.push({
               url,
               finalUrl: url,
               status: 0,
-              success: false,
-              error: error.message,
-              headers: {},
-              loadTimeMs: 0,
-              pageSizeBytes: 0,
-              contentType: '',
-              depth,
-              discoveredFrom
-            });
-          } finally {
-            activeWorkers--;
-            processQueue();
-          }
-        })(currentUrl, item.depth, item.discoveredFrom);
-      }
-    };
-    
-    processQueue();
-  });
-}
-`;
+              success: false,`,
+  `if (options.auditId) auditStore.appendAuditEvent(options.auditId, { type: 'page_failed', message: 'Failed to crawl ' + url + ': ' + error.message, affectedUrl: url, severity: 'warning' });\n            results.push({\n              url,\n              finalUrl: url,\n              status: 0,\n              success: false,`
+);
 
 fs.writeFileSync('src/lib/seo/crawler.ts', code);

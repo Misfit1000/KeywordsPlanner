@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 const navItems: { icon: any, label: string, id: TabType, adminOnly?: boolean }[] = [
  { icon: LayoutDashboard, label: 'Dashboard', id: 'dashboard' },
  { icon: Activity, label: 'Full SEO Audit', id: 'seo-audit' },
+    { icon: Activity, label: 'Security Audit', id: 'security-audit' },
  { icon: Target, label: 'Competitor Content Gap', id: 'competitor-gap' },
  { icon: Globe, label: 'Crawl Website', id: 'website-analyzer' },
  { icon: Upload, label: 'Data Sources / Imports', id: 'imports' },

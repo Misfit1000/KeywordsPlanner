@@ -11,7 +11,8 @@ export async function runAuditJob(jobId: string, maxPages = 10) {
     auditStore.updateJob(jobId, { status: 'crawling' });
     
     // 1. Crawl
-    const crawlResults = await crawlDomain(job.targetUrl, { maxPages });
+    auditStore.appendAuditEvent(jobId, { type: 'audit_started', message: 'Starting SEO audit for ' + job.targetUrl, progress: 2, step: 'Validating URL' });
+    const crawlResults = await crawlDomain(job.targetUrl, { maxPages, auditId: jobId });
     
     auditStore.updateJob(jobId, { status: 'analyzing', pagesCrawled: crawlResults.length });
     
@@ -25,7 +26,8 @@ export async function runAuditJob(jobId: string, maxPages = 10) {
     let low = 0;
     let passed = 0;
     
-    const analyzedPages = crawlResults.map(page => {
+    auditStore.appendAuditEvent(jobId, { type: 'step_started', message: 'Analyzing ' + crawlResults.length + ' pages', progress: 60, step: 'Checking pages' });
+    const analyzedPages = crawlResults.map((page, idx) => {
       const flatPageData = { ...page, ...page.data };
       const pageIssues = runAllChecks(flatPageData);
       
@@ -43,6 +45,7 @@ export async function runAuditJob(jobId: string, maxPages = 10) {
       
       allIssues.push(...pageIssues);
       
+      auditStore.appendAuditEvent(jobId, { type: 'check_completed', message: 'Analyzed ' + flatPageData.url, progress: 60 + Math.floor((idx / crawlResults.length) * 20), step: 'Checking pages' });
       return {
         url: flatPageData.url,
         title: flatPageData.title || '',
@@ -84,9 +87,11 @@ export async function runAuditJob(jobId: string, maxPages = 10) {
     
     // 3. Scoring
     const totalIssues = critical * 10 + high * 5 + medium * 2 + low;
+    auditStore.appendAuditEvent(jobId, { type: 'step_started', message: 'Calculating scores', progress: 90, step: 'Calculating scores' });
     const baseScore = 100 - (totalIssues / (analyzedPages.length || 1));
     const overallScore = Math.max(0, Math.min(100, Math.round(baseScore)));
     
+    auditStore.appendAuditEvent(jobId, { type: 'audit_completed', message: 'Audit completed', progress: 100, step: 'Complete' });
     auditStore.updateJob(jobId, {
       status: 'completed',
       completedAt: new Date().toISOString(),

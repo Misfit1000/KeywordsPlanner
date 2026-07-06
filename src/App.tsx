@@ -17,6 +17,7 @@ const KeywordClusters = lazy(() => import('./components/KeywordClusters'));
 const CompetitorGap = lazy(() => import('./components/CompetitorGap'));
 const ContentBriefs = lazy(() => import('./components/ContentBriefs'));
 const SeoAudit = lazy(() => import('./components/SeoAudit'));
+const SecurityAudit = lazy(() => import('./components/SecurityAudit'));
 const RankTracker = lazy(() => import('./components/RankTracker'));
 const Imports = lazy(() => import('./components/Imports'));
 const Reports = lazy(() => import('./components/Reports'));
@@ -25,7 +26,7 @@ const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
 const PublicDiscovery = lazy(() => import('./components/PublicDiscovery'));
 const SearchData = lazy(() => import('./components/SearchData'));
 
-export type TabType = 'dashboard' | 'keyword-research' | 'website-analyzer' | 'keyword-clusters' | 'competitor-gap' | 'content-briefs' | 'seo-audit' | 'rank-tracker' | 'imports' | 'reports' | 'settings' | 'admin-dashboard' | 'public-discovery' | 'search-data';
+export type TabType = 'dashboard' | 'keyword-research' | 'website-analyzer' | 'keyword-clusters' | 'competitor-gap' | 'content-briefs' | 'seo-audit' | 'security-audit' | 'rank-tracker' | 'imports' | 'reports' | 'settings' | 'admin-dashboard' | 'public-discovery' | 'search-data';
 
 const LOCATIONS = [
   { code: 'US', name: 'United States' },
@@ -358,6 +359,8 @@ export default function App() {
         return <ContentBriefs />;
       case 'seo-audit':
         return <SeoAudit />;
+      case 'security-audit':
+        return <SecurityAudit />;
       case 'rank-tracker':
         return <RankTracker />;
       case 'public-discovery': return <PublicDiscovery />;

@@ -5,11 +5,10 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import Database from "better-sqlite3";
 import path from "path";
-import { fileURLToPath } from "url";
 import { apiRouter } from "./src/api/index";
+import { securityRouter } from "./src/lib/security/api/index";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const dirName = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
 
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-key-change-me";
 const PORT = 3000;
@@ -31,6 +30,7 @@ async function startServer() {
 
   // Mount tool APIs
   app.use('/api/tools', apiRouter);
+  app.use('/api/security-audit', securityRouter);
 
   // Auth Routes
   app.post("/api/auth/register", async (req, res) => {
@@ -104,9 +104,9 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.join(__dirname, "dist")));
+    app.use(express.static(path.join(dirName, "dist")));
     app.get("*", (req, res) => {
-      res.sendFile(path.join(__dirname, "dist", "index.html"));
+      res.sendFile(path.join(dirName, "dist", "index.html"));
     });
   }
 
