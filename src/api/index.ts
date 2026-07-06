@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { fetchAndAnalyze } from '../lib/seo/fetch-url';
+import { crawlDomain } from '../lib/seo/crawler';
+import { auditFullCrawl } from '../lib/seo/page-audit';
 import { generateKeywords } from '../lib/keywords/generator';
 import { clusterKeywords } from '../lib/keywords/clustering';
 import { buildContentBrief } from '../lib/keywords/content-brief';
@@ -16,11 +17,26 @@ apiRouter.post('/keyword/research', (req, res) => {
 });
 
 apiRouter.post('/website/analyze', async (req, res) => {
-  const { url } = req.body;
+  const { url, maxPages } = req.body;
   if (!url) return res.status(400).json({ error: 'URL is required' });
   
-  const result = await fetchAndAnalyze(url);
-  res.json(result);
+  try {
+    const crawls = await crawlDomain(url, { maxPages: maxPages || 25 });
+    const audit = auditFullCrawl(crawls);
+    
+    // For single page/initial URL representation
+    const initialCrawl = crawls.find(c => c.url === url || c.finalUrl === url) || crawls[0];
+    
+    res.json({ 
+      success: true, 
+      crawledPages: crawls.length,
+      data: initialCrawl?.data, 
+      fullAudit: audit,
+      audit: audit.pageResults.find(p => p.url === initialCrawl?.url)?.audit || audit.pageResults[0]?.audit
+    });
+  } catch(e: any) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 apiRouter.post('/clusters', (req, res) => {
@@ -40,27 +56,33 @@ apiRouter.post('/content-brief', (req, res) => {
 });
 
 apiRouter.post('/competitor-gap', async (req, res) => {
-  const { myUrl, competitorUrls } = req.body;
-  
-  // This is a simplified version. In a real app, we would crawl all URLs.
-  // For demonstration, we'll fetch just the homepages.
+  const { myUrl, competitorUrls, maxPages } = req.body;
   
   try {
-    const myResult = await fetchAndAnalyze(myUrl);
-    const myKeywords = myResult.success && myResult.data ? myResult.data.topKeywords : [];
+    const myCrawls = await crawlDomain(myUrl, { maxPages: maxPages || 25 });
+    const myPhrases = new Set<string>();
+    myCrawls.forEach(c => c.data?.topPhrases.forEach(p => myPhrases.add(p)));
+    myCrawls.forEach(c => c.data?.topKeywords.forEach(p => myPhrases.add(p)));
+    const myKeywords = Array.from(myPhrases);
     
     const competitorKeywords: Record<string, string[]> = {};
+    const crawledCounts: Record<string, number> = {};
+    crawledCounts[myUrl] = myCrawls.length;
+    
     for (const url of (competitorUrls || [])) {
-      const result = await fetchAndAnalyze(url);
-      if (result.success && result.data) {
-        let domain = url;
-        try { domain = new URL(url).hostname; } catch(e){}
-        competitorKeywords[domain] = result.data.topKeywords;
-      }
+      let domain = url;
+      try { domain = new URL(url).hostname; } catch(e){}
+      
+      const crawls = await crawlDomain(url, { maxPages: maxPages || 25 });
+      const phrases = new Set<string>();
+      crawls.forEach(c => c.data?.topPhrases.forEach(p => phrases.add(p)));
+      crawls.forEach(c => c.data?.topKeywords.forEach(p => phrases.add(p)));
+      competitorKeywords[domain] = Array.from(phrases);
+      crawledCounts[url] = crawls.length;
     }
     
     const gaps = analyzeCompetitorGap(myKeywords, competitorKeywords);
-    res.json({ gaps });
+    res.json({ gaps, crawledCounts });
   } catch(e: any) {
     res.status(500).json({ error: e.message });
   }
