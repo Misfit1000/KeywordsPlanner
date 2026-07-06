@@ -1,5 +1,6 @@
 import { API_ROUTES } from '../lib/api/routes';
 import { safeJsonFetch } from '../lib/http/safe-json';
+import { normalizeDomainInput } from '../lib/seo/url-utils';
 import React, { useState } from 'react';
 import { LiveAuditProgress } from './audit/LiveAuditProgress';
 import { Globe, Loader2, FileText, AlertTriangle, CheckCircle2, Layers } from 'lucide-react';
@@ -24,10 +25,7 @@ export default function WebsiteAnalyzer() {
     e.preventDefault();
     if (!url.trim()) return;
 
-    let targetUrl = url.trim();
-    if (!targetUrl.startsWith('http')) {
-      targetUrl = 'https://' + targetUrl;
-    }
+    let targetUrl = normalizeDomainInput(url);
 
     setLoading(true);
     setError(null);
@@ -93,7 +91,7 @@ export default function WebsiteAnalyzer() {
           <div className="flex-1 relative">
             <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
             <input
-              type="url"
+              type="text"
               value={url}
               onChange={e => setUrl(e.target.value)}
               placeholder="Enter a website URL (e.g. https://example.com)"

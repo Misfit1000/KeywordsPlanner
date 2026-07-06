@@ -1,5 +1,6 @@
 import { API_ROUTES } from '../lib/api/routes';
 import { safeJsonFetch } from '../lib/http/safe-json';
+import { normalizeDomainInput } from '../lib/seo/url-utils';
 import { LiveAuditProgress } from './audit/LiveAuditProgress';
 import React, { useState, useEffect } from 'react';
 import { Activity, Play, RefreshCw, AlertTriangle, CheckCircle2, Globe, Clock, Layers, ShieldAlert, Zap } from 'lucide-react';
@@ -24,10 +25,7 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
     if (e) e.preventDefault();
     if (!url.trim()) return;
     
-    let targetUrl = url.trim();
-    if (!targetUrl.startsWith('http')) {
-      targetUrl = 'https://' + targetUrl;
-    }
+    let targetUrl = normalizeDomainInput(url);
     
     setLoading(true);
     setAuditResult(null);
@@ -65,7 +63,7 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
           <div className="flex-1 relative">
             <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
             <input
-              type="url"
+              type="text"
               value={url}
               onChange={e => setUrl(e.target.value)}
               placeholder="Enter website URL to audit (e.g. https://example.com)"

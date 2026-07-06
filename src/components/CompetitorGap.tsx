@@ -1,5 +1,6 @@
 import { API_ROUTES } from '../lib/api/routes';
 import { safeJsonFetch } from '../lib/http/safe-json';
+import { normalizeDomainInput } from '../lib/seo/url-utils';
 import React, { useState } from 'react';
 import { LiveAuditProgress } from './audit/LiveAuditProgress';
 import { Target, Loader2, Search, ArrowRight, Download, Layers } from 'lucide-react';
@@ -25,13 +26,13 @@ export default function CompetitorGap() {
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!myUrl.trim() || !comp1.trim()) return;
-    
-    let targetUrl = myUrl.trim().startsWith('http') ? myUrl.trim() : 'https://' + myUrl.trim();
-    let c1Url = comp1.trim().startsWith('http') ? comp1.trim() : 'https://' + comp1.trim();
-    let c2Url = comp2.trim() ? (comp2.trim().startsWith('http') ? comp2.trim() : 'https://' + comp2.trim()) : undefined;
+
+    let targetUrl = normalizeDomainInput(myUrl);
+    let c1Url = normalizeDomainInput(comp1);
+    let c2Url = comp2.trim() ? normalizeDomainInput(comp2) : undefined;
     const competitorUrls = [c1Url];
     if (c2Url) competitorUrls.push(c2Url);
-    
+
     setLoading(true);
     setError(null);
     setAuditId(null);
@@ -92,7 +93,7 @@ export default function CompetitorGap() {
             <div>
               <label className="block text-sm font-medium mb-1">Your Website</label>
               <input
-                type="url"
+                type="text"
                 value={myUrl}
                 onChange={e => setMyUrl(e.target.value)}
                 placeholder="https://your-site.com"
@@ -116,7 +117,7 @@ export default function CompetitorGap() {
               <div>
                 <label className="block text-sm font-medium mb-1">Competitor 1</label>
                 <input
-                  type="url"
+                  type="text"
                   value={comp1}
                   onChange={e => setComp1(e.target.value)}
                   placeholder="https://competitor1.com"
@@ -127,7 +128,7 @@ export default function CompetitorGap() {
               <div>
                 <label className="block text-sm font-medium mb-1 text-muted-foreground">Competitor 2 (Optional)</label>
                 <input
-                  type="url"
+                  type="text"
                   value={comp2}
                   onChange={e => setComp2(e.target.value)}
                   placeholder="https://competitor2.com"

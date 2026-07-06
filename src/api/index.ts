@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { normalizeDomainInput } from '../lib/seo/url-utils';
 import { crawlDomain } from '../lib/seo/crawler';
 import { auditFullCrawl } from '../lib/seo/page-audit';
 import { generateKeywords } from '../lib/keywords/generator';
@@ -31,17 +32,18 @@ export const apiRouter = Router();
 apiRouter.post('/audit/start', asyncJsonRoute((req, res) => {
   try {
     const { url, maxPages, type = 'seo' } = req.body;
+    const targetUrl = normalizeDomainInput(url);
     if (!url) return res.status(400).json({ success: false, error: 'URL is required' });
     
     // We assume auditStore was updated to support createAudit(url, type) or similar, but let's check
     const auditId = typeof auditStore.createAudit === 'function' 
-      ? auditStore.createAudit({ url, type })
-      : auditStore.createJob(url); 
+      ? auditStore.createAudit({ url: targetUrl, type })
+      : auditStore.createJob(targetUrl); 
       
     // Start job asynchronously
     if (type === 'security') {
       import('../lib/security/audit-runner').then(m => {
-        m.runSecurityAudit(url, { auditId }).catch(console.error);
+        m.runSecurityAudit(targetUrl, { auditId }).catch(console.error);
       });
     } else {
       runAuditJob(auditId, maxPages || 25);
@@ -174,29 +176,30 @@ apiRouter.post('/keyword/research', asyncJsonRoute((req, res) => {
 apiRouter.post('/website/analyze', asyncJsonRoute(async (req, res) => {
   try {
     const { url, maxPages } = req.body;
+    const targetUrl = normalizeDomainInput(url);
     if (!url) return res.status(400).json({ success: false, error: 'URL is required' });
     
     // Create an audit job for website analyze
     const auditId = typeof auditStore.createAudit === 'function' 
-      ? auditStore.createAudit({ url, type: 'seo' }) // acts like SEO
-      : auditStore.createJob(url);
+      ? auditStore.createAudit({ url: targetUrl, type: 'seo' }) // acts like SEO
+      : auditStore.createJob(targetUrl);
       
     // Run in background
     setTimeout(async () => {
       try {
         const { eventEmitter } = require('../lib/audit/event-emitter');
         auditStore.updateJob(auditId, { status: 'crawling' });
-        eventEmitter.emitAuditEvent(auditId, { type: 'audit_started', message: 'Starting website analyzer', progress: 5, step: 'Crawling ' + url });
+        eventEmitter.emitAuditEvent(auditId, { type: 'audit_started', message: 'Starting website analyzer', progress: 5, step: 'Crawling ' + targetUrl });
         
         eventEmitter.emitStepStarted(auditId, 'Crawling', 'Crawling website');
-        const crawls = await crawlDomain(url, { maxPages: maxPages || 25, auditId });
+        const crawls = await crawlDomain(targetUrl, { maxPages: maxPages || 25, auditId });
         eventEmitter.emitStepCompleted(auditId, 'Crawling', 'Crawling complete');
         
         eventEmitter.emitStepStarted(auditId, 'Analyzing', 'Analyzing pages');
         const audit = auditFullCrawl(crawls);
         eventEmitter.emitStepCompleted(auditId, 'Analyzing', 'Analysis complete');
         
-        const initialCrawl = crawls.find(c => c.url === url || c.finalUrl === url) || crawls[0];
+        const initialCrawl = crawls.find(c => c.url === targetUrl || c.finalUrl === targetUrl) || crawls[0];
         
         auditStore.updateJob(auditId, {
           status: 'completed',
@@ -255,7 +258,9 @@ apiRouter.post('/content-brief', asyncJsonRoute((req, res) => {
 
 apiRouter.post('/competitor-gap', asyncJsonRoute(async (req, res) => {
   try {
-    const { myUrl, competitorUrls, maxPages } = req.body;
+    const { myUrl: rawMyUrl, competitorUrls: rawCompUrls, maxPages } = req.body;
+    const myUrl = normalizeDomainInput(rawMyUrl);
+    const competitorUrls = (rawCompUrls || []).map((u: string) => normalizeDomainInput(u));
     if (!myUrl) return res.status(400).json({ success: false, error: 'My URL is required' });
     
     // Create an audit job for competitor gap

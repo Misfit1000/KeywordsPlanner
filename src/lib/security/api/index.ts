@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { runSecurityAudit } from '../audit-runner';
+import { normalizeDomainInput } from '../../seo/url-utils';
 
 
 function asyncJsonRoute(handler: any) {
@@ -26,8 +27,8 @@ securityRouter.post('/run', asyncJsonRoute(async (req, res) => {
     const { url, options } = req.body;
     if (!url) return res.status(400).json({ success: false, error: 'URL is required' });
     
-    let targetUrl = url.trim();
-    if (!targetUrl.startsWith('http')) targetUrl = 'https://' + targetUrl;
+    let targetUrl = normalizeDomainInput(url);
+    
     
     const auditResult = await runSecurityAudit(targetUrl, options);
     res.json({ success: true, data: auditResult });

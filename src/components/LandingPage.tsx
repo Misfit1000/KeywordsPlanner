@@ -46,7 +46,7 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
               <div className="flex items-center flex-1 px-4 py-4 w-full">
                 <Globe className="w-6 h-6 text-muted-foreground mr-4 shrink-0" />
                 <input
-                  type="url"
+                  type="text"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   placeholder="https://example.com"

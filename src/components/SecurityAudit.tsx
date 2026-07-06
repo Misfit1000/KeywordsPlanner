@@ -1,5 +1,6 @@
 import { API_ROUTES } from '../lib/api/routes';
 import { safeJsonFetch } from '../lib/http/safe-json';
+import { normalizeDomainInput } from '../lib/seo/url-utils';
 import React, { useState } from 'react';
 import { LiveAuditProgress } from './audit/LiveAuditProgress';
 import { ShieldCheck, ShieldAlert, AlertTriangle, Info, CheckCircle2, Loader2, Lock, Download, Printer } from 'lucide-react';
@@ -15,6 +16,7 @@ export default function SecurityAudit() {
   const startAudit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url.trim()) return;
+    let targetUrl = normalizeDomainInput(url);
     
     setLoading(true);
     setError(null);
@@ -24,7 +26,8 @@ export default function SecurityAudit() {
       const dataResp = await safeJsonFetch<any>(API_ROUTES.auditStart, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url.trim(), type: 'security', options: {} })
+        
+        body: JSON.stringify({ url: targetUrl, type: 'security', options: {} })
       });
       const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
       if (!data.success) throw new Error(data.error);
@@ -48,7 +51,7 @@ export default function SecurityAudit() {
 
       <form onSubmit={startAudit} className="flex gap-2">
         <input 
-          type="url" 
+          type="text" 
           required 
           placeholder="https://example.com"
           value={url}
