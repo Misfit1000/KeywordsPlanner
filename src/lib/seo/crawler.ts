@@ -39,7 +39,7 @@ export async function crawlDomain(startUrl: string, options: CrawlOptions = {}):
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
       const response = await fetch(currentUrl, {
-        headers: { 'User-Agent': 'KeywordsIntelBot/1.0 (Local Analysis Tools)' },
+        headers: { 'User-Agent': 'SEOIntelBot/1.0 (Local Analysis Tools)' },
         signal: controller.signal
       });
       clearTimeout(timeout);

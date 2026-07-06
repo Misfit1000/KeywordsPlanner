@@ -22,8 +22,10 @@ const Imports = lazy(() => import('./components/Imports'));
 const Reports = lazy(() => import('./components/Reports'));
 const Settings = lazy(() => import('./components/Settings'));
 const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
+const PublicDiscovery = lazy(() => import('./components/PublicDiscovery'));
+const SearchData = lazy(() => import('./components/SearchData'));
 
-export type TabType = 'dashboard' | 'keyword-research' | 'website-analyzer' | 'keyword-clusters' | 'competitor-gap' | 'content-briefs' | 'seo-audit' | 'rank-tracker' | 'imports' | 'reports' | 'settings' | 'admin-dashboard';
+export type TabType = 'dashboard' | 'keyword-research' | 'website-analyzer' | 'keyword-clusters' | 'competitor-gap' | 'content-briefs' | 'seo-audit' | 'rank-tracker' | 'imports' | 'reports' | 'settings' | 'admin-dashboard' | 'public-discovery' | 'search-data';
 
 const LOCATIONS = [
   { code: 'US', name: 'United States' },
@@ -358,6 +360,8 @@ export default function App() {
         return <SeoAudit />;
       case 'rank-tracker':
         return <RankTracker />;
+      case 'public-discovery': return <PublicDiscovery />;
+      case 'search-data': return <SearchData />;
       case 'imports':
         return <Imports />;
       case 'reports':

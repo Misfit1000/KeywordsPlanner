@@ -115,7 +115,7 @@ export const getPlatformSettings = async () => {
     return snap.data();
   }
   return {
-    platformName: 'Keyword Intelligence',
+    platformName: 'SEOIntel Audit',
     supportEmail: 'support@keywordintelligence.com',
     requireEmailVerification: false,
     publicRegistration: true

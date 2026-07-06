@@ -11,7 +11,7 @@ export async function runAuditJob(jobId: string, maxPages = 10) {
     auditStore.updateJob(jobId, { status: 'crawling' });
     
     // 1. Crawl
-    const crawlResults = await crawlDomain(job.targetUrl, maxPages);
+    const crawlResults = await crawlDomain(job.targetUrl, { maxPages });
     
     auditStore.updateJob(jobId, { status: 'analyzing', pagesCrawled: crawlResults.length });
     
@@ -26,12 +26,7 @@ export async function runAuditJob(jobId: string, maxPages = 10) {
     let passed = 0;
     
     const analyzedPages = crawlResults.map(page => {
-      // Flatten for the checks
-      const flatPageData = {
-        ...page,
-        ...page.data,
-      };
-      
+      const flatPageData = { ...page, ...page.data };
       const pageIssues = runAllChecks(flatPageData);
       
       const isIndexable = flatPageData.status === 200 && !flatPageData.metaRobots?.includes('noindex');
@@ -43,7 +38,7 @@ export async function runAuditJob(jobId: string, maxPages = 10) {
         else if (issue.severity === 'high') high++;
         else if (issue.severity === 'medium') medium++;
         else if (issue.severity === 'low') low++;
-        else if (issue.severity === 'info') passed++; // Treat info as passed/ok for now
+        else if (issue.severity === 'info') passed++;
       });
       
       allIssues.push(...pageIssues);
@@ -57,6 +52,35 @@ export async function runAuditJob(jobId: string, maxPages = 10) {
         issues: pageIssues
       };
     });
+    
+    // Add domain-level checks (robots.txt and sitemap)
+    try {
+      const parsedUrl = new URL(job.targetUrl);
+      const robotsUrl = `${parsedUrl.protocol}//${parsedUrl.host}/robots.txt`;
+      const sitemapUrl = `${parsedUrl.protocol}//${parsedUrl.host}/sitemap.xml`;
+      
+      try {
+        const robRes = await fetch(robotsUrl, { method: 'HEAD', headers: { 'User-Agent': 'SEOIntel-Bot' }});
+        if (!robRes.ok) {
+           allIssues.push({ id: 'missing-robots', category: 'crawlability', severity: 'high', title: 'Missing robots.txt', description: 'Could not find a valid robots.txt file.', affectedUrl: robotsUrl });
+           high++;
+        }
+      } catch(e) {
+         allIssues.push({ id: 'missing-robots', category: 'crawlability', severity: 'high', title: 'Missing robots.txt', description: 'Could not find a valid robots.txt file.', affectedUrl: robotsUrl });
+         high++;
+      }
+      
+      try {
+        const smRes = await fetch(sitemapUrl, { method: 'HEAD', headers: { 'User-Agent': 'SEOIntel-Bot' }});
+        if (!smRes.ok) {
+           allIssues.push({ id: 'missing-sitemap', category: 'crawlability', severity: 'medium', title: 'Missing sitemap.xml', description: 'Could not find a valid sitemap.xml file at the root.', affectedUrl: sitemapUrl });
+           medium++;
+        }
+      } catch(e) {
+         allIssues.push({ id: 'missing-sitemap', category: 'crawlability', severity: 'medium', title: 'Missing sitemap.xml', description: 'Could not find a valid sitemap.xml file at the root.', affectedUrl: sitemapUrl });
+         medium++;
+      }
+    } catch(e) {}
     
     // 3. Scoring
     const totalIssues = critical * 10 + high * 5 + medium * 2 + low;
@@ -73,7 +97,7 @@ export async function runAuditJob(jobId: string, maxPages = 10) {
       highIssues: high,
       mediumIssues: medium,
       lowIssues: low,
-      passedChecks: passed, // Mock passed count based on missing criticals
+      passedChecks: passed,
       allIssues,
       crawledPages: analyzedPages
     });

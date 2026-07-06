@@ -1,5 +1,5 @@
 export type IssueSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
-export type AuditCategory = 'technical' | 'on-page' | 'crawlability' | 'indexability' | 'content' | 'performance' | 'security' | 'links';
+export type AuditCategory = string;
 
 export interface AuditIssue {
   id: string;
@@ -7,9 +7,10 @@ export interface AuditIssue {
   severity: IssueSeverity;
   title: string;
   description: string;
-  howToFix?: string;
+  recommendation?: string;
   affectedUrl?: string;
   element?: string;
+  evidence?: string;
 }
 
 export interface CrawledPageInfo {

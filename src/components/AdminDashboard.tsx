@@ -459,7 +459,7 @@ function AdminContent() {
 
 function AdminSettings() {
  const [settings, setSettings] = useState({
- platformName: 'Keyword Intelligence',
+ platformName: 'SEOIntel Audit',
  supportEmail: 'support@keywordintelligence.com',
  requireEmailVerification: false,
  publicRegistration: true

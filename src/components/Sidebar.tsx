@@ -12,6 +12,8 @@ const navItems: { icon: any, label: string, id: TabType, adminOnly?: boolean }[]
  { icon: PieChart, label: 'Reports & Exports', id: 'reports' },
  { icon: Search, label: 'Content Opportunities', id: 'keyword-research' },
  { icon: Layers, label: 'Topic Clusters', id: 'keyword-clusters' },
+ { icon: Globe, label: 'Public Web Discovery', id: 'public-discovery' },
+ { icon: BarChart3, label: 'Search Data', id: 'search-data' },
  { icon: FileText, label: 'Content Briefs', id: 'content-briefs' },
  { icon: BarChart3, label: 'Rankings Data', id: 'rank-tracker' },
 ];
