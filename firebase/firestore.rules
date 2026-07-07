@@ -1,0 +1,108 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function auditPath(auditId) {
+      return /databases/$(database)/documents/audits/$(auditId);
+    }
+
+    function ownsAudit(auditId) {
+      return signedIn() && get(auditPath(auditId)).data.userId == request.auth.uid;
+    }
+
+    function allowedClientCreateFields() {
+      return request.resource.data.keys().hasOnly([
+        'id',
+        'userId',
+        'projectId',
+        'submittedInput',
+        'normalizedUrl',
+        'finalUrl',
+        'hostname',
+        'mode',
+        'status',
+        'progress',
+        'currentPhase',
+        'currentUrl',
+        'currentCheck',
+        'pageLimit',
+        'pagesDiscovered',
+        'pagesCrawled',
+        'checksTotal',
+        'checksCompleted',
+        'issuesFound',
+        'criticalCount',
+        'highCount',
+        'mediumCount',
+        'lowCount',
+        'createdAt',
+        'updatedAt',
+        'completedAt',
+        'expiresAt',
+        'cancelledAt',
+        'error'
+      ]);
+    }
+
+    function clientCreatesQueuedOwnAudit() {
+      return signedIn()
+        && allowedClientCreateFields()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'queued'
+        && request.resource.data.progress == 0
+        && request.resource.data.finalUrl == null
+        && request.resource.data.completedAt == null
+        && request.resource.data.cancelledAt == null
+        && request.resource.data.error == null
+        && request.resource.data.pagesCrawled == 0
+        && request.resource.data.issuesFound == 0;
+    }
+
+    match /audits/{auditId} {
+      allow read: if ownsAudit(auditId);
+      allow create: if clientCreatesQueuedOwnAudit();
+
+      // Browser clients must not mutate worker/admin-owned fields such as
+      // locks, final URL, counts, scores, or terminal status. Use API routes
+      // for cancel/start actions; the worker uses firebase-admin and bypasses rules.
+      allow update, delete: if false;
+
+      match /events/{eventId} {
+        allow read: if ownsAudit(auditId);
+        allow write: if false;
+      }
+
+      match /pages/{pageId} {
+        allow read: if ownsAudit(auditId);
+        allow write: if false;
+      }
+
+      match /issues/{issueId} {
+        allow read: if ownsAudit(auditId);
+        allow write: if false;
+      }
+
+      match /reports/{reportId} {
+        allow read: if ownsAudit(auditId);
+        allow write: if false;
+      }
+    }
+
+    match /users/{userId} {
+      allow read, create, update: if signedIn() && request.auth.uid == userId;
+      allow delete: if false;
+
+      match /{document=**} {
+        allow read, write: if signedIn() && request.auth.uid == userId;
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
