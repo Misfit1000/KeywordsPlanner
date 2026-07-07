@@ -4,7 +4,7 @@ import { generateKeywords } from '../lib/keywords/generator';
 import { clusterKeywords } from '../lib/keywords/clustering';
 import { buildContentBrief } from '../lib/keywords/content-brief';
 import { auditStore } from '../lib/audit/audit-store';
-import { auditRepository } from '../lib/firebase/audit-repository';
+import { auditRepository } from '../lib/supabase/audit-repository';
 import { getAuditModeConfig, type AuditMode } from '../lib/audit/resource-types';
 
 

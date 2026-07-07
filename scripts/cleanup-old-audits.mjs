@@ -1,4 +1,4 @@
-import { auditRepository } from '../src/lib/firebase/audit-repository.ts';
+import { auditRepository } from '../src/lib/supabase/audit-repository.ts';
 
-await auditRepository.clearExpiredAuditData();
+await auditRepository.cleanupOldAudits();
 console.log('Expired audit data cleanup complete.');

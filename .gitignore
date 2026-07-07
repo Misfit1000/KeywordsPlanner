@@ -2,7 +2,7 @@ node_modules/
 build/
 dist/
 .vercel/
-.firebase/
+.supabase/
 coverage/
 .DS_Store
 *.log

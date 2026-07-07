@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { normalizeUserUrl } from '../../seo/url-utils';
-import { auditRepository } from '../../firebase/audit-repository';
+import { auditRepository } from '../../supabase/audit-repository';
 
 
 function asyncJsonRoute(handler: any) {

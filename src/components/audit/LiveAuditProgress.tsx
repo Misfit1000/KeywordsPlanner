@@ -41,7 +41,7 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
     let isActive = true;
     let unsubscribe = () => {};
 
-    import('../../lib/audit/live-firestore-client')
+    import('../../lib/audit/live-supabase-client')
       .then(({ subscribeToAuditLiveData }) => {
         if (!isActive) return;
         unsubscribe = subscribeToAuditLiveData(

@@ -4,7 +4,7 @@ import { fetchRobotsTxt, getSitemapUrlsFromRobots, isBlockedByRobots, parseRobot
 import { fetchSitemap } from '../lib/seo/sitemap';
 import { isSameDomain, normalizeUrl, stripTrackingParams } from '../lib/seo/url-utils';
 import { runAllChecks } from '../lib/seo/checks/runner';
-import { auditRepository } from '../lib/firebase/audit-repository';
+import { auditRepository } from '../lib/supabase/audit-repository';
 import {
   type AuditSeverity,
   type ResourceAuditDocument,
