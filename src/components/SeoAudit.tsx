@@ -95,9 +95,9 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
               onChange={e => setMode(e.target.value as any)}
               className="bg-muted/50 border border-border rounded-xl py-3 px-3 outline-none focus:border-accent"
             >
-              <option value="quick">Quick - Free lightweight</option>
-              <option value="standard" disabled={!canUseStandard}>Standard - Paid 25 pages {!canUseStandard ? '(locked)' : ''}</option>
-              <option value="deep" disabled={!canUseDeep}>Deep - Agency/Admin {!canUseDeep ? '(locked)' : ''}</option>
+              <option value="quick">Quick - Free lightweight 5 pages</option>
+              <option value="standard" disabled={!canUseStandard}>Full Standard - Paid/Admin 25 pages {!canUseStandard ? '(locked)' : ''}</option>
+              <option value="deep" disabled={!canUseDeep}>Deep - Agency/Admin expanded crawl {!canUseDeep ? '(locked)' : ''}</option>
             </select>
           </div>
           <button
@@ -117,7 +117,7 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
         {plan === 'free' && (
           <div className="mt-3 text-sm text-muted-foreground bg-muted/40 border border-border rounded-lg p-3 flex items-start gap-2">
             <Lock className="w-4 h-4 mt-0.5" />
-            Free users get Quick Audit with 5 pages and passive security checks. Upgrade unlocks Standard, priority queue, PDF reports, and deeper categories.
+            Free users get lightweight Quick Audit with 5 pages and passive security checks. Paid/Admin accounts get full 25-page audits, priority queue, richer reports, and deeper SEO + security categories.
           </div>
         )}
       </div>

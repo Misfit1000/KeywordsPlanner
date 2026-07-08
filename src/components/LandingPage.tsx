@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Globe, ShieldCheck, Zap, LineChart, FileText, Activity, LayoutDashboard, Database, HardDrive, ArrowRight, Search } from 'lucide-react';
 import { createAuditSubmitGuard } from '../lib/api/audit-submit-guard';
+import { SitePreviewSection, StatusBadge } from './ui/visual-system';
 
 interface Props {
   onStartAudit: (url: string) => Promise<void> | void;
@@ -153,6 +154,29 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
             </div>
 
           </div>
+        </div>
+      </section>
+
+      {/* Features Grid */}
+      <section className="px-6 py-24">
+        <div className="mx-auto max-w-7xl">
+          <div className="mb-10 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div>
+              <div className="text-sm font-bold uppercase tracking-[0.18em] text-accent">Visual reports</div>
+              <h2 className="mt-2 text-4xl font-bold">Show the website, not just a loading spinner</h2>
+              <p className="mt-3 max-w-2xl text-muted-foreground">Every audit can show a desktop homepage preview, mobile preview, and SERP-style snippet using public metadata instead of screenshots or stored HTML.</p>
+            </div>
+            <div className="flex gap-2">
+              <StatusBadge tone="accent">Desktop preview</StatusBadge>
+              <StatusBadge tone="success">Mobile preview</StatusBadge>
+            </div>
+          </div>
+          <SitePreviewSection
+            url="https://example.com"
+            hostname="example.com"
+            title="Example Brand - Services, Pricing, and Local Trust"
+            description="A polished metadata preview helps users understand what was audited before they dig into technical SEO and security findings."
+          />
         </div>
       </section>
 

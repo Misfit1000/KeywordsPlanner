@@ -8,6 +8,7 @@ import { Globe, Loader2, FileText, AlertTriangle, CheckCircle2, Layers } from 'l
 import { ParsedPageData } from '../lib/seo/html-parser';
 import { AuditResult } from '../lib/audit/types';
 import { useAuth } from '../contexts/AuthContext';
+import { SitePreviewSection } from './ui/visual-system';
 
 export default function WebsiteAnalyzer() {
   const { user } = useAuth();
@@ -121,9 +122,9 @@ export default function WebsiteAnalyzer() {
               onChange={e => setMode(e.target.value as any)}
               className="bg-muted/50 border border-border rounded-xl py-3 px-3 outline-none focus:border-accent"
             >
-              <option value="quick">Quick - Free lightweight</option>
-              <option value="standard" disabled={!canUseStandard}>Standard - Paid 25 pages {!canUseStandard ? '(locked)' : ''}</option>
-              <option value="deep" disabled={!canUseDeep}>Deep - Agency/Admin {!canUseDeep ? '(locked)' : ''}</option>
+              <option value="quick">Quick - Free lightweight 5 pages</option>
+              <option value="standard" disabled={!canUseStandard}>Full Standard - Paid/Admin 25 pages {!canUseStandard ? '(locked)' : ''}</option>
+              <option value="deep" disabled={!canUseDeep}>Deep - Agency/Admin expanded crawl {!canUseDeep ? '(locked)' : ''}</option>
             </select>
           </div>
           <button
@@ -150,6 +151,12 @@ export default function WebsiteAnalyzer() {
 
       {result && (
         <div className="space-y-6">
+          <SitePreviewSection
+            url={url}
+            hostname={url}
+            title={result.data?.title || 'Website analyzer preview'}
+            description={result.data?.metaDescription || 'Metadata preview from the analyzed page.'}
+          />
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-card border border-border p-6 rounded-2xl flex items-center justify-between shadow-sm">
               <div>

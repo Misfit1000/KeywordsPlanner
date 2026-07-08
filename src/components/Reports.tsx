@@ -1,6 +1,6 @@
 import React, { useState } from "react"; 
-import { PieChart, Download, Loader2, FileJson, FileSpreadsheet, Printer, ShieldCheck, AlertTriangle } from "lucide-react";
-import { BarList, MetricCard, SectionHeader, SeverityStack } from './ui/visual-system';
+import { PieChart, Download, Loader2, FileJson, FileSpreadsheet, Printer, ShieldCheck, AlertTriangle, Search, Lock } from "lucide-react";
+import { BarList, MetricCard, SectionHeader, SeverityStack, SitePreviewSection, StatusBadge } from './ui/visual-system';
 
 export default function Reports() {   
   const [loading, setLoading] = useState<string | null>(null);  
@@ -91,6 +91,54 @@ export default function Reports() {
           <h2 className="text-xl font-bold">Severity distribution</h2>
           <p className="mb-5 text-sm text-muted-foreground">A compact summary for client-facing reports.</p>
           <SeverityStack critical={3} high={6} medium={12} low={8} />
+        </div>
+      </div>
+
+      <SitePreviewSection
+        url="https://example.com"
+        hostname="example.com"
+        title="Example Homepage - Full SEO and Security Audit Preview"
+        description="A polished report preview showing how crawled metadata becomes desktop, mobile, and Google-style search result previews."
+      />
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-2xl bg-accent/10 p-3 text-accent"><Search className="h-6 w-6" /></div>
+              <div>
+                <h2 className="text-xl font-bold">SEO Audit Report</h2>
+                <p className="text-sm text-muted-foreground">Title/meta, crawlability, indexability, content, links, schema, and SERP readiness.</p>
+              </div>
+            </div>
+            <StatusBadge tone="accent">Full audit</StatusBadge>
+          </div>
+          <BarList items={[
+            { label: 'Title / meta / SERP', value: 86, tone: 'green' },
+            { label: 'Crawlability / sitemap', value: 78, tone: 'accent' },
+            { label: 'Internal links', value: 72, tone: 'accent' },
+            { label: 'Images / alt text', value: 66, tone: 'yellow' },
+            { label: 'Schema / social metadata', value: 61, tone: 'yellow' },
+          ]} />
+        </div>
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-2xl bg-green-500/10 p-3 text-green-600"><Lock className="h-6 w-6" /></div>
+              <div>
+                <h2 className="text-xl font-bold">Security Audit Report</h2>
+                <p className="text-sm text-muted-foreground">HTTPS, HSTS, CSP, X-Frame-Options, content-type, referrer policy, and passive posture.</p>
+              </div>
+            </div>
+            <StatusBadge tone="success">Passive</StatusBadge>
+          </div>
+          <BarList items={[
+            { label: 'HTTPS / redirects', value: 92, tone: 'green' },
+            { label: 'Security headers', value: 74, tone: 'accent' },
+            { label: 'Cookie posture', value: 70, tone: 'accent' },
+            { label: 'Mixed-content indicators', value: 88, tone: 'green' },
+            { label: 'Exposed file checks', value: 82, tone: 'green' },
+          ]} />
         </div>
       </div>
       

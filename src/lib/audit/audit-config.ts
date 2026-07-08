@@ -12,15 +12,15 @@ export interface AuditModeConfig {
 const AUDIT_MODE_CONFIG: Record<AuditMode, AuditModeConfig> = {
   quick: {
     mode: 'quick',
-    label: 'Quick - 10 pages',
-    pageLimit: 10,
+    label: 'Free Quick - 5 pages',
+    pageLimit: 5,
     concurrency: 2,
     timeoutMs: 6000,
     description: 'Default resource-light audit for fast feedback.',
   },
   standard: {
     mode: 'standard',
-    label: 'Standard - 25 pages',
+    label: 'Full Standard - 25 pages',
     pageLimit: 25,
     concurrency: 3,
     timeoutMs: 8000,
@@ -28,11 +28,11 @@ const AUDIT_MODE_CONFIG: Record<AuditMode, AuditModeConfig> = {
   },
   deep: {
     mode: 'deep',
-    label: 'Deep - 50 pages',
-    pageLimit: 50,
-    concurrency: 3,
-    timeoutMs: 10000,
-    description: 'Manual opt-in audit for broader coverage.',
+    label: 'Deep - 75+ pages',
+    pageLimit: 75,
+    concurrency: 4,
+    timeoutMs: 12000,
+    description: 'Manual opt-in audit for expanded sitemap, crawl graph, page-level, and issue clustering coverage.',
   },
 };
 

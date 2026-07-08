@@ -28,6 +28,8 @@ await assert.rejects(
 );
 
 assert.equal(resolveEffectiveAuditMode('paid', 'standard'), 'standard');
+assert.equal(resolveEffectiveAuditMode('paid', 'quick'), 'standard');
+assert.equal(resolveEffectiveAuditMode('admin', 'quick'), 'standard');
 assert.equal(resolveEffectiveAuditMode('agency', 'deep', { deepAuditEnabled: true }), 'deep');
 assert.equal(resolveEffectiveAuditMode('admin', 'deep', { deepAuditEnabled: true }), 'deep');
 assert.throws(() => resolveEffectiveAuditMode('agency', 'deep'), /Deep Audit requires a dedicated always-on worker/);
@@ -43,7 +45,7 @@ const paidProfile = getAuditProfile('paid', 'standard');
 const agencyProfile = getAuditProfile('agency', 'deep');
 assert.equal(freeProfile.pageLimit, 5);
 assert.equal(paidProfile.pageLimit, 25);
-assert.equal(agencyProfile.pageLimit, 50);
+assert.equal(agencyProfile.pageLimit, 75);
 assert.equal(isSeoIssueAllowedForProfile(freeProfile, { category: 'performance', id: 'heavy-js' }), false);
 assert.equal(isSeoIssueAllowedForProfile(freeProfile, { category: 'on-page', id: 'title-missing' }), true);
 

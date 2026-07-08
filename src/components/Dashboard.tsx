@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { API_ROUTES } from '../lib/api/routes';
 import { getAuthHeaders } from '../lib/api/auth-headers';
 import { safeJsonFetch } from '../lib/http/safe-json';
-import { BarList, MetricCard, ProgressBar, SectionHeader, SeverityStack, SitePreviewCard, StatusBadge, SurfaceCard } from './ui/visual-system';
+import { BarList, MetricCard, ProgressBar, SectionHeader, SeverityStack, SitePreviewSection, StatusBadge, SurfaceCard } from './ui/visual-system';
 
 export default function Dashboard(props: any) {
   const { user } = useAuth();
@@ -71,7 +71,7 @@ export default function Dashboard(props: any) {
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Overall health" value="84" detail="Demo benchmark from latest audit" icon={<Gauge className="h-6 w-6" />} tone="green" />
-        <MetricCard label="Pages crawled" value="7 / 10" detail="Quick audit sample" icon={<Layers className="h-6 w-6" />} tone="accent" />
+        <MetricCard label="Pages crawled" value="7 / 25" detail="Full audit sample" icon={<Layers className="h-6 w-6" />} tone="accent" />
         <MetricCard label="Open issues" value="29" detail="3 critical, 6 high" icon={<AlertTriangle className="h-6 w-6" />} tone="yellow" />
         <MetricCard label="Security posture" value="A-" detail="Passive checks only" icon={<ShieldCheck className="h-6 w-6" />} tone="green" />
       </div>
@@ -82,15 +82,15 @@ export default function Dashboard(props: any) {
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge tone={plan === 'free' ? 'warning' : 'success'}>{plan.toUpperCase()} PLAN</StatusBadge>
-                <StatusBadge tone="accent">{plan === 'free' ? 'Quick audit' : 'Priority queue'}</StatusBadge>
+                <StatusBadge tone="accent">{plan === 'free' ? 'Lightweight quick audit' : 'Full audit enabled'}</StatusBadge>
               </div>
               <h3 className="mt-4 text-2xl font-bold">
-                {plan === 'free' ? 'Free Lightweight Audit is active' : 'Priority audit workspace is active'}
+                {plan === 'free' ? 'Free Lightweight Audit is active' : 'Full audit workspace is active'}
               </h3>
               <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
                 {plan === 'free'
-                  ? 'Free users get one active quick audit, 5 pages, passive security checks, and exportable JSON/CSV data.'
-                  : 'Paid and agency users unlock deeper modes, higher queue priority, more pages, and richer report exports.'}
+                  ? 'Free users get one active lightweight quick audit, 5 pages, passive security checks, and exportable JSON/CSV data.'
+                  : 'Paid, agency, and admin users get full standard audits from quick entry points, higher queue priority, more pages, and richer report exports.'}
               </p>
             </div>
             {plan === 'free' && (
@@ -125,13 +125,28 @@ export default function Dashboard(props: any) {
           </div>
         </SurfaceCard>
 
-        <SitePreviewCard
-          url={searchedUrl || 'https://example.com'}
-          hostname={searchedUrl || 'example.com'}
-          title={searchedUrl ? `Ready to audit ${searchedUrl}` : 'Audit preview card'}
-          description="Website previews show hostname, favicon, URL, and metadata as audit pages are crawled."
-        />
+        <SurfaceCard className="p-6">
+          <h3 className="text-xl font-bold">Fast actions</h3>
+          <p className="mt-1 text-sm text-muted-foreground">Keep SEO and Security workflows separate from the start.</p>
+          <div className="mt-5 grid gap-3">
+            <button onClick={() => props.onOpenSeoAudit?.()} className="flex items-center justify-between rounded-2xl border border-border bg-background p-4 text-left transition-all hover:-translate-y-0.5 hover:bg-muted active:scale-[0.99]">
+              <span><span className="block font-bold">Start SEO Audit</span><span className="text-sm text-muted-foreground">Metadata, crawlability, links, schema, SERP preview.</span></span>
+              <Search className="h-5 w-5 text-accent" />
+            </button>
+            <button onClick={() => props.onOpenSecurityAudit?.()} className="flex items-center justify-between rounded-2xl border border-border bg-background p-4 text-left transition-all hover:-translate-y-0.5 hover:bg-muted active:scale-[0.99]">
+              <span><span className="block font-bold">Start Security Audit</span><span className="text-sm text-muted-foreground">HTTPS, HSTS, CSP, and passive header posture.</span></span>
+              <ShieldCheck className="h-5 w-5 text-green-600" />
+            </button>
+          </div>
+        </SurfaceCard>
       </div>
+
+      <SitePreviewSection
+        url={searchedUrl || 'https://example.com'}
+        hostname={searchedUrl || 'example.com'}
+        title={searchedUrl ? `Ready to audit ${searchedUrl}` : 'Example homepage audit preview'}
+        description="Desktop, mobile, and SERP previews make reports easier to understand before users read technical tables."
+      />
 
       <div className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
         <SurfaceCard className="p-6">

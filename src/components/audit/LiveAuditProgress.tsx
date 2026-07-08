@@ -6,7 +6,7 @@ import { getAuditModeLabel } from '../../lib/audit/audit-config';
 import { isAuditQueuedTooLong } from '../../lib/audit/queued-worker-warning';
 import { API_ROUTES } from '../../lib/api/routes';
 import { safeJsonFetch } from '../../lib/http/safe-json';
-import { BarList, MetricCard, ProgressBar, SeverityStack, SitePreviewCard, StatusBadge, SurfaceCard } from '../ui/visual-system';
+import { BarList, MetricCard, ProgressBar, SeverityStack, SitePreviewSection, StatusBadge, SurfaceCard } from '../ui/visual-system';
 
 interface Props {
   auditId: string;
@@ -223,7 +223,7 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
       <SurfaceCard className="overflow-hidden">
         <div className="grid-overlay relative p-5 md:p-8">
           <div className="absolute inset-0 -z-0 bg-gradient-to-br from-accent/10 via-transparent to-green-500/10" />
-          <div className="relative z-10 grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
+          <div className="relative z-10">
             <div className="space-y-6">
               <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                 <div>
@@ -253,16 +253,17 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
                 <MetricCard label="Elapsed" value={elapsed(audit.createdAt)} icon={<Activity className="h-5 w-5" />} tone="blue" />
               </div>
             </div>
-
-            <SitePreviewCard
-              url={audit.currentUrl || audit.finalUrl || audit.normalizedUrl}
-              hostname={audit.hostname}
-              title={firstPage?.title || `${audit.hostname} audit preview`}
-              description={firstPage?.metaDescription || latestEvent?.message || 'Preview updates from crawled metadata without storing raw HTML.'}
-            />
           </div>
         </div>
       </SurfaceCard>
+
+      <SitePreviewSection
+        url={audit.currentUrl || audit.finalUrl || firstPage?.url || audit.normalizedUrl}
+        hostname={audit.hostname}
+        title={firstPage?.title || `${audit.hostname} audit preview`}
+        description={firstPage?.metaDescription || latestEvent?.message || 'Preview updates from crawled metadata without storing raw HTML.'}
+        canonicalUrl={audit.finalUrl || audit.normalizedUrl}
+      />
 
       <div className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
         <SurfaceCard className="p-5 md:p-6">

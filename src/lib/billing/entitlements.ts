@@ -92,10 +92,10 @@ export const DEFAULT_PLAN_LIMITS: Record<UserPlan, PlanLimits> = {
   },
   paid: {
     plan: 'paid',
-    label: 'Paid',
+    label: 'Paid Full Audit',
     dailyAudits: 25,
     monthlyAudits: 500,
-    maxPagesQuick: 10,
+    maxPagesQuick: 25,
     maxPagesStandard: 25,
     maxPagesDeep: 0,
     allowedModes: ['quick', 'standard'],
@@ -116,9 +116,9 @@ export const DEFAULT_PLAN_LIMITS: Record<UserPlan, PlanLimits> = {
     label: 'Agency',
     dailyAudits: 100,
     monthlyAudits: 3000,
-    maxPagesQuick: 10,
+    maxPagesQuick: 25,
     maxPagesStandard: 25,
-    maxPagesDeep: 50,
+    maxPagesDeep: 75,
     allowedModes: ['quick', 'standard', 'deep'],
     auditTimeoutSeconds: 10,
     concurrency: 3,
@@ -134,12 +134,12 @@ export const DEFAULT_PLAN_LIMITS: Record<UserPlan, PlanLimits> = {
   },
   admin: {
     plan: 'admin',
-    label: 'Admin',
+    label: 'Admin Full Audit',
     dailyAudits: 1000,
     monthlyAudits: 100000,
-    maxPagesQuick: 10,
+    maxPagesQuick: 25,
     maxPagesStandard: 25,
-    maxPagesDeep: 75,
+    maxPagesDeep: 100,
     allowedModes: ['quick', 'standard', 'deep'],
     auditTimeoutSeconds: 10,
     concurrency: 3,
@@ -322,6 +322,9 @@ export function resolveEffectiveAuditMode(
   }
   if ((plan === 'agency' || plan === 'admin') && requestedMode === 'deep' && !options.deepAuditEnabled) {
     throw new EntitlementError('Deep Audit requires a dedicated always-on worker.', { upgradeRequired: plan !== 'admin' });
+  }
+  if ((plan === 'paid' || plan === 'agency' || plan === 'admin') && requestedMode === 'quick') {
+    return 'standard';
   }
   return requestedMode;
 }

@@ -388,6 +388,7 @@ export default function App() {
             isLoggedIn={!!user}
             onRunInDepth={() => handleSearch(undefined, searchedKeyword, true)}
             onOpenSeoAudit={() => setActiveTab('seo-audit')}
+            onOpenSecurityAudit={() => setActiveTab('security-audit')}
           />
         );
       case 'keyword-research':

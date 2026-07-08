@@ -75,9 +75,9 @@ insert into public.plan_limits (
   scheduled_audits_enabled
 ) values
   ('free', 'Free', 3, 30, 5, 0, 0, '["quick"]'::jsonb, 5, 1, 100, 150, 10, true, false, false, false, false, false),
-  ('paid', 'Paid', 25, 500, 10, 25, 0, '["quick","standard"]'::jsonb, 8, 2, 300, 1000, 50, true, true, true, false, false, false),
-  ('agency', 'Agency', 100, 3000, 10, 25, 50, '["quick","standard","deep"]'::jsonb, 10, 3, 500, 3000, 100, true, true, true, true, true, true),
-  ('admin', 'Admin', 1000, 100000, 10, 25, 75, '["quick","standard","deep"]'::jsonb, 10, 3, 1000, 5000, 999, true, true, true, true, true, true)
+  ('paid', 'Paid Full Audit', 25, 500, 25, 25, 0, '["quick","standard"]'::jsonb, 8, 2, 300, 1000, 50, true, true, true, false, false, false),
+  ('agency', 'Agency', 100, 3000, 25, 25, 75, '["quick","standard","deep"]'::jsonb, 12, 4, 800, 4000, 100, true, true, true, true, true, true),
+  ('admin', 'Admin Full Audit', 1000, 100000, 25, 25, 100, '["quick","standard","deep"]'::jsonb, 12, 4, 1500, 7000, 999, true, true, true, true, true, true)
 on conflict (plan) do update set
   label = excluded.label,
   daily_audits = excluded.daily_audits,

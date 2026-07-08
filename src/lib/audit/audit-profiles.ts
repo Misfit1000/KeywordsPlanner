@@ -42,7 +42,7 @@ export const AUDIT_PROFILES: Record<AuditProfile['id'], AuditProfile> = {
   },
   paid_standard: {
     id: 'paid_standard',
-    label: 'Paid Standard Audit',
+    label: 'Paid Full Audit',
     plan: 'paid',
     processingTier: 'paid',
     mode: 'standard',
@@ -65,11 +65,11 @@ export const AUDIT_PROFILES: Record<AuditProfile['id'], AuditProfile> = {
     plan: 'agency',
     processingTier: 'agency',
     mode: 'deep',
-    pageLimit: 50,
-    concurrency: 3,
-    timeoutMs: 10000,
-    maxEvents: 500,
-    maxIssues: 3000,
+    pageLimit: 75,
+    concurrency: 4,
+    timeoutMs: 12000,
+    maxEvents: 800,
+    maxIssues: 4000,
     externalLinkChecks: false,
     deepSitemapExpansion: true,
     exposedFileChecks: true,
@@ -84,11 +84,11 @@ export const AUDIT_PROFILES: Record<AuditProfile['id'], AuditProfile> = {
     plan: 'admin',
     processingTier: 'admin',
     mode: 'deep',
-    pageLimit: 75,
-    concurrency: 3,
-    timeoutMs: 10000,
-    maxEvents: 1000,
-    maxIssues: 5000,
+    pageLimit: 100,
+    concurrency: 4,
+    timeoutMs: 12000,
+    maxEvents: 1500,
+    maxIssues: 7000,
     externalLinkChecks: false,
     deepSitemapExpansion: true,
     exposedFileChecks: true,
@@ -100,9 +100,9 @@ export const AUDIT_PROFILES: Record<AuditProfile['id'], AuditProfile> = {
 };
 
 export function auditProfileIdFor(plan: UserPlan, mode: AuditMode): AuditProfile['id'] {
-  if (plan === 'admin') return mode === 'deep' ? 'admin_deep' : mode === 'standard' ? 'paid_standard' : 'free_quick';
-  if (plan === 'agency') return mode === 'deep' ? 'agency_deep' : mode === 'standard' ? 'paid_standard' : 'free_quick';
-  if (plan === 'paid') return mode === 'standard' ? 'paid_standard' : 'free_quick';
+  if (plan === 'admin') return mode === 'deep' ? 'admin_deep' : 'paid_standard';
+  if (plan === 'agency') return mode === 'deep' ? 'agency_deep' : 'paid_standard';
+  if (plan === 'paid') return 'paid_standard';
   return 'free_quick';
 }
 

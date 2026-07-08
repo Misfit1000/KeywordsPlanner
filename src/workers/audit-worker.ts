@@ -216,6 +216,20 @@ async function processAudit(audit: ResourceAuditDocument) {
     ...getSitemapUrlsFromRobots(robotsTxt),
     new URL('/sitemap.xml', origin).toString(),
   ];
+  if (config.deepSitemapExpansion) {
+    sitemapCandidates.push(
+      new URL('/sitemap_index.xml', origin).toString(),
+      new URL('/page-sitemap.xml', origin).toString(),
+      new URL('/post-sitemap.xml', origin).toString(),
+      new URL('/product-sitemap.xml', origin).toString(),
+    );
+    await auditRepository.appendEvent(audit.id, {
+      type: 'deep_crawl_expansion',
+      message: 'Deep audit enabled expanded sitemap discovery and crawl graph coverage.',
+      progress: 16,
+      data: { pageLimit: config.pageLimit, sitemapCandidates: sitemapCandidates.length },
+    });
+  }
   for (const sitemapUrl of sitemapCandidates) {
     if (queue.length >= config.pageLimit) break;
     const sitemap = await fetchSitemap(sitemapUrl);
@@ -239,7 +253,7 @@ async function processAudit(audit: ResourceAuditDocument) {
     progress: 20,
     currentPhase: 'Crawling pages',
     pagesDiscovered: queue.length,
-    checksTotal: config.pageLimit * 2,
+    checksTotal: config.pageLimit * (config.deepSitemapExpansion ? 4 : 2),
   });
 
   let active = 0;
@@ -460,11 +474,39 @@ async function processAudit(audit: ResourceAuditDocument) {
   }
 
   const issues = await auditRepository.getIssues(audit.id);
+  const categoryCounts: Record<string, number> = issues.reduce((acc: Record<string, number>, issue) => {
+    const key = String(issue.category || 'other').toLowerCase();
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const pageTypeCounts: Record<string, number> = pages.reduce((acc: Record<string, number>, page) => {
+    const path = (() => {
+      try {
+        return new URL(page.url).pathname.toLowerCase();
+      } catch {
+        return '/';
+      }
+    })();
+    const key = path === '/' || path === '' ? 'homepage'
+      : /blog|post|article|news/.test(path) ? 'content'
+        : /product|service|pricing|shop/.test(path) ? 'commercial'
+          : /contact|about|team|location/.test(path) ? 'trust'
+            : 'other';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
   const weightedIssueScore = issues.reduce((total, issue) => {
     const weights = { critical: 12, high: 6, medium: 3, low: 1, info: 0 };
     return total + weights[issue.severity];
   }, 0);
   const overallScore = Math.max(0, Math.min(100, 100 - Math.round(weightedIssueScore / Math.max(1, pages.length))));
+  const seoIssueCount = issues.filter((issue) => !String(issue.category).toLowerCase().includes('security')).length;
+  const securityIssueCount = issues.length - seoIssueCount;
+  const seoScore = Math.max(0, Math.min(100, overallScore + Math.min(10, securityIssueCount) - Math.min(20, seoIssueCount)));
+  const securityScore = Math.max(0, Math.min(100, 100 - securityIssueCount * 8 - issues.filter((issue) => issue.severity === 'critical' && String(issue.category).toLowerCase().includes('security')).length * 10));
+  const crawlabilityScore = Math.min(100, Math.round((pages.length / Math.max(1, config.pageLimit)) * 100));
+  const technicalScore = Math.max(0, Math.min(100, 95 - (categoryCounts.technical || 0) * 5 - (categoryCounts.crawlability || 0) * 4));
+  const performanceScore = Math.max(0, Math.min(100, 95 - pages.filter((page) => page.responseTimeMs > 1500 || page.pageSizeBytes > 1_000_000).length * 8));
 
   await writeProgress(audit.id, {
     progress: 92,
@@ -480,8 +522,23 @@ async function processAudit(audit: ResourceAuditDocument) {
   }, { type: 'report_building', message: 'Building final report' });
 
   const report: ResourceAuditReport = {
-    scores: { overall: overallScore },
-    summary: `Audited ${pages.length} page${pages.length === 1 ? '' : 's'} and found ${issues.length} issue${issues.length === 1 ? '' : 's'}.`,
+    scores: {
+      overall: overallScore,
+      seo: seoScore,
+      security: securityScore,
+      technical: technicalScore,
+      performance: performanceScore,
+      crawlability: crawlabilityScore,
+      pageTypeCounts,
+      issueCategoryCounts: categoryCounts,
+      deepAudit: config.deepSitemapExpansion ? {
+        sitemapExpansion: true,
+        pageCoverageLimit: config.pageLimit,
+        pagesDiscovered: Math.max(queue.length + visited.size, pages.length),
+        issueClusters: Object.keys(categoryCounts).length,
+      } : null,
+    },
+    summary: `${config.label}: audited ${pages.length} page${pages.length === 1 ? '' : 's'} and found ${issues.length} issue${issues.length === 1 ? '' : 's'}.`,
     topIssues: [...issues].sort((a, b) => {
       const weights = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
       return weights[b.severity] - weights[a.severity];

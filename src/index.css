@@ -52,6 +52,16 @@
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background;
   }
 
+  button,
+  a {
+    @apply transition-all duration-200;
+  }
+
+  button:not(:disabled):active,
+  a:active {
+    transform: scale(0.98);
+  }
+
   h1, h2, h3, h4, h5, h6 {
     @apply font-display tracking-tight font-semibold text-foreground;
   }

@@ -105,7 +105,7 @@ export interface ResourceAuditIssue {
 }
 
 export interface ResourceAuditReport {
-  scores: Record<string, number>;
+  scores: Record<string, unknown>;
   summary: string;
   topIssues: ResourceAuditIssue[];
   pages: ResourceAuditPage[];
