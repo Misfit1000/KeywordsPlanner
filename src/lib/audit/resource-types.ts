@@ -1,19 +1,13 @@
 import {
   AUDIT_LIMITS,
-  AUDIT_MODE_CONFIG,
   getAuditModeConfig,
-  getAuditModeLabel,
   type AuditMode,
-  type AuditModeConfig,
 } from './audit-config';
 
 export {
   AUDIT_LIMITS,
-  AUDIT_MODE_CONFIG,
   getAuditModeConfig,
-  getAuditModeLabel,
   type AuditMode,
-  type AuditModeConfig,
 };
 
 export type AuditStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';

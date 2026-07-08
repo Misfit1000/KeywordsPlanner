@@ -9,7 +9,7 @@ export interface AuditModeConfig {
   description: string;
 }
 
-export const AUDIT_MODE_CONFIG: Record<AuditMode, AuditModeConfig> = {
+const AUDIT_MODE_CONFIG: Record<AuditMode, AuditModeConfig> = {
   quick: {
     mode: 'quick',
     label: 'Quick - 10 pages',

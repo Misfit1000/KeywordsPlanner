@@ -140,27 +140,3 @@ export function stripTrackingParams(url: string): string {
     return url;
   }
 }
-
-export function isLikelyDomain(input: string): boolean {
-  const trimmed = input.trim();
-  if (!trimmed) return false;
-  
-  // Basic domain matching without protocol
-  const domainRegex = /^[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+/;
-  return domainRegex.test(trimmed.replace(/^https?:\/\//, ''));
-}
-
-export function getDomainVariants(input: string): string[] {
-  const res = normalizeUserUrl(input);
-  if (!res.isValid) return [input];
-  
-  const host = res.hostname;
-  const noWww = host.replace(/^www\./, '');
-  
-  return Array.from(new Set([
-    `https://${noWww}`,
-    `http://${noWww}`,
-    `https://www.${noWww}`,
-    `http://www.${noWww}`
-  ]));
-}

@@ -3,7 +3,7 @@ import { normalizeSupabaseProjectUrl } from './url';
 
 let cachedClient: SupabaseClient | null | undefined;
 
-export function hasSupabaseClientConfig() {
+function hasSupabaseClientConfig() {
   return Boolean(normalizeSupabaseProjectUrl(import.meta.env.VITE_SUPABASE_URL) && import.meta.env.VITE_SUPABASE_ANON_KEY);
 }
 
@@ -28,5 +28,3 @@ export function getSupabaseBrowserClient() {
 
   return cachedClient;
 }
-
-export const supabase = getSupabaseBrowserClient();

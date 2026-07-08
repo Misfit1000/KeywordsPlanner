@@ -1,5 +1,3 @@
-import { crawlDomain } from './crawler'; // Just types or import minimal deps
-
 export async function fetchSitemap(url: string) {
   try {
     const res = await fetch(url, { headers: { 'User-Agent': 'SEOIntelBot/1.0' }, timeout: 10000 } as any);
@@ -11,7 +9,7 @@ export async function fetchSitemap(url: string) {
   }
 }
 
-export function parseSitemapXml(xml: string) {
+function parseSitemapXml(xml: string) {
   const urls: string[] = [];
   const errors: string[] = [];
   

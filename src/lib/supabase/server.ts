@@ -3,7 +3,7 @@ import { normalizeSupabaseProjectUrl } from './url';
 
 let cachedClient: SupabaseClient | null | undefined;
 
-export function hasSupabaseServerConfig() {
+function hasSupabaseServerConfig() {
   return Boolean(normalizeSupabaseProjectUrl(process.env.SUPABASE_URL) && process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
 

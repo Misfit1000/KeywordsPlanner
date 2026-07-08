@@ -25,7 +25,7 @@ export default defineConfig(({mode}) => {
           manualChunks(id) {
             const normalizedId = id.replace(/\\/g, '/');
             if (!normalizedId.includes('node_modules')) return;
-            if (normalizedId.includes('/react/') || normalizedId.includes('/react-dom/') || normalizedId.includes('/react-is/')) {
+            if (normalizedId.includes('/react/') || normalizedId.includes('/react-dom/')) {
               return 'react-vendor';
             }
             if (normalizedId.includes('@supabase')) {
@@ -34,22 +34,8 @@ export default defineConfig(({mode}) => {
             if (normalizedId.includes('/lucide-react/')) {
               return 'icons-vendor';
             }
-            if (
-              normalizedId.includes('/react-simple-maps/')
-              || normalizedId.includes('/d3-geo/')
-              || normalizedId.includes('/d3-zoom/')
-              || normalizedId.includes('/topojson-')
-            ) {
-              return 'maps-vendor';
-            }
             if (normalizedId.includes('/motion/')) {
               return 'motion-vendor';
-            }
-            if (normalizedId.includes('/recharts/') || normalizedId.includes('/d3-')) {
-              return 'charts-vendor';
-            }
-            if (normalizedId.includes('/react-tooltip/')) {
-              return 'tooltip-vendor';
             }
           },
         },
