@@ -1,6 +1,5 @@
 import { useState } from"react";
 import { useAuth } from"../contexts/AuthContext";
-import { motion } from"motion/react";
 import { Lock, Mail, Loader2, UserPlus, X } from"lucide-react";
 
 export default function Register({ onToggle, onClose }: { onToggle: () => void, onClose?: () => void }) {
@@ -24,9 +23,7 @@ export default function Register({ onToggle, onClose }: { onToggle: () => void, 
  };
 
  return (
- <motion.div
- initial={{ opacity: 0, scale: 0.95 }}
- animate={{ opacity: 1, scale: 1 }}
+ <div
  className="w-full max-w-md bg-card border border-border rounded-3xl p-8 shadow-2xl relative"
  >
  {onClose && (
@@ -77,13 +74,11 @@ export default function Register({ onToggle, onClose }: { onToggle: () => void, 
  </div>
 
  {error && (
- <motion.div
- initial={{ opacity: 0, y: -10 }}
- animate={{ opacity: 1, y: 0 }}
+ <div
  className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm text-center"
  >
  {error}
- </motion.div>
+ </div>
  )}
 
  <button
@@ -106,6 +101,6 @@ export default function Register({ onToggle, onClose }: { onToggle: () => void, 
  </button>
  </p>
  </div>
- </motion.div>
+ </div>
  );
 }

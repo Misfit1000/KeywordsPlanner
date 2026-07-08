@@ -22,10 +22,35 @@ export default defineConfig(({mode}) => {
     build: {
       rollupOptions: {
         output: {
-          manualChunks: {
-            'react-vendor': ['react', 'react-dom'],
-            'supabase-vendor': ['@supabase/supabase-js'],
-            'ui-vendor': ['lucide-react', 'motion/react', 'recharts', 'react-simple-maps', 'react-tooltip'],
+          manualChunks(id) {
+            const normalizedId = id.replace(/\\/g, '/');
+            if (!normalizedId.includes('node_modules')) return;
+            if (normalizedId.includes('/react/') || normalizedId.includes('/react-dom/') || normalizedId.includes('/react-is/')) {
+              return 'react-vendor';
+            }
+            if (normalizedId.includes('@supabase')) {
+              return 'supabase-vendor';
+            }
+            if (normalizedId.includes('/lucide-react/')) {
+              return 'icons-vendor';
+            }
+            if (
+              normalizedId.includes('/react-simple-maps/')
+              || normalizedId.includes('/d3-geo/')
+              || normalizedId.includes('/d3-zoom/')
+              || normalizedId.includes('/topojson-')
+            ) {
+              return 'maps-vendor';
+            }
+            if (normalizedId.includes('/motion/')) {
+              return 'motion-vendor';
+            }
+            if (normalizedId.includes('/recharts/') || normalizedId.includes('/d3-')) {
+              return 'charts-vendor';
+            }
+            if (normalizedId.includes('/react-tooltip/')) {
+              return 'tooltip-vendor';
+            }
           },
         },
       },

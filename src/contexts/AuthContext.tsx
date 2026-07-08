@@ -1,7 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
-import { getSupabaseBrowserClient } from "../lib/supabase/client";
-import { getUserProfile, initUserProfile, updateUserProfileData } from "../services/supabaseDataService";
 
 export interface User {
   id: string;
@@ -29,20 +27,50 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+type SupabaseDataService = typeof import("../services/supabaseDataService");
+
 function fallbackAvatar(userId: string) {
   return `https://api.dicebear.com/7.x/avataaars/svg?seed=${userId}`;
 }
 
-async function mapSupabaseUser(supabaseUser: SupabaseUser): Promise<User> {
+function hasSupabaseBrowserConfig() {
+  return Boolean(import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY);
+}
+
+async function getSupabaseClientOrThrow() {
+  const { getSupabaseBrowserClient } = await import("../lib/supabase/client");
+  const client = getSupabaseBrowserClient();
+  if (!client) throw new Error("Supabase is not configured");
+  return client;
+}
+
+async function loadSupabaseDataService() {
+  return import("../services/supabaseDataService");
+}
+
+function scheduleIdleWork(callback: () => void) {
+  const requestIdleCallback = (window as any).requestIdleCallback as undefined | ((cb: () => void, options?: { timeout: number }) => number);
+  const cancelIdleCallback = (window as any).cancelIdleCallback as undefined | ((handle: number) => void);
+
+  if (requestIdleCallback && cancelIdleCallback) {
+    const handle = requestIdleCallback(callback, { timeout: 1500 });
+    return () => cancelIdleCallback(handle);
+  }
+
+  const timeout = window.setTimeout(callback, 250);
+  return () => window.clearTimeout(timeout);
+}
+
+async function mapSupabaseUser(supabaseUser: SupabaseUser, dataService: SupabaseDataService): Promise<User> {
   const email = supabaseUser.email || '';
   const metadata = supabaseUser.user_metadata || {};
 
   try {
-    await initUserProfile(supabaseUser.id, {
+    await dataService.initUserProfile(supabaseUser.id, {
       email,
       displayName: metadata.display_name || metadata.full_name || (email ? email.split('@')[0] : 'User'),
     });
-    const extraData = await getUserProfile(supabaseUser.id) || {};
+    const extraData = await dataService.getUserProfile(supabaseUser.id) || {};
 
     return {
       id: supabaseUser.id,
@@ -73,47 +101,57 @@ async function mapSupabaseUser(supabaseUser: SupabaseUser): Promise<User> {
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(hasSupabaseBrowserConfig());
   const [error, setError] = useState<string | null>(null);
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
 
   useEffect(() => {
-    const client = getSupabaseBrowserClient();
-    if (!client) {
+    if (!hasSupabaseBrowserConfig()) {
       setUser(null);
       setLoading(false);
       return;
     }
 
     let active = true;
-    client.auth.getUser()
-      .then(async ({ data }) => {
-        if (!active) return;
-        setUser(data.user ? await mapSupabaseUser(data.user) : null);
-      })
-      .catch((err) => {
-        if (active) console.error("Error loading auth session:", err);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
+    let unsubscribe: (() => void) | null = null;
 
-    const { data: subscription } = client.auth.onAuthStateChange(async (_event, session) => {
-      if (!active) return;
-      setUser(session?.user ? await mapSupabaseUser(session.user) : null);
-      setLoading(false);
+    const hydrateAuth = async () => {
+      const client = await getSupabaseClientOrThrow();
+      const dataService = await loadSupabaseDataService();
+
+      const { data } = await client.auth.getUser();
+      if (active) {
+        setUser(data.user ? await mapSupabaseUser(data.user, dataService) : null);
+        setLoading(false);
+      }
+
+      const { data: subscription } = client.auth.onAuthStateChange(async (_event, session) => {
+        if (!active) return;
+        setUser(session?.user ? await mapSupabaseUser(session.user, dataService) : null);
+        setLoading(false);
+      });
+      unsubscribe = () => subscription.subscription.unsubscribe();
+    };
+
+    const cancelIdleWork = scheduleIdleWork(() => {
+      hydrateAuth().catch((err) => {
+        if (active) {
+          console.error("Error loading auth session:", err);
+          setLoading(false);
+        }
+      });
     });
 
     return () => {
       active = false;
-      subscription.subscription.unsubscribe();
+      cancelIdleWork();
+      unsubscribe?.();
     };
   }, []);
 
   const login = async (email: string, password: string) => {
     setError(null);
-    const client = getSupabaseBrowserClient();
-    if (!client) throw new Error("Supabase is not configured");
+    const client = await getSupabaseClientOrThrow();
 
     const { error: signInError } = await client.auth.signInWithPassword({ email, password });
     if (signInError) {
@@ -126,8 +164,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const register = async (email: string, password: string) => {
     setError(null);
-    const client = getSupabaseBrowserClient();
-    if (!client) throw new Error("Supabase is not configured");
+    const client = await getSupabaseClientOrThrow();
 
     const { data, error: signUpError } = await client.auth.signUp({ email, password });
     if (signUpError) {
@@ -138,7 +175,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (data.user) {
-      await initUserProfile(data.user.id, {
+      const dataService = await loadSupabaseDataService();
+      await dataService.initUserProfile(data.user.id, {
         email,
         displayName: email.split('@')[0] || 'User',
       });
@@ -147,8 +185,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const updateUserProfile = async (data: Partial<User>) => {
     if (!user) throw new Error("Not authenticated");
-    const client = getSupabaseBrowserClient();
-    if (!client) throw new Error("Supabase is not configured");
+    const client = await getSupabaseClientOrThrow();
 
     if (data.fullName !== undefined || data.photoURL !== undefined) {
       const { error: updateError } = await client.auth.updateUser({
@@ -160,13 +197,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (updateError) throw updateError;
     }
 
-    await updateUserProfileData(user.id, data);
+    const dataService = await loadSupabaseDataService();
+    await dataService.updateUserProfileData(user.id, data);
     setUser((prev) => prev ? { ...prev, ...data } : null);
   };
 
   const logout = async () => {
-    const client = getSupabaseBrowserClient();
-    if (!client) return;
+    if (!hasSupabaseBrowserConfig()) return;
+    const client = await getSupabaseClientOrThrow();
     const { error: signOutError } = await client.auth.signOut();
     if (signOutError) throw signOutError;
   };

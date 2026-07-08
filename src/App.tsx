@@ -1,11 +1,5 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Search, Activity, LogOut, User, MapPin, Sun, Moon, Command, Menu, Mail, Loader2, X, TrendingUp } from 'lucide-react';
-import Login from './components/Login';
-import Register from './components/Register';
-import Sidebar from './components/Sidebar';
-import CountrySelect from './components/CountrySelect';
-import CommandPalette from './components/CommandPalette';
+import { Search, LogOut, User, Sun, Moon, Menu, Mail, Loader2, TrendingUp } from 'lucide-react';
 import LandingPage from './components/LandingPage';
 import { useAuth } from './contexts/AuthContext';
 import { useTheme } from './contexts/ThemeContext';
@@ -13,6 +7,10 @@ import { API_ROUTES } from './lib/api/routes';
 import { safeJsonFetch } from './lib/http/safe-json';
 
 // Lazy load heavy components
+const Login = lazy(() => import('./components/Login'));
+const Register = lazy(() => import('./components/Register'));
+const CommandPalette = lazy(() => import('./components/CommandPalette'));
+const Sidebar = lazy(() => import('./components/Sidebar'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
 const KeywordResearch = lazy(() => import('./components/KeywordResearch'));
 const WebsiteAnalyzer = lazy(() => import('./components/WebsiteAnalyzer'));
@@ -298,22 +296,10 @@ export default function App() {
     setIsSearching(false);
   };
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-accent/30 border-t-accent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
   if (unverifiedEmail) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="w-full max-w-md bg-card border border-border rounded-3xl p-8 text-center shadow-2xl"
-        >
+        <div className="w-full max-w-md bg-card border border-border rounded-3xl p-8 text-center shadow-2xl">
           <div className="p-3 bg-accent/10 rounded-2xl text-accent mb-4 inline-block">
             <Mail className="w-12 h-12" />
           </div>
@@ -330,7 +316,7 @@ export default function App() {
           >
             Login
           </button>
-        </motion.div>
+        </div>
       </div>
     );
   }
@@ -440,41 +426,33 @@ export default function App() {
         <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-500/10 blur-[120px] rounded-full dark:bg-blue-500/15" />
       </div>
 
-      <CommandPalette 
-        isOpen={isCommandPaletteOpen} 
-        onClose={() => setIsCommandPaletteOpen(false)} 
-        onSearch={(k) => handleSearch(undefined, k)} 
-      />
+      {isCommandPaletteOpen && (
+        <Suspense fallback={null}>
+          <CommandPalette
+            isOpen={isCommandPaletteOpen}
+            onClose={() => setIsCommandPaletteOpen(false)}
+            onSearch={(k) => handleSearch(undefined, k)}
+          />
+        </Suspense>
+      )}
 
-      <AnimatePresence>
-        {authMode && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[200] flex items-center justify-center bg-background/80 backdrop-blur-sm p-4"
-          >
-            <div className="relative w-full max-w-md">
+      {authMode && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
+          <div className="relative w-full max-w-md">
+            <Suspense fallback={<div className="bg-card border border-border rounded-3xl p-8 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-accent" /></div>}>
               {authMode === 'login' ? (
                 <Login onToggle={() => setAuthMode('register')} onClose={() => setAuthMode(null)} />
               ) : (
                 <Register onToggle={() => setAuthMode('login')} onClose={() => setAuthMode(null)} />
               )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            </Suspense>
+          </div>
+        </div>
+      )}
 
       <div className="relative z-10 flex flex-col min-h-screen">
-        <AnimatePresence mode="wait">
-          {!isSearching ? (
-            <motion.div
-              key="hero"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0, transition: { duration: 0.3 } }}
-              className="flex-1 flex flex-col items-center justify-center p-6"
-            >
+        {!isSearching ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-6">
               <div className="absolute top-6 right-6 flex items-center gap-4">
                 <button 
                   onClick={toggleTheme}
@@ -483,7 +461,9 @@ export default function App() {
                 >
                   {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
                 </button>
-                {user ? (
+                {authLoading ? (
+                  <div className="h-10 w-28 rounded-full bg-card/50 border border-border animate-pulse" />
+                ) : user ? (
                   <>
                     <button 
                       onClick={() => {
@@ -539,15 +519,9 @@ export default function App() {
                   {startAuditError}
                 </div>
               )}
-            </motion.div>
+            </div>
           ) : (
-            <motion.div
-              key="dashboard"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.5 }}
-              className="flex-1 flex flex-col"
-            >
+            <div className="flex-1 flex flex-col">
               {/* Header */}
               <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border h-16 px-4 md:px-6 flex items-center justify-between transition-colors duration-300">
                 <div className="flex items-center gap-4 flex-1">
@@ -558,18 +532,15 @@ export default function App() {
                     >
                       <Menu className="w-5 h-5" />
                     </button>
-                    <motion.div 
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: 0.2 }}
-                      className="flex items-center gap-2 text-foreground font-bold text-lg tracking-tight cursor-pointer" 
+                    <div
+                      className="flex items-center gap-2 text-foreground font-bold text-lg tracking-tight cursor-pointer"
                       onClick={() => setIsSearching(false)}
                     >
                       <div className="bg-accent text-accent-foreground p-1.5 rounded-lg">
                         <TrendingUp className="w-5 h-5" />
                       </div>
                       <span className="hidden md:inline text-xl">SEO<span className="text-accent">Intel</span></span>
-                    </motion.div>
+                    </div>
                   </div>
                   
                   <form onSubmit={(e) => handleSearch(e, undefined, false)} className="flex-1 max-w-2xl relative group hidden md:flex items-center ml-4 bg-muted/30 hover:bg-muted/60 focus-within:bg-muted/60 border border-border rounded-xl transition-all shadow-sm">
@@ -600,12 +571,7 @@ export default function App() {
                   </form>
                 </div>
                 
-                <motion.div 
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.2 }}
-                  className="flex items-center gap-3 ml-4"
-                >
+                <div className="flex items-center gap-3 ml-4">
                   <button 
                     onClick={toggleTheme}
                     className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
@@ -614,7 +580,9 @@ export default function App() {
                     {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
                   </button>
                   <div className="h-5 w-px bg-border hidden md:block mx-1"></div>
-                  {user ? (
+                  {authLoading ? (
+                    <div className="h-9 w-28 rounded-xl bg-muted/30 border border-border animate-pulse" />
+                  ) : user ? (
                     <>
                       <button 
                         onClick={() => setActiveTab('settings')}
@@ -643,16 +611,18 @@ export default function App() {
                       </button>
                     </div>
                   )}
-                </motion.div>
+                </div>
               </header>
 
               <div className="flex flex-1 relative">
-                <Sidebar 
-                  isOpen={isSidebarOpen} 
-                  onClose={() => setIsSidebarOpen(false)} 
-                  activeTab={activeTab}
-                  setActiveTab={setActiveTab}
-                />
+                <Suspense fallback={null}>
+                  <Sidebar
+                    isOpen={isSidebarOpen}
+                    onClose={() => setIsSidebarOpen(false)}
+                    activeTab={activeTab}
+                    setActiveTab={setActiveTab}
+                  />
+                </Suspense>
                 <main className="flex-1 p-6 md:p-8 w-full">
                   <Suspense fallback={
                     <div className="flex items-center justify-center h-64">
@@ -663,9 +633,8 @@ export default function App() {
                   </Suspense>
                 </main>
               </div>
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
       </div>
     </div>
   );

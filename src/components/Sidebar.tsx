@@ -1,4 +1,3 @@
-import { motion, AnimatePresence } from 'motion/react';
 import { LayoutDashboard, Search, Globe, Target, FileText, Activity, BarChart3, Upload, PieChart, Settings, HelpCircle, X, User, ShieldAlert, Folder, Layers } from 'lucide-react';
 import { TabType } from '../App';
 import { useAuth } from '../contexts/AuthContext';
@@ -34,26 +33,16 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab }: Si
  return (
  <>
  {/* Mobile overlay */}
- <AnimatePresence>
  {isOpen && (
- <motion.div
- initial={{ opacity: 0 }}
- animate={{ opacity: 1 }}
- exit={{ opacity: 0 }}
+ <div
  onClick={onClose}
  className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 lg:hidden"
  />
  )}
- </AnimatePresence>
 
  {/* Sidebar */}
- <AnimatePresence>
  {isOpen && (
- <motion.aside
- initial={{ width: 0, opacity: 0, x: -20 }}
- animate={{ width: 256, opacity: 1, x: 0 }}
- exit={{ width: 0, opacity: 0, x: -20 }}
- transition={{ duration: 0.3, ease: 'easeInOut' }}
+ <aside
  className="fixed lg:sticky top-16 left-0 z-50 h-[calc(100vh-4rem)] bg-card border-r border-border flex flex-col overflow-hidden whitespace-nowrap shadow-sm"
  >
  <div className="p-6 flex-1 w-64">
@@ -101,9 +90,8 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab }: Si
  </button>
  </nav>
  </div>
- </motion.aside>
+ </aside>
  )}
- </AnimatePresence>
  </>
  );
 }

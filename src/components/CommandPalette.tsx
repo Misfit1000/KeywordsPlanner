@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
 import { Search, Command, X, TrendingUp, History, Sparkles } from 'lucide-react';
 
 interface CommandPaletteProps {
@@ -58,21 +57,15 @@ export default function CommandPalette({ isOpen, onClose, onSearch }: CommandPal
  onClose();
  };
 
+ if (!isOpen) return null;
+
  return (
- <AnimatePresence>
- {isOpen && (
  <>
- <motion.div
- initial={{ opacity: 0 }}
- animate={{ opacity: 1 }}
- exit={{ opacity: 0 }}
+ <div
  onClick={onClose}
  className="fixed inset-0 bg-background/80 backdrop-blur-sm z-[100]"
  />
- <motion.div
- initial={{ opacity: 0, scale: 0.95, y: -20 }}
- animate={{ opacity: 1, scale: 1, y: 0 }}
- exit={{ opacity: 0, scale: 0.95, y: -20 }}
+ <div
  className="fixed top-[15%] left-1/2 -translate-x-1/2 w-full max-w-2xl bg-card border border-border rounded-3xl shadow-2xl z-[101] overflow-hidden"
  >
  <div className="p-4 border-b border-border flex items-center gap-3">
@@ -154,9 +147,7 @@ export default function CommandPalette({ isOpen, onClose, onSearch }: CommandPal
  </div>
  <span>Press <kbd className="px-1 bg-muted rounded border border-border">ESC</kbd> to close</span>
  </div>
- </motion.div>
+ </div>
  </>
- )}
- </AnimatePresence>
  );
 }

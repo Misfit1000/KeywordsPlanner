@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { motion } from 'motion/react';
 import { Globe, ShieldCheck, Zap, LineChart, FileText, Activity, LayoutDashboard, Database, HardDrive, ArrowRight, Search } from 'lucide-react';
 
 interface Props {

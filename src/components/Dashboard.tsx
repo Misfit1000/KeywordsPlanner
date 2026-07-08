@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Search, Activity, Target, Layers, FileText, Upload, Download, Globe, PieChart, BarChart3, TrendingUp, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { motion } from 'motion/react';
 
 export default function Dashboard(props: any) {
   return (
@@ -25,11 +24,8 @@ export default function Dashboard(props: any) {
           { label: 'Total Clusters', value: '142', icon: Layers, color: 'text-purple-500' },
           { label: 'Avg Opp. Score', value: '72/100', icon: TrendingUp, color: 'text-orange-500' }
         ].map((stat, i) => (
-          <motion.div 
+          <div
             key={i}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1 }}
             className="bg-card border border-border rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow group"
           >
             <div className="flex items-center gap-4">
@@ -41,7 +37,7 @@ export default function Dashboard(props: any) {
                 <p className="text-3xl font-display font-bold">{stat.value}</p>
               </div>
             </div>
-          </motion.div>
+          </div>
         ))}
       </div>
 
