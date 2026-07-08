@@ -5,7 +5,7 @@ import {
   createRateLimiter,
   jsonBodyParser,
   jsonParseErrorHandler,
-} from '../src/lib/api/http-hardening';
+} from '../lib/api/http-hardening';
 
 let cachedApp: express.Express | null = null;
 
@@ -22,7 +22,7 @@ function rewriteVercelPath(req: any) {
 async function getApp() {
   if (cachedApp) return cachedApp;
 
-  const { apiRouter } = await import('../src/api/index');
+  const { apiRouter } = await import('./index');
   const app = express();
 
   app.set('trust proxy', 1);

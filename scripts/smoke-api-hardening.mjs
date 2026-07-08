@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import handler from '../api/index.ts';
+import handler from '../src/api/vercel-handler.ts';
 
 function listen(server, port = 0) {
   return new Promise((resolve) => server.listen(port, '127.0.0.1', () => resolve(server.address())));
