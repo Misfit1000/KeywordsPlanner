@@ -19,11 +19,14 @@
     "smoke:api-json": "node scripts/smoke-api-json.mjs",
     "smoke:api-hardening": "tsx scripts/smoke-api-hardening.mjs",
     "smoke:resource-light-audit": "tsx scripts/smoke-resource-light-audit.mjs",
+    "smoke:online-worker": "tsx scripts/smoke-online-worker.mts",
     "smoke:supabase-schema": "node scripts/smoke-supabase-schema.mjs",
     "smoke:url": "tsx scripts/smoke-url-normalization.mjs",
     "e2e:local-audit": "node scripts/e2e-local-audit.mjs",
     "worker:audit": "tsx src/workers/audit-worker.ts",
-    "worker:audit:dev": "tsx watch src/workers/audit-worker.ts"
+    "worker:audit:dev": "tsx watch src/workers/audit-worker.ts",
+    "check:worker": "node scripts/check-worker-health.mjs",
+    "check:queued-audits": "node scripts/check-queued-audits.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.1",

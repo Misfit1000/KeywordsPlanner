@@ -1,0 +1,12 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS",
+    "buildCommand": "npm ci --legacy-peer-deps"
+  },
+  "deploy": {
+    "startCommand": "npm run worker:audit",
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10
+  }
+}

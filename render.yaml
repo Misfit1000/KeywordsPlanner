@@ -1,0 +1,18 @@
+services:
+  - type: worker
+    name: seointel-audit-worker
+    runtime: node
+    buildCommand: npm ci --legacy-peer-deps
+    startCommand: npm run worker:audit
+    autoDeploy: true
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: AUDIT_WORKER_ID
+        value: worker-production-1
+      - key: AUDIT_POLL_INTERVAL_MS
+        value: "4000"
+      - key: WORKER_HEALTH_PORT
+        sync: false

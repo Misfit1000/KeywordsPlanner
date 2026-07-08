@@ -1,0 +1,87 @@
+import { AUDIT_LIMITS } from '../lib/audit/audit-config';
+import { normalizeSupabaseProjectUrl } from '../lib/supabase/url';
+import type { WorkerHeartbeat, WorkerHeartbeatStatus } from '../lib/supabase/audit-repository';
+
+export { type WorkerHeartbeatStatus };
+
+export const WORKER_ENV_ERROR =
+  'Audit worker cannot start: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required. The online worker must use Supabase, not memory storage.';
+
+type WorkerEnv = Record<string, string | undefined>;
+
+export interface AuditWorkerConfig {
+  workerId: string;
+  pollIntervalMs: number;
+  supabaseUrl: string;
+  supabaseHost: string;
+  version: string;
+}
+
+export interface AuditWorkerRuntimeState {
+  workerId: string;
+  status: WorkerHeartbeatStatus;
+  lastSeenAt: string;
+  pollIntervalMs: number;
+  currentAuditId: string | null;
+  version: string;
+}
+
+function parsePollInterval(value: string | undefined) {
+  const parsed = Number(value || AUDIT_LIMITS.workerPollIntervalMs);
+  if (!Number.isFinite(parsed) || parsed < 1000) {
+    return AUDIT_LIMITS.workerPollIntervalMs;
+  }
+  return Math.floor(parsed);
+}
+
+export function loadWorkerConfig(env: WorkerEnv = process.env): AuditWorkerConfig {
+  const supabaseUrl = normalizeSupabaseProjectUrl(env.SUPABASE_URL);
+  if (!supabaseUrl || !env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error(WORKER_ENV_ERROR);
+  }
+
+  return {
+    workerId: env.AUDIT_WORKER_ID || 'worker-production-1',
+    pollIntervalMs: parsePollInterval(env.AUDIT_POLL_INTERVAL_MS),
+    supabaseUrl,
+    supabaseHost: new URL(supabaseUrl).hostname,
+    version:
+      env.RENDER_GIT_COMMIT?.slice(0, 12) ||
+      env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 12) ||
+      env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ||
+      env.npm_package_version ||
+      '0.0.0',
+  };
+}
+
+export function createInitialWorkerState(config: AuditWorkerConfig): AuditWorkerRuntimeState {
+  return {
+    workerId: config.workerId,
+    status: 'starting',
+    lastSeenAt: new Date().toISOString(),
+    pollIntervalMs: config.pollIntervalMs,
+    currentAuditId: null,
+    version: config.version,
+  };
+}
+
+export function updateWorkerState(
+  state: AuditWorkerRuntimeState,
+  patch: Partial<Pick<AuditWorkerRuntimeState, 'status' | 'currentAuditId'>>,
+) {
+  if (patch.status) state.status = patch.status;
+  if ('currentAuditId' in patch) state.currentAuditId = patch.currentAuditId ?? null;
+  state.lastSeenAt = new Date().toISOString();
+  return state;
+}
+
+export function buildWorkerHeartbeat(state: AuditWorkerRuntimeState): WorkerHeartbeat {
+  return {
+    workerId: state.workerId,
+    status: state.status,
+    lastSeenAt: state.lastSeenAt,
+    pollIntervalMs: state.pollIntervalMs,
+    currentAuditId: state.currentAuditId,
+    version: state.version,
+  };
+}

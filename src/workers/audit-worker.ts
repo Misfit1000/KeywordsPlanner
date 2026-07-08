@@ -5,6 +5,15 @@ import { fetchSitemap } from '../lib/seo/sitemap';
 import { isSameDomain, normalizeUrl, stripTrackingParams } from '../lib/seo/url-utils';
 import { runAllChecks } from '../lib/seo/checks/runner';
 import { auditRepository } from '../lib/supabase/audit-repository';
+import { startWorkerHealthServer } from './audit-worker-health';
+import {
+  WORKER_ENV_ERROR,
+  buildWorkerHeartbeat,
+  createInitialWorkerState,
+  loadWorkerConfig,
+  updateWorkerState,
+  type AuditWorkerRuntimeState,
+} from './audit-worker-runtime';
 import {
   type AuditSeverity,
   type ResourceAuditDocument,
@@ -17,6 +26,7 @@ import { AUDIT_LIMITS } from '../lib/audit/audit-config';
 import type { AuditIssue } from '../lib/audit/types';
 
 type QueueItem = { url: string; depth: number; discoveredFrom?: string };
+const NO_QUEUED_LOG_INTERVAL_MS = 30_000;
 
 type FetchedPage = {
   url: string;
@@ -502,20 +512,75 @@ async function processAudit(audit: ResourceAuditDocument) {
   });
 }
 
-export async function runOneAudit(workerId = process.env.AUDIT_WORKER_ID || `worker-${process.pid}`) {
-  const audit = await auditRepository.claimNextQueuedAudit(workerId);
-  if (!audit) return false;
+async function writeWorkerHeartbeat(state: AuditWorkerRuntimeState, patch?: Partial<Pick<AuditWorkerRuntimeState, 'status' | 'currentAuditId'>>) {
+  if (patch) updateWorkerState(state, patch);
+  await auditRepository.upsertWorkerHeartbeat(buildWorkerHeartbeat(state));
+}
 
+function createLeaseRefresher(auditId: string, workerId: string) {
+  const refreshEveryMs = Math.max(5_000, Math.floor(AUDIT_LIMITS.lockLeaseMs / 2));
+  const timer = setInterval(() => {
+    auditRepository.refreshAuditLease(auditId, workerId).catch((error) => {
+      console.error(`Audit ${auditId} lease refresh failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }, refreshEveryMs);
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
+
+let lastNoQueuedLogAt = 0;
+
+function logNoQueuedAudits() {
+  const now = Date.now();
+  if (now - lastNoQueuedLogAt < NO_QUEUED_LOG_INTERVAL_MS) return;
+  lastNoQueuedLogAt = now;
+  console.log('No queued audits found');
+}
+
+export async function runOneAudit(
+  workerId = process.env.AUDIT_WORKER_ID || `worker-${process.pid}`,
+  runtimeState?: AuditWorkerRuntimeState,
+) {
+  const audit = await auditRepository.claimNextQueuedAudit(workerId);
+  if (!audit) {
+    if (runtimeState) {
+      await writeWorkerHeartbeat(runtimeState, { status: 'idle', currentAuditId: null });
+      logNoQueuedAudits();
+    }
+    return false;
+  }
+
+  if (runtimeState) {
+    await writeWorkerHeartbeat(runtimeState, { status: 'running', currentAuditId: audit.id });
+  }
+  console.log(`Claimed audit ${audit.id} for ${audit.normalizedUrl}`);
+  console.log(`Audit ${audit.id} running`);
+
+  const stopLeaseRefresher = createLeaseRefresher(audit.id, workerId);
   try {
     await processAudit(audit);
+    const latest = await auditRepository.getAudit(audit.id);
+    if (latest?.status === 'cancelled') {
+      console.log(`Audit ${audit.id} cancelled`);
+    } else if (latest?.status === 'completed') {
+      console.log(`Audit ${audit.id} completed`);
+    }
+    if (runtimeState) {
+      await writeWorkerHeartbeat(runtimeState, { status: 'idle', currentAuditId: null });
+    }
   } catch (error: any) {
     if (error?.message === 'AUDIT_CANCELLED') {
       await auditRepository.cancelAudit(audit.id);
+      console.log(`Audit ${audit.id} cancelled`);
+      if (runtimeState) {
+        await writeWorkerHeartbeat(runtimeState, { status: 'idle', currentAuditId: null });
+      }
       return true;
     }
+    const message = error?.message || 'Unknown audit worker error';
     await auditRepository.updateAudit(audit.id, {
       status: 'failed',
-      error: error?.message || 'Unknown audit worker error',
+      error: message,
       currentPhase: 'Failed',
       completedAt: nowIso(),
       lockedBy: null,
@@ -524,28 +589,81 @@ export async function runOneAudit(workerId = process.env.AUDIT_WORKER_ID || `wor
     });
     await auditRepository.appendEvent(audit.id, {
       type: 'audit_failed',
-      message: error?.message || 'Unknown audit worker error',
+      message,
       progress: (await auditRepository.getAudit(audit.id))?.progress,
     });
+    console.error(`Audit ${audit.id} failed: ${message}`);
+    if (runtimeState) {
+      await writeWorkerHeartbeat(runtimeState, { status: 'failed', currentAuditId: audit.id });
+      await writeWorkerHeartbeat(runtimeState, { status: 'idle', currentAuditId: null });
+    }
+  } finally {
+    stopLeaseRefresher();
   }
   return true;
 }
 
 export async function runAuditWorkerLoop() {
-  const intervalMs = Number(process.env.AUDIT_POLL_INTERVAL_MS || AUDIT_LIMITS.workerPollIntervalMs);
-  const workerId = process.env.AUDIT_WORKER_ID || `worker-${process.pid}`;
-  console.log(`SEOIntel audit worker started as ${workerId}`);
-  while (true) {
-    const claimed = await runOneAudit(workerId);
+  const config = loadWorkerConfig();
+  auditRepository.requireSupabaseAdminClient();
+  const state = createInitialWorkerState(config);
+  let workerReady = false;
+  let shutdownRequested = false;
+  let shuttingDown = false;
+  const healthServer = startWorkerHealthServer(state, () => workerReady, process.env.WORKER_HEALTH_PORT);
+
+  const shutdown = async (signal: NodeJS.Signals) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    shutdownRequested = true;
+    console.log(`Audit worker received ${signal}; shutting down`);
+    try {
+      await writeWorkerHeartbeat(state, { status: 'stopping' });
+      if (state.currentAuditId) {
+        await auditRepository.expireAuditLease(state.currentAuditId, config.workerId);
+      }
+      await writeWorkerHeartbeat(state, { status: 'stopped', currentAuditId: null });
+    } catch (error) {
+      console.error(`Audit worker shutdown cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      healthServer?.close();
+      process.exit(0);
+    }
+  };
+
+  process.once('SIGINT', () => {
+    void shutdown('SIGINT');
+  });
+  process.once('SIGTERM', () => {
+    void shutdown('SIGTERM');
+  });
+
+  await writeWorkerHeartbeat(state, { status: 'starting', currentAuditId: null });
+  console.log(`SEOIntel audit worker started as ${config.workerId}`);
+  console.log('Supabase admin: connected');
+  console.log(`Supabase project: ${config.supabaseHost}`);
+  console.log(`Polling interval: ${config.pollIntervalMs}ms`);
+
+  workerReady = true;
+  while (!shutdownRequested) {
+    await writeWorkerHeartbeat(state, { status: 'idle', currentAuditId: null });
+    const claimed = await runOneAudit(config.workerId, state);
     if (!claimed) {
-      await wait(intervalMs);
+      await wait(config.pollIntervalMs);
     }
   }
+
+  await writeWorkerHeartbeat(state, { status: 'stopped', currentAuditId: null });
+  healthServer?.close();
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   runAuditWorkerLoop().catch((error) => {
-    console.error('Audit worker crashed', error);
+    if (error instanceof Error && error.message === WORKER_ENV_ERROR) {
+      console.error(error.message);
+    } else {
+      console.error('Audit worker crashed', error);
+    }
     process.exit(1);
   });
 }

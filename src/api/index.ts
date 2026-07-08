@@ -5,6 +5,7 @@ import { clusterKeywords } from '../lib/keywords/clustering';
 import { buildContentBrief } from '../lib/keywords/content-brief';
 import { auditStore } from '../lib/audit/audit-store';
 import { auditRepository } from '../lib/supabase/audit-repository';
+import { getSupabaseProjectHostname } from '../lib/supabase/server';
 import { getAuditModeConfig, type AuditMode } from '../lib/audit/resource-types';
 
 
@@ -36,6 +37,7 @@ apiRouter.post('/audit/start', asyncJsonRoute(async (req, res) => {
     }
 
     const config = getAuditModeConfig(mode);
+    console.info(`Audit start using Supabase project: ${getSupabaseProjectHostname() || 'not configured'}`);
     const audit = await auditRepository.createAuditJob({
       submittedInput: String(url || '').trim(),
       normalizedUrl: normalized.normalizedUrl,
@@ -196,6 +198,7 @@ apiRouter.post('/website/analyze', asyncJsonRoute(async (req, res) => {
     }
 
     const config = getAuditModeConfig(mode);
+    console.info(`Audit start using Supabase project: ${getSupabaseProjectHostname() || 'not configured'}`);
     const audit = await auditRepository.createAuditJob({
       submittedInput: String(url || '').trim(),
       normalizedUrl: normalized.normalizedUrl,

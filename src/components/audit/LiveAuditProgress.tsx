@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Activity, AlertTriangle, CheckCircle2, Clock, FileDown, Loader2, Radio, ShieldAlert, StopCircle, Wifi, WifiOff } from 'lucide-react';
 import type { ResourceAuditLiveData } from '../../lib/audit/resource-types';
 import type { LiveAuditConnectionState } from '../../lib/audit/live-supabase-client';
-import { AUDIT_LIMITS, getAuditModeLabel } from '../../lib/audit/audit-config';
+import { getAuditModeLabel } from '../../lib/audit/audit-config';
+import { isAuditQueuedTooLong } from '../../lib/audit/queued-worker-warning';
 import { API_ROUTES } from '../../lib/api/routes';
 import { safeJsonFetch } from '../../lib/http/safe-json';
 
@@ -143,8 +144,7 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
   }, [audit, auditId, connection.message, latestEvent]);
 
   const queuedTooLong = useMemo(() => {
-    if (!audit || audit.status !== 'queued') return false;
-    return now - new Date(audit.createdAt).getTime() > AUDIT_LIMITS.noWorkerWarningMs;
+    return isAuditQueuedTooLong(audit, now);
   }, [audit, now]);
 
   const cancelAudit = async () => {
@@ -238,8 +238,23 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
         )}
 
         {queuedTooLong && (
-          <div className="mt-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-700 text-sm">
-            Audit is queued. The audit worker has not picked it up yet. Start the worker with <span className="font-mono">npm run worker:audit</span> or deploy the worker service.
+          <div className="mt-4 p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-800 text-sm space-y-3">
+            <div className="font-semibold">Audit is queued because no online worker has claimed it yet.</div>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>Confirm the worker service is deployed and running.</li>
+              <li>Confirm worker has <span className="font-mono">SUPABASE_URL</span>.</li>
+              <li>Confirm worker has <span className="font-mono">SUPABASE_SERVICE_ROLE_KEY</span>.</li>
+              <li>Confirm worker and Vercel use the same Supabase project.</li>
+              <li>Run <span className="font-mono">npm run check:worker</span> to verify heartbeat.</li>
+            </ul>
+            <div className="grid gap-2 md:grid-cols-2">
+              <Info label="Audit ID" value={audit.id} />
+              <Info label="Submitted URL" value={audit.submittedInput} />
+              <Info label="Normalized URL" value={audit.normalizedUrl} />
+              <Info label="Created" value={new Date(audit.createdAt).toLocaleString()} />
+              <Info label="Current status" value={audit.status} />
+              <Info label="Current phase" value={audit.currentPhase || 'Queued'} />
+            </div>
           </div>
         )}
 

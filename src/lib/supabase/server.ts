@@ -7,6 +7,20 @@ function hasSupabaseServerConfig() {
   return Boolean(normalizeSupabaseProjectUrl(process.env.SUPABASE_URL) && process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
 
+export function isSupabaseAdminEnabled() {
+  return hasSupabaseServerConfig();
+}
+
+export function getSupabaseProjectHostname() {
+  const supabaseUrl = normalizeSupabaseProjectUrl(process.env.SUPABASE_URL);
+  if (!supabaseUrl) return null;
+  try {
+    return new URL(supabaseUrl).hostname;
+  } catch {
+    return null;
+  }
+}
+
 export function getSupabaseAdminClient() {
   if (!hasSupabaseServerConfig()) {
     return null;
@@ -27,4 +41,12 @@ export function getSupabaseAdminClient() {
   }
 
   return cachedClient;
+}
+
+export function requireSupabaseAdminClient(message = 'Supabase admin client is required for this operation.') {
+  const client = getSupabaseAdminClient();
+  if (!client) {
+    throw new Error(message);
+  }
+  return client;
 }

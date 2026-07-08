@@ -10,9 +10,36 @@ import {
   type ResourceAuditReport,
   getAuditModeConfig,
 } from '../audit/resource-types';
-import { getSupabaseAdminClient } from './server';
+import {
+  getSupabaseAdminClient,
+  isSupabaseAdminEnabled,
+  requireSupabaseAdminClient,
+} from './server';
 
 type DbRow = Record<string, any>;
+export type WorkerHeartbeatStatus = 'starting' | 'idle' | 'running' | 'stopping' | 'stopped' | 'failed';
+
+export interface WorkerHeartbeat {
+  workerId: string;
+  status: WorkerHeartbeatStatus;
+  lastSeenAt: string;
+  pollIntervalMs: number;
+  currentAuditId: string | null;
+  version: string;
+}
+
+export interface AuditDiagnosticRow {
+  id: string;
+  status: string;
+  submitted_input: string;
+  normalized_url: string;
+  current_phase: string | null;
+  locked_by: string | null;
+  lease_expires_at: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 function nowIso() {
   return new Date().toISOString();
@@ -26,6 +53,34 @@ function expiresAtIso() {
 
 function pageIdForAuditUrl(auditId: string, url: string) {
   return createHash('sha256').update(`${auditId}:${url}`).digest('hex').slice(0, 40);
+}
+
+function workerHeartbeatKey(workerId: string) {
+  return `audit_worker:${workerId}`;
+}
+
+function isClaimableLock(row: DbRow, timestamp: string) {
+  if (!row.locked_by) return true;
+  if (!row.lease_expires_at) return true;
+  return String(row.lease_expires_at) <= timestamp;
+}
+
+function isStaleRunningLock(row: DbRow, timestamp: string) {
+  if (!row.lease_expires_at) return true;
+  return String(row.lease_expires_at) <= timestamp;
+}
+
+function toWorkerHeartbeat(row: DbRow): WorkerHeartbeat {
+  const value = row.value ?? {};
+  const fallbackWorkerId = String(row.id || '').replace(/^audit_worker:/, '') || 'unknown';
+  return {
+    workerId: String(value.workerId || fallbackWorkerId),
+    status: value.status || 'failed',
+    lastSeenAt: String(value.lastSeenAt || row.updated_at || nowIso()),
+    pollIntervalMs: Number(value.pollIntervalMs || 0),
+    currentAuditId: value.currentAuditId ?? null,
+    version: String(value.version || 'unknown'),
+  };
 }
 
 function assertNoError(error: { message?: string } | null | undefined, action: string) {
@@ -281,7 +336,62 @@ const memory = {
 
 export const auditRepository = {
   isSupabaseEnabled() {
-    return Boolean(getSupabaseAdminClient());
+    return isSupabaseAdminEnabled();
+  },
+
+  isSupabaseAdminEnabled() {
+    return isSupabaseAdminEnabled();
+  },
+
+  requireSupabaseAdminClient() {
+    return requireSupabaseAdminClient();
+  },
+
+  async upsertWorkerHeartbeat(heartbeat: WorkerHeartbeat) {
+    const client = requireSupabaseAdminClient();
+    const payload: WorkerHeartbeat = {
+      workerId: heartbeat.workerId,
+      status: heartbeat.status,
+      lastSeenAt: heartbeat.lastSeenAt || nowIso(),
+      pollIntervalMs: heartbeat.pollIntervalMs,
+      currentAuditId: heartbeat.currentAuditId ?? null,
+      version: heartbeat.version || 'unknown',
+    };
+
+    const { error } = await client
+      .from('platform_settings')
+      .upsert(
+        {
+          id: workerHeartbeatKey(payload.workerId),
+          value: payload,
+          updated_at: payload.lastSeenAt,
+        },
+        { onConflict: 'id' },
+      );
+    assertNoError(error, 'Upsert worker heartbeat');
+    return payload;
+  },
+
+  async getWorkerHeartbeats(): Promise<WorkerHeartbeat[]> {
+    const client = requireSupabaseAdminClient();
+    const { data, error } = await client
+      .from('platform_settings')
+      .select('id,value,updated_at')
+      .like('id', 'audit_worker:%')
+      .order('updated_at', { ascending: false });
+    assertNoError(error, 'Get worker heartbeats');
+    return (data ?? []).map(toWorkerHeartbeat);
+  },
+
+  async getLatestAuditDiagnostics(limit = 5): Promise<AuditDiagnosticRow[]> {
+    const client = requireSupabaseAdminClient();
+    const { data, error } = await client
+      .from('audits')
+      .select('id,status,submitted_input,normalized_url,current_phase,locked_by,lease_expires_at,error,created_at,updated_at')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    assertNoError(error, 'Get latest audit diagnostics');
+    return (data ?? []) as AuditDiagnosticRow[];
   },
 
   async createAuditJob(input: {
@@ -652,52 +762,68 @@ export const auditRepository = {
         .select('*')
         .eq('status', 'queued')
         .order('created_at', { ascending: true })
-        .limit(1);
+        .limit(100);
       assertNoError(queued.error, 'Find queued audit job');
 
-      let candidate = queued.data?.[0] ?? null;
+      let candidate = (queued.data ?? []).find((row) => isClaimableLock(row, timestamp)) ?? null;
       if (!candidate) {
         const stale = await client
           .from('audits')
           .select('*')
           .eq('status', 'running')
-          .lt('lease_expires_at', timestamp)
-          .order('lease_expires_at', { ascending: true })
-          .limit(1);
+          .order('lease_expires_at', { ascending: true, nullsFirst: true })
+          .order('created_at', { ascending: true })
+          .limit(100);
         assertNoError(stale.error, 'Find stale audit job');
-        candidate = stale.data?.[0] ?? null;
+        candidate = (stale.data ?? []).find((row) => isStaleRunningLock(row, timestamp)) ?? null;
       }
 
       if (!candidate) return null;
 
-      let update = client
-        .from('audits')
-        .update({
-          status: 'running',
-          progress: Math.max(candidate.progress ?? 0, 1),
-          current_phase: 'Audit worker started',
-          locked_by: workerId,
-          locked_at: timestamp,
-          lease_expires_at: leaseExpiresAt,
-          updated_at: timestamp,
-        })
-        .eq('id', candidate.id);
+      const claimPatch = {
+        status: 'running',
+        progress: Math.max(candidate.progress ?? 0, 1),
+        current_phase: candidate.status === 'running' ? 'Recovering stale audit' : 'Audit worker started',
+        current_check: null,
+        locked_by: workerId,
+        locked_at: timestamp,
+        lease_expires_at: leaseExpiresAt,
+        updated_at: timestamp,
+      };
 
-      if (candidate.status === 'queued') {
-        update = update.eq('status', 'queued');
-      } else {
-        update = update.eq('status', 'running').lt('lease_expires_at', timestamp);
+      const attempts: Array<(query: any) => any> = [];
+      if (!candidate.locked_by) attempts.push((query) => query.is('locked_by', null));
+      if (!candidate.lease_expires_at) attempts.push((query) => query.is('lease_expires_at', null));
+      if (candidate.lease_expires_at && String(candidate.lease_expires_at) <= timestamp) {
+        attempts.push((query) => query.lte('lease_expires_at', timestamp));
       }
 
-      const { data, error } = await update.select('*').maybeSingle();
-      assertNoError(error, 'Claim audit job');
-      return toAuditDocument(data);
+      for (const applyCondition of attempts) {
+        const query = applyCondition(
+          client
+            .from('audits')
+            .update(claimPatch)
+            .eq('id', candidate.id)
+            .eq('status', candidate.status),
+        );
+        const { data, error } = await query.select('*').maybeSingle();
+        assertNoError(error, 'Claim audit job');
+        if (data) {
+          if (candidate.status === 'running') {
+            await this.prepareStaleAuditRetry(data.id, workerId);
+            return this.getAuditJob(data.id);
+          }
+          return toAuditDocument(data);
+        }
+      }
+
+      return null;
     }
 
     const next = Array.from(memory.audits.values())
       .filter((audit) => {
-        if (audit.status === 'queued') return true;
-        return audit.status === 'running' && Boolean(audit.leaseExpiresAt) && audit.leaseExpiresAt < timestamp;
+        if (audit.status === 'queued') return !audit.lockedBy || !audit.leaseExpiresAt || audit.leaseExpiresAt <= timestamp;
+        return audit.status === 'running' && (!audit.leaseExpiresAt || audit.leaseExpiresAt <= timestamp);
       })
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
     if (!next) return null;
@@ -718,6 +844,139 @@ export const auditRepository = {
 
   async claimNextQueuedAudit(workerId: string) {
     return this.claimQueuedAuditJob(workerId);
+  },
+
+  async refreshAuditLease(auditId: string, workerId: string) {
+    const timestamp = nowIso();
+    const leaseExpiresAt = new Date(Date.now() + AUDIT_LIMITS.lockLeaseMs).toISOString();
+    const client = getSupabaseAdminClient();
+    if (client) {
+      const { data, error } = await client
+        .from('audits')
+        .update({
+          locked_by: workerId,
+          lease_expires_at: leaseExpiresAt,
+          updated_at: timestamp,
+        })
+        .eq('id', auditId)
+        .eq('status', 'running')
+        .eq('locked_by', workerId)
+        .select('id')
+        .maybeSingle();
+      assertNoError(error, 'Refresh audit lease');
+      return Boolean(data);
+    }
+
+    const current = memory.audits.get(auditId);
+    if (!current || current.status !== 'running' || current.lockedBy !== workerId) return false;
+    memory.audits.set(auditId, {
+      ...current,
+      leaseExpiresAt,
+      updatedAt: timestamp,
+    });
+    return true;
+  },
+
+  async releaseAuditLease(auditId: string, workerId: string) {
+    const timestamp = nowIso();
+    const client = getSupabaseAdminClient();
+    if (client) {
+      const { error } = await client
+        .from('audits')
+        .update({
+          locked_by: null,
+          locked_at: null,
+          lease_expires_at: null,
+          updated_at: timestamp,
+        })
+        .eq('id', auditId)
+        .eq('locked_by', workerId);
+      assertNoError(error, 'Release audit lease');
+      return;
+    }
+
+    const current = memory.audits.get(auditId);
+    if (current?.lockedBy === workerId) {
+      memory.audits.set(auditId, {
+        ...current,
+        lockedBy: null,
+        lockedAt: null,
+        leaseExpiresAt: null,
+        updatedAt: timestamp,
+      });
+    }
+  },
+
+  async expireAuditLease(auditId: string, workerId: string) {
+    const timestamp = nowIso();
+    const client = getSupabaseAdminClient();
+    if (client) {
+      const { error } = await client
+        .from('audits')
+        .update({
+          locked_by: null,
+          locked_at: null,
+          lease_expires_at: timestamp,
+          current_phase: 'Worker stopped; waiting for another worker',
+          current_check: null,
+          updated_at: timestamp,
+        })
+        .eq('id', auditId)
+        .eq('locked_by', workerId);
+      assertNoError(error, 'Expire audit lease');
+      return;
+    }
+
+    const current = memory.audits.get(auditId);
+    if (current?.lockedBy === workerId) {
+      memory.audits.set(auditId, {
+        ...current,
+        lockedBy: null,
+        lockedAt: null,
+        leaseExpiresAt: timestamp,
+        currentPhase: 'Worker stopped; waiting for another worker',
+        currentCheck: null,
+        updatedAt: timestamp,
+      });
+    }
+  },
+
+  async prepareStaleAuditRetry(auditId: string, workerId: string) {
+    const client = getSupabaseAdminClient();
+    if (client) {
+      for (const table of ['audit_pages', 'audit_issues', 'audit_reports']) {
+        const { error } = await client.from(table).delete().eq('audit_id', auditId);
+        assertNoError(error, `Clear stale ${table}`);
+      }
+    } else {
+      memory.pages.set(auditId, []);
+      memory.issues.set(auditId, []);
+      memory.reports.delete(auditId);
+    }
+
+    await this.appendAuditEvent(auditId, {
+      type: 'audit_recovered',
+      message: `Audit recovered by ${workerId} after a stale worker lease.`,
+      phase: 'Recovering stale audit',
+    });
+    await this.updateAuditJob(auditId, {
+      status: 'running',
+      progress: 1,
+      currentPhase: 'Recovering stale audit',
+      currentUrl: null,
+      currentCheck: null,
+      pagesDiscovered: 0,
+      pagesCrawled: 0,
+      checksTotal: 0,
+      checksCompleted: 0,
+      issuesFound: 0,
+      criticalCount: 0,
+      highCount: 0,
+      mediumCount: 0,
+      lowCount: 0,
+      finalUrl: null,
+      error: null,
+    });
   },
 
   async releaseAuditLock(id: string) {
