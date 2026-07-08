@@ -7,12 +7,14 @@ npm run lint
 npm run build
 npm run smoke:url
 npm run smoke:api-json
+npm run smoke:api-hardening
 npm run smoke:live-audit
 npm run smoke:resource-light-audit
 npm run smoke:supabase-schema
 npm run e2e:local-audit
 npm run verify:seo
 npm run verify:security
+npm audit --audit-level=moderate
 git diff --check
 ```
 
@@ -23,6 +25,12 @@ git diff --check
 - Do not set the Supabase service role key in public `VITE_*` variables.
 - Deploy frontend and lightweight API routes only.
 - Do not run audit workers or multi-page crawlers in Vercel serverless functions.
+- Confirm response security headers are present on preview deployments.
+- Configure Vercel Firewall for production:
+  - Keep automatic DDoS protection enabled.
+  - Enable Bot Protection in log mode first, then challenge mode after confirming legitimate traffic.
+  - Add a rate limit rule for `/api/` traffic that matches expected usage.
+  - Enable OWASP managed rules if available on the plan.
 
 ## Worker
 

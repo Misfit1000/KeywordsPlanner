@@ -7,11 +7,22 @@ import Database from "better-sqlite3";
 import path from "path";
 import { apiRouter } from "./src/api/index";
 import { securityRouter } from "./src/lib/security/api/index";
+import {
+  apiErrorHandler,
+  apiSecurityHeaders,
+  createRateLimiter,
+  jsonBodyParser,
+  jsonParseErrorHandler,
+} from "./src/lib/api/http-hardening";
 
 const dirName = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
 
-const JWT_SECRET = process.env.JWT_SECRET || "super-secret-key-change-me";
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === "production" ? "" : "local-development-secret-change-me");
 const PORT = 3000;
+
+if (process.env.NODE_ENV === "production" && !JWT_SECRET) {
+  throw new Error("JWT_SECRET is required in production.");
+}
 
 // Initialize Database
 const db = new Database("auth.db");
@@ -25,18 +36,33 @@ db.exec(`
 
 async function startServer() {
   const app = express();
-  app.use(express.json());
+  app.set('trust proxy', 1);
+  app.use(apiSecurityHeaders);
+  app.use(createRateLimiter({ namespace: 'local-api', windowMs: 60_000, maxRequests: 300 }));
+  app.use(jsonBodyParser());
+  app.use(jsonParseErrorHandler);
   app.use(cookieParser());
 
   // Mount tool APIs
+  app.use('/api/tools/audit/start', createRateLimiter({ namespace: 'local-audit-start', windowMs: 60_000, maxRequests: 20 }));
   app.use('/api/tools', apiRouter);
   app.use('/api/security-audit', securityRouter);
 
   // Auth Routes
+  const authRateLimiter = createRateLimiter({ namespace: 'local-auth', windowMs: 60_000, maxRequests: 20 });
+  app.use('/api/auth/register', authRateLimiter);
+  app.use('/api/auth/login', authRateLimiter);
+
   app.post("/api/auth/register", async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) {
       return res.status(400).json({ error: "Username and password required" });
+    }
+    if (!/^[a-zA-Z0-9_.-]{3,64}$/.test(username)) {
+      return res.status(400).json({ error: "Username must be 3-64 letters, numbers, dots, dashes, or underscores" });
+    }
+    if (typeof password !== 'string' || password.length < 8 || password.length > 128) {
+      return res.status(400).json({ error: "Password must be 8-128 characters" });
     }
 
     try {
@@ -67,8 +93,8 @@ async function startServer() {
 
     res.cookie("token", token, {
       httpOnly: true,
-      secure: true,
-      sameSite: "none",
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
     });
 
@@ -78,8 +104,8 @@ async function startServer() {
   app.post("/api/auth/logout", (req, res) => {
     res.clearCookie("token", {
       httpOnly: true,
-      secure: true,
-      sameSite: "none",
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
     });
     res.json({ success: true });
   });
@@ -106,6 +132,7 @@ async function startServer() {
       });
     }
   });
+  app.use(apiErrorHandler);
 
   // Vite middleware for development
 

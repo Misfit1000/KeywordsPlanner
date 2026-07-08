@@ -1,4 +1,11 @@
 import express from 'express';
+import {
+  apiErrorHandler,
+  apiSecurityHeaders,
+  createRateLimiter,
+  jsonBodyParser,
+  jsonParseErrorHandler,
+} from '../src/lib/api/http-hardening';
 
 let cachedApp: express.Express | null = null;
 
@@ -18,11 +25,17 @@ async function getApp() {
   const { apiRouter } = await import('../src/api/index');
   const app = express();
 
+  app.set('trust proxy', 1);
   app.use((req, _res, next) => {
     rewriteVercelPath(req);
     next();
   });
-  app.use(express.json());
+  app.use(apiSecurityHeaders);
+  app.use(createRateLimiter({ namespace: 'vercel-api', windowMs: 60_000, maxRequests: 300 }));
+  app.use(jsonBodyParser());
+  app.use(jsonParseErrorHandler);
+  app.use('/api/tools/audit/start', createRateLimiter({ namespace: 'audit-start', windowMs: 60_000, maxRequests: 20 }));
+  app.use('/tools/audit/start', createRateLimiter({ namespace: 'audit-start-direct', windowMs: 60_000, maxRequests: 20 }));
   app.use('/api/tools', apiRouter);
   app.use('/tools', apiRouter);
   app.use((req, res) => {
@@ -31,6 +44,7 @@ async function getApp() {
       error: `API route not found: ${req.method} ${req.originalUrl || req.url}`,
     });
   });
+  app.use(apiErrorHandler);
 
   cachedApp = app;
   return cachedApp;

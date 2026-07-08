@@ -1,0 +1,64 @@
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import handler from '../api/index.ts';
+
+function listen(server, port = 0) {
+  return new Promise((resolve) => server.listen(port, '127.0.0.1', () => resolve(server.address())));
+}
+
+function close(server) {
+  return new Promise((resolve) => server.close(resolve));
+}
+
+function makeRequest(baseUrl, path, { method = 'GET', body, headers = {} } = {}) {
+  return fetch(`${baseUrl}${path}`, {
+    method,
+    headers,
+    body,
+  }).then(async (response) => ({
+    status: response.status,
+    headers: response.headers,
+    text: await response.text(),
+  }));
+}
+
+const server = http.createServer((req, res) => handler(req, res));
+const address = await listen(server);
+const baseUrl = `http://127.0.0.1:${address.port}`;
+
+try {
+  const notFound = await makeRequest(baseUrl, '/api/not-found');
+  assert.equal(notFound.status, 404);
+  assert.ok(notFound.headers.get('content-type')?.includes('application/json'));
+  assert.equal(notFound.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(notFound.headers.get('x-frame-options'), 'DENY');
+
+  const invalidJson = await makeRequest(baseUrl, '/api/tools/audit/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{"url":',
+  });
+  assert.equal(invalidJson.status, 400);
+  assert.match(invalidJson.text, /Invalid JSON request body/);
+
+  const largeBody = await makeRequest(baseUrl, '/api/tools/audit/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ url: 'example.com', padding: 'x'.repeat(70_000) }),
+  });
+  assert.equal(largeBody.status, 413);
+  assert.match(largeBody.text, /Request body is too large/);
+
+  const validAudit = await makeRequest(baseUrl, '/api/tools/audit/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ url: 'example.com', mode: 'quick' }),
+  });
+  assert.equal(validAudit.status, 200);
+  assert.ok(validAudit.headers.get('content-type')?.includes('application/json'));
+  assert.equal(JSON.parse(validAudit.text).success, true);
+
+  console.log('API hardening smoke test passed.');
+} finally {
+  await close(server);
+}
