@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Router } from 'express';
 import { normalizeDomainInput, normalizeUserUrl } from '../lib/seo/url-utils';
 import { generateKeywords } from '../lib/keywords/generator';
@@ -15,7 +16,9 @@ import {
   getAuthenticatedUserFromRequest,
   getPlanLimits,
 } from '../lib/billing/entitlements';
+import type { ResourceAuditDocument } from '../lib/audit/resource-types';
 
+const DUPLICATE_AUDIT_WINDOW_MS = 10 * 60 * 1000;
 
 function asyncJsonRoute(handler: any) {
   return async (req: any, res: any, next: any) => {
@@ -35,9 +38,33 @@ function asyncJsonRoute(handler: any) {
 
 export const apiRouter = Router();
 
-function guestKeyForRequest(req: any) {
+function firstHeaderValue(value: unknown) {
+  return Array.isArray(value) ? String(value[0] || '') : String(value || '');
+}
+
+function hashGuestValue(value: string) {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function getCookieValue(req: any, name: string) {
+  if (req.cookies?.[name]) return String(req.cookies[name]);
+  const cookieHeader = firstHeaderValue(req.headers?.cookie);
+  const match = cookieHeader.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`));
+  return match ? decodeURIComponent(match.slice(name.length + 1)) : '';
+}
+
+function guestIdentityForRequest(req: any) {
+  const explicitGuestId = firstHeaderValue(req.headers?.['x-seointel-guest-id']) || getCookieValue(req, 'seointel_guest_id');
+  if (explicitGuestId) {
+    const guestKeyHash = hashGuestValue(`guest-session:${explicitGuestId.slice(0, 128)}`);
+    return { guestKey: `guest:${guestKeyHash}`, guestKeyHash };
+  }
+
   const forwarded = String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim();
-  return `guest:${forwarded || req.ip || req.socket?.remoteAddress || 'unknown'}`;
+  const userAgent = firstHeaderValue(req.headers?.['user-agent']).slice(0, 256);
+  const fallback = `${forwarded || req.ip || req.socket?.remoteAddress || 'unknown'}|${userAgent}`;
+  const guestKeyHash = hashGuestValue(`guest-network:${fallback}`);
+  return { guestKey: `guest:${guestKeyHash}`, guestKeyHash };
 }
 
 function isDeepAuditEnabled() {
@@ -62,6 +89,22 @@ function sendEntitlementError(res: any, error: unknown) {
   throw error;
 }
 
+function auditStartResponseData(audit: ResourceAuditDocument, extras: Record<string, unknown> = {}) {
+  return {
+    auditId: audit.id,
+    status: audit.status,
+    submittedInput: audit.submittedInput,
+    normalizedUrl: audit.normalizedUrl,
+    hostname: audit.hostname,
+    requestedMode: audit.requestedMode,
+    effectiveMode: audit.effectiveMode,
+    plan: audit.plan,
+    pageLimit: audit.pageLimit,
+    queuePriority: audit.queuePriority,
+    ...extras,
+  };
+}
+
 apiRouter.get('/me/profile', asyncJsonRoute(async (req, res) => {
   const authUser = await getAuthenticatedUserFromRequest(req);
   if (!authUser) {
@@ -81,13 +124,52 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
 
   const requestedMode = getAuditModeConfig(mode).mode as AuditMode;
   const { userId } = await getRequester(req);
+  const guestIdentity = guestIdentityForRequest(req);
+  const ownerLookup = userId
+    ? { userId, guestKeyHash: null }
+    : { userId: null, guestKeyHash: guestIdentity.guestKeyHash };
+  const createdAfterIso = new Date(Date.now() - DUPLICATE_AUDIT_WINDOW_MS).toISOString();
+
+  const duplicateAudit = await auditRepository.findActiveDuplicateAudit({
+    ...ownerLookup,
+    normalizedUrl: normalized.normalizedUrl,
+    createdAfterIso,
+  });
+  if (duplicateAudit) {
+    return res.json({
+      success: true,
+      data: auditStartResponseData(duplicateAudit, { reusedExistingAudit: true }),
+    });
+  }
+
+  if (!userId) {
+    const activeGuestAudit = await auditRepository.findActiveAuditForOwner(ownerLookup);
+    if (activeGuestAudit) {
+      return res.json({
+        success: true,
+        message: 'You already have an audit in progress.',
+        data: auditStartResponseData(activeGuestAudit, { reusedExistingAudit: true }),
+      });
+    }
+  }
+
   let decision;
   try {
     decision = await canStartAudit(userId, requestedMode, {
-      guestKey: guestKeyForRequest(req),
+      guestKey: guestIdentity.guestKey,
       deepAuditEnabled: isDeepAuditEnabled(),
     });
   } catch (error) {
+    if (error instanceof EntitlementError && /already have an audit in progress/i.test(error.message)) {
+      const activeAudit = await auditRepository.findActiveAuditForOwner(ownerLookup);
+      if (activeAudit) {
+        return res.json({
+          success: true,
+          message: 'You already have an audit in progress.',
+          data: auditStartResponseData(activeAudit, { reusedExistingAudit: true }),
+        });
+      }
+    }
     return sendEntitlementError(res, error);
   }
 
@@ -103,13 +185,14 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
     pageLimit: decision.pageLimit,
     queuePriority: decision.queuePriority,
     userId: decision.userId,
+    guestKeyHash: decision.userId ? null : guestIdentity.guestKeyHash,
     projectId,
   });
 
   await consumeAuditQuota(decision.userId, audit.id, decision.effectiveMode, {
     plan: decision.plan,
     pagesLimit: decision.pageLimit,
-    guestKey: guestKeyForRequest(req),
+    guestKey: guestIdentity.guestKey,
   });
   await auditRepository.updateAudit(audit.id, { quotaCounted: true });
 
@@ -117,17 +200,9 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
   res.json({
     success: true,
     data: {
-      auditId: audit.id,
-      status: 'queued',
-      submittedInput: audit.submittedInput,
-      normalizedUrl: audit.normalizedUrl,
-      hostname: audit.hostname,
-      requestedMode: decision.requestedMode,
-      effectiveMode: decision.effectiveMode,
-      plan: decision.plan,
-      pageLimit: decision.pageLimit,
-      queuePriority: decision.queuePriority,
+      ...auditStartResponseData(audit),
       quotaRemaining: decision.quotaRemaining,
+      reusedExistingAudit: false,
     },
   });
 }

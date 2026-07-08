@@ -13,6 +13,7 @@ $$;
 create table if not exists public.audits (
   id uuid primary key default gen_random_uuid(),
   user_id uuid null,
+  guest_key_hash text null,
   project_id uuid null,
   submitted_input text not null,
   normalized_url text not null,
@@ -105,6 +106,9 @@ create table if not exists public.audit_reports (
 );
 
 create index if not exists audits_status_created_at_idx on public.audits (status, created_at);
+create index if not exists audits_user_url_active_recent_idx on public.audits (user_id, normalized_url, created_at desc) where status in ('queued', 'running');
+create index if not exists audits_guest_url_active_recent_idx on public.audits (guest_key_hash, normalized_url, created_at desc) where user_id is null and status in ('queued', 'running');
+create index if not exists audits_guest_active_created_at_idx on public.audits (guest_key_hash, created_at desc) where user_id is null and status in ('queued', 'running');
 create index if not exists audits_lease_expires_at_idx on public.audits (lease_expires_at) where status = 'running';
 create index if not exists audits_expires_at_idx on public.audits (expires_at);
 create index if not exists audit_events_audit_created_at_idx on public.audit_events (audit_id, created_at desc);

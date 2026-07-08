@@ -26,10 +26,33 @@ const tabs: Array<{ id: AdminTab; label: string; icon: any; path: string }> = [
   { id: 'plans', label: 'Plans', icon: ShieldAlert, path: '/admin/plans' },
 ];
 
+const DUPLICATE_AUDIT_WARNING_MS = 10 * 60 * 1000;
+
 function tabFromPath() {
   const match = window.location.pathname.match(/^\/admin\/([^/]+)/);
   const id = match?.[1] as AdminTab | undefined;
   return tabs.some((tab) => tab.id === id) ? id! : 'overview';
+}
+
+function auditOwnerKey(row: any) {
+  return row.userId ? `user:${row.userId}` : `guest:${row.guestKeyHash || 'unknown'}`;
+}
+
+function duplicateAuditWarning(row: any, rows: any[]) {
+  const rowTime = new Date(row.createdAt).getTime();
+  if (!row.normalizedUrl || Number.isNaN(rowTime)) return null;
+  const owner = auditOwnerKey(row);
+  const matches = rows.filter((candidate) => {
+    const candidateTime = new Date(candidate.createdAt).getTime();
+    return candidate.id !== row.id
+      && candidate.normalizedUrl === row.normalizedUrl
+      && auditOwnerKey(candidate) === owner
+      && !Number.isNaN(candidateTime)
+      && Math.abs(candidateTime - rowTime) <= DUPLICATE_AUDIT_WARNING_MS;
+  });
+  return matches.length
+    ? `${matches.length + 1} audits for same URL and owner within 10 minutes`
+    : null;
 }
 
 export default function AdminDashboard() {
@@ -229,7 +252,16 @@ function AuditTable({ rows, adminUserId, refresh }: { rows: any[]; adminUserId: 
         <tbody className="divide-y divide-border">
           {rows.map((item) => (
             <tr key={item.id}>
-              <td className="p-3 max-w-sm break-all"><div className="font-medium">{item.normalizedUrl}</div><div className="text-xs text-muted-foreground">{item.error || item.currentPhase}</div></td>
+              <td className="p-3 max-w-sm break-all">
+                <div className="font-medium">{item.normalizedUrl}</div>
+                {duplicateAuditWarning(item, rows) && (
+                  <div className="mt-1 text-xs text-yellow-600 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3 shrink-0" />
+                    {duplicateAuditWarning(item, rows)}
+                  </div>
+                )}
+                <div className="text-xs text-muted-foreground">{item.error || item.currentPhase}</div>
+              </td>
               <td className="p-3 capitalize">{item.status}</td>
               <td className="p-3 capitalize">{item.plan || 'free'}</td>
               <td className="p-3">{item.effectiveMode || item.requestedMode || 'quick'}</td>
@@ -256,7 +288,7 @@ function AdminWorkers() {
     <Panel title="Workers">
       {(workers.data || []).length ? (workers.data || []).map((worker: any) => <WorkerRow key={worker.id} worker={worker} />) : <Empty text="No audit_worker:* heartbeat rows found." />}
       <div className="mt-4 text-sm text-muted-foreground">
-        Render Free Web Service can sleep. Add an uptime monitor pinging the worker /health URL every 10 minutes.
+        Render Free Web Service can sleep. Add an uptime monitor pinging only https://seointel-audit-worker.onrender.com/health every 10 minutes. Do not ping the homepage or audit start routes.
       </div>
     </Panel>
   );

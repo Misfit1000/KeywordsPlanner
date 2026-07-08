@@ -1,5 +1,6 @@
 import React, { useState } from "react"; 
-import { PieChart, Download, Loader2, FileJson, FileSpreadsheet, Printer } from "lucide-react"; 
+import { PieChart, Download, Loader2, FileJson, FileSpreadsheet, Printer, ShieldCheck, AlertTriangle } from "lucide-react";
+import { BarList, MetricCard, SectionHeader, SeverityStack } from './ui/visual-system';
 
 export default function Reports() {   
   const [loading, setLoading] = useState<string | null>(null);  
@@ -60,9 +61,38 @@ export default function Reports() {
   }
 
   return (    
-    <div className="max-w-5xl mx-auto space-y-6">      
-      <h1 className="text-3xl font-bold font-display">Reports & Exports</h1>      
-      <p className="text-muted-foreground">Export your data to CSV, JSON, or printable reports.</p>            
+    <div className="w-full space-y-8 animate-rise">
+      <SectionHeader
+        eyebrow="Reports"
+        title="Reports & Exports"
+        description="Understand audit health quickly, then export JSON, CSV, or printable reports for clients and developers."
+      />
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Overall score" value="84" detail="Latest report sample" icon={<PieChart className="h-6 w-6" />} tone="green" />
+        <MetricCard label="Critical issues" value="3" detail="Prioritize first" icon={<AlertTriangle className="h-6 w-6" />} tone="red" />
+        <MetricCard label="Security grade" value="A-" detail="Passive checks" icon={<ShieldCheck className="h-6 w-6" />} tone="green" />
+        <MetricCard label="Export formats" value="3" detail="JSON, CSV, PDF" icon={<Download className="h-6 w-6" />} tone="accent" />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+          <h2 className="text-xl font-bold">Category score bars</h2>
+          <p className="mb-5 text-sm text-muted-foreground">Preview the same hierarchy used in audit reports.</p>
+          <BarList items={[
+            { label: 'SEO', value: 84, tone: 'green' },
+            { label: 'Technical', value: 76, tone: 'accent' },
+            { label: 'Performance', value: 68, tone: 'yellow' },
+            { label: 'Security', value: 88, tone: 'green' },
+            { label: 'Crawlability', value: 79, tone: 'accent' },
+          ]} />
+        </div>
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+          <h2 className="text-xl font-bold">Severity distribution</h2>
+          <p className="mb-5 text-sm text-muted-foreground">A compact summary for client-facing reports.</p>
+          <SeverityStack critical={3} high={6} medium={12} low={8} />
+        </div>
+      </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">        
         

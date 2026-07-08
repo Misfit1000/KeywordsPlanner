@@ -51,6 +51,7 @@ function toCamelRow(row: any) {
     photoURL: row.photo_url ?? row.photoURL,
     platformName: row.platform_name ?? row.platformName,
     supportEmail: row.support_email ?? row.supportEmail,
+    guestKeyHash: row.guest_key_hash ?? row.guestKeyHash,
     requireEmailVerification: row.require_email_verification ?? row.requireEmailVerification,
     publicRegistration: row.public_registration ?? row.publicRegistration,
     subscriptionStatus: row.subscription_status ?? row.subscriptionStatus,
@@ -207,7 +208,7 @@ export const getAdminAudits = async (limit = 50) => {
   if (!client) return [];
   const { data, error } = await client
     .from('audits')
-    .select('id,user_id,submitted_input,normalized_url,status,plan,requested_mode,effective_mode,queue_priority,processing_tier,current_phase,locked_by,lease_expires_at,error,created_at,updated_at')
+    .select('id,user_id,guest_key_hash,submitted_input,normalized_url,status,plan,requested_mode,effective_mode,queue_priority,processing_tier,current_phase,locked_by,lease_expires_at,error,created_at,updated_at')
     .order('created_at', { ascending: false })
     .limit(limit);
   if (error) throw error;

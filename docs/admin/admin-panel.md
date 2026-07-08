@@ -68,7 +68,7 @@ The workers page reads `platform_settings` rows keyed as `audit_worker:*` and sh
 - supported modes
 - stale/sleeping warning
 
-If no heartbeat exists, deploy the Render Web Service worker and verify `/health`.
+If no heartbeat exists, deploy the Render Web Service worker and verify `https://seointel-audit-worker.onrender.com/health`. Uptime monitors must ping only that worker health URL; do not ping the SEOIntel homepage or audit start routes such as `/api/tools/audit/start`.
 
 ## Settings
 

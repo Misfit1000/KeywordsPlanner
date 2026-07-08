@@ -27,6 +27,7 @@ function toAuditDocument(row: DbRow | null | undefined): ResourceAuditDocument |
   return {
     id: row.id,
     userId: row.user_id ?? null,
+    guestKeyHash: row.guest_key_hash ?? null,
     projectId: row.project_id ?? null,
     submittedInput: row.submitted_input,
     normalizedUrl: row.normalized_url,

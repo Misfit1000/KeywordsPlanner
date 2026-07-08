@@ -105,6 +105,7 @@ function toAuditDocument(row: DbRow | null | undefined): ResourceAuditDocument |
   return {
     id: row.id,
     userId: row.user_id ?? null,
+    guestKeyHash: row.guest_key_hash ?? null,
     projectId: row.project_id ?? null,
     submittedInput: row.submitted_input,
     normalizedUrl: row.normalized_url,
@@ -152,6 +153,7 @@ function auditToRow(audit: ResourceAuditDocument) {
   return {
     id: audit.id,
     user_id: audit.userId,
+    guest_key_hash: audit.guestKeyHash,
     project_id: audit.projectId,
     submitted_input: audit.submittedInput,
     normalized_url: audit.normalizedUrl,
@@ -198,6 +200,7 @@ function auditToRow(audit: ResourceAuditDocument) {
 function auditPatchToRow(patch: Partial<ResourceAuditDocument>) {
   const row: DbRow = { updated_at: nowIso() };
   if ('userId' in patch) row.user_id = patch.userId;
+  if ('guestKeyHash' in patch) row.guest_key_hash = patch.guestKeyHash;
   if ('projectId' in patch) row.project_id = patch.projectId;
   if ('submittedInput' in patch) row.submitted_input = patch.submittedInput;
   if ('normalizedUrl' in patch) row.normalized_url = patch.normalizedUrl;
@@ -448,6 +451,7 @@ export const auditRepository = {
     queuePriority?: number;
     estimatedWaitSeconds?: number | null;
     userId?: string | null;
+    guestKeyHash?: string | null;
     projectId?: string | null;
   }): Promise<ResourceAuditDocument> {
     const id = randomUUID();
@@ -459,6 +463,7 @@ export const auditRepository = {
     const audit: ResourceAuditDocument = {
       id,
       userId: input.userId ?? null,
+      guestKeyHash: input.guestKeyHash ?? null,
       projectId: input.projectId ?? null,
       submittedInput: input.submittedInput,
       normalizedUrl: input.normalizedUrl,
@@ -519,6 +524,78 @@ export const auditRepository = {
     });
 
     return audit;
+  },
+
+  async findActiveDuplicateAudit(input: {
+    userId?: string | null;
+    guestKeyHash?: string | null;
+    normalizedUrl: string;
+    createdAfterIso: string;
+  }): Promise<ResourceAuditDocument | null> {
+    const client = getSupabaseAdminClient();
+    if (client) {
+      let query = client
+        .from('audits')
+        .select('*')
+        .eq('normalized_url', input.normalizedUrl)
+        .in('status', ['queued', 'running'])
+        .gte('created_at', input.createdAfterIso);
+
+      if (input.userId) {
+        query = query.eq('user_id', input.userId);
+      } else if (input.guestKeyHash) {
+        query = query.is('user_id', null).eq('guest_key_hash', input.guestKeyHash);
+      } else {
+        query = query.is('user_id', null).is('guest_key_hash', null);
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: false }).limit(1).maybeSingle();
+      assertNoError(error, 'Find active duplicate audit');
+      return toAuditDocument(data);
+    }
+
+    return Array.from(memory.audits.values())
+      .filter((audit) => audit.normalizedUrl === input.normalizedUrl)
+      .filter((audit) => audit.status === 'queued' || audit.status === 'running')
+      .filter((audit) => audit.createdAt >= input.createdAfterIso)
+      .filter((audit) => {
+        if (input.userId) return audit.userId === input.userId;
+        return !audit.userId && (audit.guestKeyHash ?? null) === (input.guestKeyHash ?? null);
+      })
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
+  },
+
+  async findActiveAuditForOwner(input: {
+    userId?: string | null;
+    guestKeyHash?: string | null;
+  }): Promise<ResourceAuditDocument | null> {
+    const client = getSupabaseAdminClient();
+    if (client) {
+      let query = client
+        .from('audits')
+        .select('*')
+        .in('status', ['queued', 'running']);
+
+      if (input.userId) {
+        query = query.eq('user_id', input.userId);
+      } else if (input.guestKeyHash) {
+        query = query.is('user_id', null).eq('guest_key_hash', input.guestKeyHash);
+      } else {
+        query = query.is('user_id', null).is('guest_key_hash', null);
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: false }).limit(1).maybeSingle();
+      assertNoError(error, 'Find active audit for owner');
+      return toAuditDocument(data);
+    }
+
+    return Array.from(memory.audits.values())
+      .filter((audit) => audit.status === 'queued' || audit.status === 'running')
+      .filter((audit) => {
+        if (input.userId) return audit.userId === input.userId;
+        return !audit.userId && (audit.guestKeyHash ?? null) === (input.guestKeyHash ?? null);
+      })
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
   },
 
   async getAuditJob(id: string): Promise<ResourceAuditDocument | null> {

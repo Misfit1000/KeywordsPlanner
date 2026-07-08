@@ -18,6 +18,7 @@ export type ProcessingTier = 'free' | 'paid' | 'agency' | 'admin';
 export interface ResourceAuditDocument {
   id: string;
   userId: string | null;
+  guestKeyHash: string | null;
   projectId: string | null;
   submittedInput: string;
   normalizedUrl: string;

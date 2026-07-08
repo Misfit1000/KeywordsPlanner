@@ -1,106 +1,125 @@
-import { useState } from"react";
-import { useAuth } from"../contexts/AuthContext";
-import { Lock, Mail, Loader2, UserPlus, X } from"lucide-react";
+import { useState } from 'react';
+import { AlertCircle, CheckCircle2, Loader2, Lock, Mail, UserPlus, X } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
-export default function Register({ onToggle, onClose }: { onToggle: () => void, onClose?: () => void }) {
- const [email, setEmail] = useState("");
- const [password, setPassword] = useState("");
- const [loading, setLoading] = useState(false);
- const [error, setError] = useState<string | null>(null);
- const { register } = useAuth();
+export default function Register({
+  onToggle,
+  onClose,
+}: {
+  onToggle: () => void;
+  onClose?: () => void;
+}) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const { register } = useAuth();
 
- const handleSubmit = async (e: React.FormEvent) => {
- e.preventDefault();
- setLoading(true);
- setError(null);
- try {
- await register(email, password);
- if (onClose) onClose();
- } catch (err: any) {
- setError(err.message);
- setLoading(false);
- }
- };
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setLoading(true);
+    setError(null);
+    setSuccess(false);
+    try {
+      await register(email.trim(), password);
+      setSuccess(true);
+      window.setTimeout(() => onClose?.(), 700);
+    } catch (err: any) {
+      setError(err.message || 'Registration failed');
+    } finally {
+      setLoading(false);
+    }
+  };
 
- return (
- <div
- className="w-full max-w-md bg-card border border-border rounded-3xl p-8 shadow-2xl relative"
- >
- {onClose && (
- <button 
- onClick={onClose}
- className="absolute top-4 right-4 p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-full transition-colors"
- >
- <X className="w-5 h-5"/>
- </button>
- )}
- <div className="flex flex-col items-center mb-8">
- <div className="p-3 bg-accent/10 rounded-2xl text-accent mb-4">
- <UserPlus className="w-8 h-8"/>
- </div>
- <h1 className="text-2xl font-bold font-display text-foreground">Create Account</h1>
- <p className="text-muted-foreground text-sm mt-1">Join the SEO Insights community</p>
- </div>
+  return (
+    <div className="w-full max-w-md animate-rise rounded-3xl border border-border bg-card p-7 shadow-2xl">
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="rounded-2xl bg-accent/10 p-3 text-accent">
+            <UserPlus className="h-7 w-7" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold">Create account</h1>
+            <p className="text-sm text-muted-foreground">Start saving audits, reports, and plan usage.</p>
+          </div>
+        </div>
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            aria-label="Close signup modal"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        )}
+      </div>
 
- <form onSubmit={handleSubmit} className="space-y-6">
- <div className="space-y-2">
- <label className="text-sm font-medium text-foreground ml-1">Email</label>
- <div className="relative">
- <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground"/>
- <input
- type="email"
- value={email}
- onChange={(e) => setEmail(e.target.value)}
- className="w-full bg-background border border-border rounded-xl py-3 pl-11 pr-4 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent/50 transition-all"
- placeholder="Enter your email"
- required
- />
- </div>
- </div>
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <label className="block space-y-2">
+          <span className="text-sm font-semibold">Email</span>
+          <span className="relative block">
+            <Mail className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              className="w-full rounded-xl border border-border bg-background py-3 pl-11 pr-4 text-foreground transition-all placeholder:text-muted-foreground focus:border-accent"
+              placeholder="you@example.com"
+              autoComplete="email"
+              required
+            />
+          </span>
+        </label>
 
- <div className="space-y-2">
- <label className="text-sm font-medium text-foreground ml-1">Password</label>
- <div className="relative">
- <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground"/>
- <input
- type="password"
- value={password}
- onChange={(e) => setPassword(e.target.value)}
- className="w-full bg-background border border-border rounded-xl py-3 pl-11 pr-4 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent/50 transition-all"
- placeholder="••••••••"
- required
- />
- </div>
- </div>
+        <label className="block space-y-2">
+          <span className="text-sm font-semibold">Password</span>
+          <span className="relative block">
+            <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              minLength={6}
+              className="w-full rounded-xl border border-border bg-background py-3 pl-11 pr-4 text-foreground transition-all placeholder:text-muted-foreground focus:border-accent"
+              placeholder="Create a secure password"
+              autoComplete="new-password"
+              required
+            />
+          </span>
+        </label>
 
- {error && (
- <div
- className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm text-center"
- >
- {error}
- </div>
- )}
+        {error && (
+          <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-600">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            {error}
+          </div>
+        )}
 
- <button
- type="submit"
- disabled={loading}
- className="w-full bg-accent hover:bg-accent/90 disabled:bg-accent/50 text-accent-foreground font-semibold py-3 rounded-xl transition-all shadow-lg shadow-accent/20 flex items-center justify-center gap-2"
- >
- {loading ? <Loader2 className="w-5 h-5 animate-spin"/> :"Create Account"}
- </button>
- </form>
+        {success && (
+          <div className="flex items-start gap-2 rounded-xl border border-green-500/20 bg-green-500/10 p-3 text-sm text-green-600">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+            Account created. Loading your dashboard...
+          </div>
+        )}
 
- <div className="mt-8 pt-6 border-t border-border text-center">
- <p className="text-muted-foreground text-sm">
- Already have an account?{""}
- <button
- onClick={onToggle}
- className="text-accent hover:text-accent/80 font-medium transition-colors"
- >
- Sign in
- </button>
- </p>
- </div>
- </div>
- );
+        <button
+          type="submit"
+          disabled={loading}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 font-semibold text-accent-foreground shadow-lg shadow-accent/20 transition-all hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
+          {loading ? 'Creating account...' : 'Create Account'}
+        </button>
+      </form>
+
+      <div className="mt-6 border-t border-border pt-5 text-center text-sm text-muted-foreground">
+        Already registered?{' '}
+        <button type="button" onClick={onToggle} className="font-semibold text-accent hover:text-accent/80">
+          Sign in
+        </button>
+      </div>
+    </div>
+  );
 }

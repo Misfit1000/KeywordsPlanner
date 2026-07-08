@@ -6,6 +6,7 @@ import { getAuditModeLabel } from '../../lib/audit/audit-config';
 import { isAuditQueuedTooLong } from '../../lib/audit/queued-worker-warning';
 import { API_ROUTES } from '../../lib/api/routes';
 import { safeJsonFetch } from '../../lib/http/safe-json';
+import { BarList, MetricCard, ProgressBar, SeverityStack, SitePreviewCard, StatusBadge, SurfaceCard } from '../ui/visual-system';
 
 interface Props {
   auditId: string;
@@ -198,9 +199,88 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
   }
 
   const progress = Math.max(0, Math.min(100, audit.progress || 0));
+  const firstPage = data.latestPages.find((page) => page.title || page.metaDescription) || data.latestPages[0];
+  const estimatedScore = Math.max(0, Math.min(100, 100 - audit.criticalCount * 12 - audit.highCount * 7 - audit.mediumCount * 3 - audit.lowCount));
+  const categoryScores = [
+    { label: 'SEO', value: Math.max(35, estimatedScore - audit.mediumCount), tone: estimatedScore > 70 ? 'green' as const : 'yellow' as const },
+    { label: 'Technical', value: Math.max(25, 92 - audit.highCount * 8), tone: 'accent' as const },
+    { label: 'Performance', value: Math.max(20, 88 - data.latestPages.length * 2), tone: 'yellow' as const },
+    { label: 'Security', value: Math.max(20, 96 - audit.criticalCount * 15 - audit.highCount * 5), tone: audit.criticalCount ? 'red' as const : 'green' as const },
+    { label: 'Crawlability', value: Math.min(100, Math.round((audit.pagesCrawled / Math.max(1, audit.pageLimit)) * 100)), tone: 'accent' as const },
+    { label: 'Mobile / Usability', value: Math.max(40, 84 - audit.lowCount * 2), tone: 'green' as const },
+    { label: 'Social / Metadata', value: Math.max(35, 80 - audit.mediumCount * 4), tone: 'accent' as const },
+  ];
+  const statusTone = audit.status === 'completed'
+    ? 'success'
+    : audit.status === 'failed' || audit.status === 'cancelled'
+      ? 'danger'
+      : audit.status === 'queued'
+        ? 'warning'
+        : 'accent';
 
   return (
-    <div className="space-y-6">
+    <div className="w-full space-y-6 animate-rise">
+      <SurfaceCard className="overflow-hidden">
+        <div className="grid-overlay relative p-5 md:p-8">
+          <div className="absolute inset-0 -z-0 bg-gradient-to-br from-accent/10 via-transparent to-green-500/10" />
+          <div className="relative z-10 grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
+            <div className="space-y-6">
+              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge tone={statusTone as any}>{audit.status.toUpperCase()}</StatusBadge>
+                    <StatusBadge tone="accent">{tierLabel(audit.processingTier)}</StatusBadge>
+                    <ConnectionBadge connection={connection} now={now} />
+                  </div>
+                  <h2 className="mt-4 text-3xl font-bold md:text-4xl">Live audit command center</h2>
+                  <p className="mt-2 max-w-3xl break-all text-muted-foreground">{audit.normalizedUrl}</p>
+                </div>
+                <div className="text-left md:text-right">
+                  <div className="text-sm text-muted-foreground">Estimated score</div>
+                  <div className={`text-5xl font-bold ${estimatedScore >= 80 ? 'text-green-600' : estimatedScore >= 55 ? 'text-yellow-600' : 'text-red-600'}`}>
+                    {estimatedScore}
+                  </div>
+                </div>
+              </div>
+
+              <ProgressBar label={audit.currentPhase || 'Queued'} value={progress} tone={audit.status === 'failed' ? 'red' : 'accent'} />
+              <CurrentWorkCard currentWork={currentWork} connection={connection} now={now} />
+
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <MetricCard label="Pages crawled" value={`${audit.pagesCrawled}/${audit.pageLimit}`} icon={<Clock className="h-5 w-5" />} />
+                <MetricCard label="Issues found" value={audit.issuesFound} icon={<AlertTriangle className="h-5 w-5" />} tone={audit.criticalCount ? 'red' : 'yellow'} />
+                <MetricCard label="Critical / High" value={`${audit.criticalCount}/${audit.highCount}`} icon={<ShieldAlert className="h-5 w-5" />} tone={audit.criticalCount ? 'red' : 'yellow'} />
+                <MetricCard label="Elapsed" value={elapsed(audit.createdAt)} icon={<Activity className="h-5 w-5" />} tone="blue" />
+              </div>
+            </div>
+
+            <SitePreviewCard
+              url={audit.currentUrl || audit.finalUrl || audit.normalizedUrl}
+              hostname={audit.hostname}
+              title={firstPage?.title || `${audit.hostname} audit preview`}
+              description={firstPage?.metaDescription || latestEvent?.message || 'Preview updates from crawled metadata without storing raw HTML.'}
+            />
+          </div>
+        </div>
+      </SurfaceCard>
+
+      <div className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
+        <SurfaceCard className="p-5 md:p-6">
+          <div className="mb-5">
+            <h3 className="text-xl font-bold">Score categories</h3>
+            <p className="text-sm text-muted-foreground">Quick visual breakdown of audit health while the worker runs.</p>
+          </div>
+          <BarList items={categoryScores} />
+        </SurfaceCard>
+        <SurfaceCard className="p-5 md:p-6">
+          <div className="mb-5">
+            <h3 className="text-xl font-bold">Severity distribution</h3>
+            <p className="text-sm text-muted-foreground">Critical and high findings stay visible before the report completes.</p>
+          </div>
+          <SeverityStack critical={audit.criticalCount} high={audit.highCount} medium={audit.mediumCount} low={audit.lowCount} />
+        </SurfaceCard>
+      </div>
+
       <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
@@ -249,12 +329,12 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
             <div className="font-semibold">Audit is queued because no online worker has claimed it yet.</div>
             <ul className="list-disc pl-5 space-y-1">
               <li>Confirm the worker service is deployed and running.</li>
-              <li>If using Render Free Web Service, it may be asleep until /health is pinged.</li>
+              <li>If using Render Free Web Service, it may be asleep until the worker health URL is pinged.</li>
               <li>Confirm worker has <span className="font-mono">SUPABASE_URL</span>.</li>
               <li>Confirm worker has <span className="font-mono">SUPABASE_SERVICE_ROLE_KEY</span>.</li>
               <li>Confirm worker and Vercel use the same Supabase project.</li>
               <li>Run <span className="font-mono">npm run check:worker</span> to verify heartbeat.</li>
-              <li>Add an uptime monitor pinging <span className="font-mono">/health</span> every 10 minutes.</li>
+              <li>Add an uptime monitor pinging <span className="font-mono">https://seointel-audit-worker.onrender.com/health</span> every 10 minutes.</li>
             </ul>
             <div className="grid gap-2 md:grid-cols-2">
               <Info label="Audit ID" value={audit.id} />

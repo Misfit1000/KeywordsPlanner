@@ -1,8 +1,9 @@
 import { API_ROUTES } from '../lib/api/routes';
-import { getAuthHeaders } from '../lib/api/auth-headers';
+import { getAuditStartHeaders } from '../lib/api/auth-headers';
+import { createAuditSubmitGuard } from '../lib/api/audit-submit-guard';
 import { safeJsonFetch } from '../lib/http/safe-json';
 import { normalizeDomainInput } from '../lib/seo/url-utils';
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { LiveAuditProgress } from './audit/LiveAuditProgress';
 import { ShieldCheck, ShieldAlert, AlertTriangle, Info, CheckCircle2, Loader2, Lock, Download, Printer } from 'lucide-react';
 import { SecurityAuditResult, SecurityIssue } from '../lib/security/types';
@@ -13,10 +14,12 @@ export default function SecurityAudit() {
   const [auditId, setAuditId] = useState<string | null>(null);
   const [result, setResult] = useState<SecurityAuditResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const auditStartGuardRef = useRef(createAuditSubmitGuard());
 
   const startAudit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url.trim()) return;
+    if (!auditStartGuardRef.current.begin()) return;
     let targetUrl = normalizeDomainInput(url);
     
     setLoading(true);
@@ -26,7 +29,7 @@ export default function SecurityAudit() {
     try {
       const dataResp = await safeJsonFetch<any>(API_ROUTES.auditStart, {
         method: 'POST',
-        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        headers: await getAuditStartHeaders({ 'Content-Type': 'application/json' }),
         
         body: JSON.stringify({ url: targetUrl, mode: 'quick', type: 'security', options: {} })
       });
@@ -39,12 +42,13 @@ export default function SecurityAudit() {
     } catch(err: any) {
       setError(err.message);
     } finally {
+      auditStartGuardRef.current.end();
       setLoading(false);
     }
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="w-full space-y-6 animate-rise">
       <div>
         <h1 className="text-3xl font-bold font-display">Cybersecurity Audit</h1>
         <p className="text-muted-foreground">Run a passive security configuration audit. This is not a penetration test and does not exploit vulnerabilities.</p>
@@ -65,7 +69,7 @@ export default function SecurityAudit() {
           className="bg-accent text-accent-foreground px-6 py-2 rounded-lg font-medium hover:bg-accent/90 transition-colors disabled:opacity-50 flex items-center gap-2"
         >
           {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Lock className="w-5 h-5" />}
-          Run Security Audit
+          {loading ? 'Starting audit...' : 'Run Security Audit'}
         </button>
       </form>
 

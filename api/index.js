@@ -886,6 +886,7 @@ function toAuditDocument(row) {
   return {
     id: row.id,
     userId: row.user_id ?? null,
+    guestKeyHash: row.guest_key_hash ?? null,
     projectId: row.project_id ?? null,
     submittedInput: row.submitted_input,
     normalizedUrl: row.normalized_url,
@@ -932,6 +933,7 @@ function auditToRow(audit) {
   return {
     id: audit.id,
     user_id: audit.userId,
+    guest_key_hash: audit.guestKeyHash,
     project_id: audit.projectId,
     submitted_input: audit.submittedInput,
     normalized_url: audit.normalizedUrl,
@@ -977,6 +979,7 @@ function auditToRow(audit) {
 function auditPatchToRow(patch) {
   const row = { updated_at: nowIso() };
   if ("userId" in patch) row.user_id = patch.userId;
+  if ("guestKeyHash" in patch) row.guest_key_hash = patch.guestKeyHash;
   if ("projectId" in patch) row.project_id = patch.projectId;
   if ("submittedInput" in patch) row.submitted_input = patch.submittedInput;
   if ("normalizedUrl" in patch) row.normalized_url = patch.normalizedUrl;
@@ -1202,6 +1205,7 @@ var init_audit_repository = __esm({
         const audit = {
           id,
           userId: input.userId ?? null,
+          guestKeyHash: input.guestKeyHash ?? null,
           projectId: input.projectId ?? null,
           submittedInput: input.submittedInput,
           normalizedUrl: input.normalizedUrl,
@@ -1259,6 +1263,46 @@ var init_audit_repository = __esm({
           progress: 0
         });
         return audit;
+      },
+      async findActiveDuplicateAudit(input) {
+        const client = getSupabaseAdminClient();
+        if (client) {
+          let query = client.from("audits").select("*").eq("normalized_url", input.normalizedUrl).in("status", ["queued", "running"]).gte("created_at", input.createdAfterIso);
+          if (input.userId) {
+            query = query.eq("user_id", input.userId);
+          } else if (input.guestKeyHash) {
+            query = query.is("user_id", null).eq("guest_key_hash", input.guestKeyHash);
+          } else {
+            query = query.is("user_id", null).is("guest_key_hash", null);
+          }
+          const { data, error } = await query.order("created_at", { ascending: false }).limit(1).maybeSingle();
+          assertNoError(error, "Find active duplicate audit");
+          return toAuditDocument(data);
+        }
+        return Array.from(memory.audits.values()).filter((audit) => audit.normalizedUrl === input.normalizedUrl).filter((audit) => audit.status === "queued" || audit.status === "running").filter((audit) => audit.createdAt >= input.createdAfterIso).filter((audit) => {
+          if (input.userId) return audit.userId === input.userId;
+          return !audit.userId && (audit.guestKeyHash ?? null) === (input.guestKeyHash ?? null);
+        }).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
+      },
+      async findActiveAuditForOwner(input) {
+        const client = getSupabaseAdminClient();
+        if (client) {
+          let query = client.from("audits").select("*").in("status", ["queued", "running"]);
+          if (input.userId) {
+            query = query.eq("user_id", input.userId);
+          } else if (input.guestKeyHash) {
+            query = query.is("user_id", null).eq("guest_key_hash", input.guestKeyHash);
+          } else {
+            query = query.is("user_id", null).is("guest_key_hash", null);
+          }
+          const { data, error } = await query.order("created_at", { ascending: false }).limit(1).maybeSingle();
+          assertNoError(error, "Find active audit for owner");
+          return toAuditDocument(data);
+        }
+        return Array.from(memory.audits.values()).filter((audit) => audit.status === "queued" || audit.status === "running").filter((audit) => {
+          if (input.userId) return audit.userId === input.userId;
+          return !audit.userId && (audit.guestKeyHash ?? null) === (input.guestKeyHash ?? null);
+        }).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
       },
       async getAuditJob(id) {
         const client = getSupabaseAdminClient();
@@ -2090,6 +2134,7 @@ var index_exports = {};
 __export(index_exports, {
   apiRouter: () => apiRouter
 });
+import { createHash as createHash2 } from "node:crypto";
 import { Router } from "express";
 function asyncJsonRoute(handler2) {
   return async (req, res, next) => {
@@ -2106,9 +2151,29 @@ function asyncJsonRoute(handler2) {
     }
   };
 }
-function guestKeyForRequest(req) {
+function firstHeaderValue(value) {
+  return Array.isArray(value) ? String(value[0] || "") : String(value || "");
+}
+function hashGuestValue(value) {
+  return createHash2("sha256").update(value).digest("hex");
+}
+function getCookieValue(req, name) {
+  if (req.cookies?.[name]) return String(req.cookies[name]);
+  const cookieHeader = firstHeaderValue(req.headers?.cookie);
+  const match = cookieHeader.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name}=`));
+  return match ? decodeURIComponent(match.slice(name.length + 1)) : "";
+}
+function guestIdentityForRequest(req) {
+  const explicitGuestId = firstHeaderValue(req.headers?.["x-seointel-guest-id"]) || getCookieValue(req, "seointel_guest_id");
+  if (explicitGuestId) {
+    const guestKeyHash2 = hashGuestValue(`guest-session:${explicitGuestId.slice(0, 128)}`);
+    return { guestKey: `guest:${guestKeyHash2}`, guestKeyHash: guestKeyHash2 };
+  }
   const forwarded = String(req.headers?.["x-forwarded-for"] || "").split(",")[0].trim();
-  return `guest:${forwarded || req.ip || req.socket?.remoteAddress || "unknown"}`;
+  const userAgent = firstHeaderValue(req.headers?.["user-agent"]).slice(0, 256);
+  const fallback = `${forwarded || req.ip || req.socket?.remoteAddress || "unknown"}|${userAgent}`;
+  const guestKeyHash = hashGuestValue(`guest-network:${fallback}`);
+  return { guestKey: `guest:${guestKeyHash}`, guestKeyHash };
 }
 function isDeepAuditEnabled() {
   return process.env.DEEP_AUDIT_ENABLED === "true";
@@ -2129,6 +2194,21 @@ function sendEntitlementError(res, error) {
   }
   throw error;
 }
+function auditStartResponseData(audit, extras = {}) {
+  return {
+    auditId: audit.id,
+    status: audit.status,
+    submittedInput: audit.submittedInput,
+    normalizedUrl: audit.normalizedUrl,
+    hostname: audit.hostname,
+    requestedMode: audit.requestedMode,
+    effectiveMode: audit.effectiveMode,
+    plan: audit.plan,
+    pageLimit: audit.pageLimit,
+    queuePriority: audit.queuePriority,
+    ...extras
+  };
+}
 async function startQueuedAudit(req, res, defaultMode = "quick") {
   const { url, mode = defaultMode, projectId = null } = req.body || {};
   const normalized = normalizeUserUrl(String(url || ""));
@@ -2137,13 +2217,47 @@ async function startQueuedAudit(req, res, defaultMode = "quick") {
   }
   const requestedMode = getAuditModeConfig(mode).mode;
   const { userId } = await getRequester(req);
+  const guestIdentity = guestIdentityForRequest(req);
+  const ownerLookup = userId ? { userId, guestKeyHash: null } : { userId: null, guestKeyHash: guestIdentity.guestKeyHash };
+  const createdAfterIso = new Date(Date.now() - DUPLICATE_AUDIT_WINDOW_MS).toISOString();
+  const duplicateAudit = await auditRepository.findActiveDuplicateAudit({
+    ...ownerLookup,
+    normalizedUrl: normalized.normalizedUrl,
+    createdAfterIso
+  });
+  if (duplicateAudit) {
+    return res.json({
+      success: true,
+      data: auditStartResponseData(duplicateAudit, { reusedExistingAudit: true })
+    });
+  }
+  if (!userId) {
+    const activeGuestAudit = await auditRepository.findActiveAuditForOwner(ownerLookup);
+    if (activeGuestAudit) {
+      return res.json({
+        success: true,
+        message: "You already have an audit in progress.",
+        data: auditStartResponseData(activeGuestAudit, { reusedExistingAudit: true })
+      });
+    }
+  }
   let decision;
   try {
     decision = await canStartAudit(userId, requestedMode, {
-      guestKey: guestKeyForRequest(req),
+      guestKey: guestIdentity.guestKey,
       deepAuditEnabled: isDeepAuditEnabled()
     });
   } catch (error) {
+    if (error instanceof EntitlementError && /already have an audit in progress/i.test(error.message)) {
+      const activeAudit = await auditRepository.findActiveAuditForOwner(ownerLookup);
+      if (activeAudit) {
+        return res.json({
+          success: true,
+          message: "You already have an audit in progress.",
+          data: auditStartResponseData(activeAudit, { reusedExistingAudit: true })
+        });
+      }
+    }
     return sendEntitlementError(res, error);
   }
   const audit = await auditRepository.createAuditJob({
@@ -2158,33 +2272,26 @@ async function startQueuedAudit(req, res, defaultMode = "quick") {
     pageLimit: decision.pageLimit,
     queuePriority: decision.queuePriority,
     userId: decision.userId,
+    guestKeyHash: decision.userId ? null : guestIdentity.guestKeyHash,
     projectId
   });
   await consumeAuditQuota(decision.userId, audit.id, decision.effectiveMode, {
     plan: decision.plan,
     pagesLimit: decision.pageLimit,
-    guestKey: guestKeyForRequest(req)
+    guestKey: guestIdentity.guestKey
   });
   await auditRepository.updateAudit(audit.id, { quotaCounted: true });
   console.info(`Audit start using Supabase project: ${getSupabaseProjectHostname() || "not configured"}`);
   res.json({
     success: true,
     data: {
-      auditId: audit.id,
-      status: "queued",
-      submittedInput: audit.submittedInput,
-      normalizedUrl: audit.normalizedUrl,
-      hostname: audit.hostname,
-      requestedMode: decision.requestedMode,
-      effectiveMode: decision.effectiveMode,
-      plan: decision.plan,
-      pageLimit: decision.pageLimit,
-      queuePriority: decision.queuePriority,
-      quotaRemaining: decision.quotaRemaining
+      ...auditStartResponseData(audit),
+      quotaRemaining: decision.quotaRemaining,
+      reusedExistingAudit: false
     }
   });
 }
-var apiRouter;
+var DUPLICATE_AUDIT_WINDOW_MS, apiRouter;
 var init_index = __esm({
   "src/api/index.ts"() {
     init_url_utils();
@@ -2196,6 +2303,7 @@ var init_index = __esm({
     init_server();
     init_resource_types();
     init_entitlements();
+    DUPLICATE_AUDIT_WINDOW_MS = 10 * 60 * 1e3;
     apiRouter = Router();
     apiRouter.get("/me/profile", asyncJsonRoute(async (req, res) => {
       const authUser = await getAuthenticatedUserFromRequest(req);

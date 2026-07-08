@@ -1,7 +1,8 @@
 import { API_ROUTES } from '../lib/api/routes';
-import { getAuthHeaders } from '../lib/api/auth-headers';
+import { getAuditStartHeaders } from '../lib/api/auth-headers';
+import { createAuditSubmitGuard } from '../lib/api/audit-submit-guard';
 import { safeJsonFetch } from '../lib/http/safe-json';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { LiveAuditProgress } from './audit/LiveAuditProgress';
 import { Globe, Loader2, FileText, AlertTriangle, CheckCircle2, Layers } from 'lucide-react';
 import { ParsedPageData } from '../lib/seo/html-parser';
@@ -22,6 +23,7 @@ export default function WebsiteAnalyzer() {
   const [error, setError] = useState<string | null>(null);
 
   const [auditId, setAuditId] = useState<string | null>(null);
+  const auditStartGuardRef = useRef(createAuditSubmitGuard());
   const plan = user?.plan || 'free';
   const canUseStandard = plan === 'paid' || plan === 'agency' || plan === 'admin';
   const canUseDeep = plan === 'agency' || plan === 'admin';
@@ -34,6 +36,7 @@ export default function WebsiteAnalyzer() {
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url.trim()) return;
+    if (!auditStartGuardRef.current.begin()) return;
 
     setLoading(true);
     setError(null);
@@ -43,7 +46,7 @@ export default function WebsiteAnalyzer() {
     try {
       const dataResp = await safeJsonFetch<any>(API_ROUTES.websiteAnalyze, {
         method: 'POST',
-        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        headers: await getAuditStartHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ url: url.trim(), mode })
       });
       const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
@@ -57,12 +60,14 @@ export default function WebsiteAnalyzer() {
     } catch (err: any) {
       setError(err.message);
       setLoading(false);
+    } finally {
+      auditStartGuardRef.current.end();
     }
   };
 
   if (auditId) {
     return (
-       <div className="space-y-6 max-w-7xl mx-auto">
+       <div className="w-full space-y-6 animate-rise">
         <div>
           <h1 className="text-3xl font-bold tracking-tight mb-2">Website Analyzer</h1>
           <p className="text-muted-foreground">Extract keywords and run an on-page SEO audit on multiple pages locally.</p>
@@ -91,13 +96,13 @@ export default function WebsiteAnalyzer() {
   }
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="w-full space-y-6 animate-rise">
       <div>
         <h1 className="text-3xl font-bold tracking-tight mb-2">Website Analyzer & Crawler</h1>
         <p className="text-muted-foreground">Extract keywords and run an on-page SEO audit on multiple pages locally.</p>
       </div>
 
-      <div className="bg-card border border-border p-6 rounded-2xl shadow-sm">
+      <div className="bg-card border border-border p-5 md:p-6 rounded-2xl shadow-sm">
         <form onSubmit={handleAnalyze} className="flex flex-col md:flex-row gap-4">
           <div className="flex-1 relative">
             <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -127,7 +132,7 @@ export default function WebsiteAnalyzer() {
             className="px-6 py-3 bg-accent text-accent-foreground font-semibold rounded-xl hover:bg-accent/90 disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Globe className="w-5 h-5" />}
-            Analyze
+            {loading ? 'Starting audit...' : 'Analyze'}
           </button>
         </form>
         {mode === 'deep' && (

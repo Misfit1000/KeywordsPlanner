@@ -97,13 +97,13 @@ npm run check:worker
 
 8. Start a Quick Audit on the Vercel preview or production site. The audit should move from queued to running and show live events.
 
-9. Add an uptime monitor that pings:
+9. Add an uptime monitor that pings only the Render worker health endpoint:
 
 ```text
-https://your-render-service.onrender.com/health
+https://seointel-audit-worker.onrender.com/health
 ```
 
-Ping every 10 minutes. Render Free Web Service may sleep without traffic, so queued audits can wait until `/health` wakes the worker.
+Ping every 10 minutes. Do not point uptime monitors at the SEOIntel homepage, Vercel preview/production URLs, or audit start routes such as `/api/tools/audit/start`. Render Free Web Service may sleep without traffic, so queued audits can wait until `/health` wakes the worker.
 
 Admin bootstrap:
 

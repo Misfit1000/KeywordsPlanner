@@ -1,11 +1,13 @@
-import React, { useState, useEffect, Suspense, lazy } from 'react';
-import { Search, LogOut, User, Sun, Moon, Menu, Mail, Loader2, TrendingUp } from 'lucide-react';
+import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
+import { Search, LogOut, User, Menu, Mail, Loader2, TrendingUp } from 'lucide-react';
 import LandingPage from './components/LandingPage';
 import { useAuth } from './contexts/AuthContext';
 import { useTheme } from './contexts/ThemeContext';
 import { API_ROUTES } from './lib/api/routes';
 import { safeJsonFetch } from './lib/http/safe-json';
-import { getAuthHeaders } from './lib/api/auth-headers';
+import { getAuditStartHeaders } from './lib/api/auth-headers';
+import { createAuditSubmitGuard } from './lib/api/audit-submit-guard';
+import { BrandMark, LoadingSkeleton, ThemeToggle } from './components/ui/visual-system';
 
 // Lazy load heavy components
 const Login = lazy(() => import('./components/Login'));
@@ -102,6 +104,7 @@ export default function App() {
     return match?.[1] || null;
   });
   const [startAuditError, setStartAuditError] = useState<string | null>(null);
+  const auditStartGuardRef = useRef(createAuditSubmitGuard());
 
   useEffect(() => {
     const loadRecent = () => {
@@ -282,19 +285,26 @@ export default function App() {
   };
 
   const startLiveAudit = async (rawUrl: string, mode: 'quick' | 'standard' | 'deep' = 'quick') => {
+    if (!auditStartGuardRef.current.begin()) return;
     setStartAuditError(null);
-    const response = await safeJsonFetch<any>(API_ROUTES.auditStart, {
-      method: 'POST',
-      headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ url: rawUrl, mode }),
-    });
-    if (!response.success) {
-      throw new Error((response as any).error || 'Failed to start audit');
+    try {
+      const response = await safeJsonFetch<any>(API_ROUTES.auditStart, {
+        method: 'POST',
+        headers: await getAuditStartHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ url: rawUrl, mode }),
+      });
+      if (!response.success) {
+        throw new Error((response as any).error || 'Failed to start audit');
+      }
+      const auditId = response.data.data?.auditId || response.data.auditId;
+      window.history.pushState(null, '', `/audit/live/${auditId}`);
+      setLiveAuditId(auditId);
+      setIsSearching(false);
+    } catch (error) {
+      throw error;
+    } finally {
+      auditStartGuardRef.current.end();
     }
-    const auditId = response.data.data?.auditId || response.data.auditId;
-    window.history.pushState(null, '', `/audit/live/${auditId}`);
-    setLiveAuditId(auditId);
-    setIsSearching(false);
   };
 
   if (unverifiedEmail) {
@@ -328,27 +338,18 @@ export default function App() {
         <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border h-16 px-4 md:px-6 flex items-center justify-between">
           <button
             type="button"
-            className="flex items-center gap-2 text-foreground font-bold text-lg tracking-tight"
+            className="rounded-2xl"
             onClick={() => {
               window.history.pushState(null, '', '/');
               setLiveAuditId(null);
               setIsSearching(false);
             }}
           >
-            <div className="bg-accent text-accent-foreground p-1.5 rounded-lg">
-              <TrendingUp className="w-5 h-5" />
-            </div>
-            <span className="text-xl">SEO<span className="text-accent">Intel</span></span>
+            <BrandMark />
           </button>
-          <button
-            onClick={toggleTheme}
-            className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-            title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-          >
-            {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-          </button>
+          <ThemeToggle theme={theme} onToggle={toggleTheme} />
         </header>
-        <main className="max-w-7xl mx-auto p-4 md:p-8">
+        <main className="w-full p-4 md:p-8">
           <Suspense fallback={<div className="h-64 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-accent" /></div>}>
             <LiveAuditProgress auditId={liveAuditId} />
           </Suspense>
@@ -454,17 +455,16 @@ export default function App() {
 
       <div className="relative z-10 flex flex-col min-h-screen">
         {!isSearching ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-6">
-              <div className="absolute top-6 right-6 flex items-center gap-4">
-                <button 
-                  onClick={toggleTheme}
-                  className="p-2 rounded-full bg-card/50 backdrop-blur-md border border-border text-muted-foreground hover:text-foreground transition-colors"
-                  title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-                >
-                  {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-                </button>
+            <div className="flex min-h-screen flex-1 flex-col">
+              <header className="sticky top-0 z-50 border-b border-border bg-background/85 px-4 py-3 backdrop-blur-xl md:px-8">
+                <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4">
+                  <button type="button" onClick={() => setIsSearching(false)} className="rounded-2xl">
+                    <BrandMark />
+                  </button>
+                  <div className="flex items-center gap-3">
+                    <ThemeToggle theme={theme} onToggle={toggleTheme} />
                 {authLoading ? (
-                  <div className="h-10 w-28 rounded-full bg-card/50 border border-border animate-pulse" />
+                      <div className="h-10 w-28 animate-pulse rounded-full border border-border bg-card/60" />
                 ) : user ? (
                   <>
                     <button 
@@ -472,12 +472,12 @@ export default function App() {
                         setActiveTab('settings');
                         setIsSearching(true);
                       }}
-                      className="flex items-center gap-2 text-foreground bg-card/50 backdrop-blur-md border border-border px-4 py-2 rounded-full cursor-pointer hover:bg-muted/50 transition-colors"
+                          className="hidden items-center gap-2 rounded-full border border-border bg-card/80 px-4 py-2 text-foreground transition-colors hover:bg-muted md:flex"
                     >
                       <User className="w-4 h-4" />
                       <span className="text-sm font-medium">{user.username || 'User'}</span>
                     </button>
-                    <button onClick={handleLogout} className="text-muted-foreground hover:text-red-500 transition-colors p-2 rounded-full hover:bg-muted/50" title="Sign out">
+                        <button onClick={handleLogout} className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-500" title="Sign out" aria-label="Sign out">
                       <LogOut className="w-5 h-5" />
                     </button>
                   </>
@@ -485,19 +485,21 @@ export default function App() {
                   <div className="flex items-center gap-2">
                     <button 
                       onClick={() => setAuthMode('login')}
-                      className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors px-4 py-2"
+                          className="rounded-full px-4 py-2 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                     >
-                      Log in
+                          Sign In
                     </button>
                     <button 
                       onClick={() => setAuthMode('register')}
-                      className="text-sm font-medium bg-foreground text-background hover:bg-foreground/90 px-4 py-2 rounded-full transition-colors"
+                          className="rounded-full bg-accent px-4 py-2 text-sm font-bold text-accent-foreground shadow-sm shadow-accent/20 transition-colors hover:bg-accent/90"
                     >
-                      Sign up
+                          Get Started
                     </button>
                   </div>
                 )}
               </div>
+                </div>
+              </header>
 
               <LandingPage 
                 onStartAudit={async (url) => {
@@ -517,7 +519,7 @@ export default function App() {
                 }}
               />
               {startAuditError && (
-                <div className="mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-sm">
+                <div className="mx-auto mb-6 w-[min(92vw,720px)] rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-500">
                   {startAuditError}
                 </div>
               )}
@@ -534,15 +536,13 @@ export default function App() {
                     >
                       <Menu className="w-5 h-5" />
                     </button>
-                    <div
-                      className="flex items-center gap-2 text-foreground font-bold text-lg tracking-tight cursor-pointer"
+                    <button
+                      type="button"
+                      className="rounded-2xl"
                       onClick={() => setIsSearching(false)}
                     >
-                      <div className="bg-accent text-accent-foreground p-1.5 rounded-lg">
-                        <TrendingUp className="w-5 h-5" />
-                      </div>
-                      <span className="hidden md:inline text-xl">SEO<span className="text-accent">Intel</span></span>
-                    </div>
+                      <BrandMark />
+                    </button>
                   </div>
                   
                   <form onSubmit={(e) => handleSearch(e, undefined, false)} className="flex-1 max-w-2xl relative group hidden md:flex items-center ml-4 bg-muted/30 hover:bg-muted/60 focus-within:bg-muted/60 border border-border rounded-xl transition-all shadow-sm">
@@ -574,13 +574,7 @@ export default function App() {
                 </div>
                 
                 <div className="flex items-center gap-3 ml-4">
-                  <button 
-                    onClick={toggleTheme}
-                    className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                    title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-                  >
-                    {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-                  </button>
+                  <ThemeToggle theme={theme} onToggle={toggleTheme} />
                   <div className="h-5 w-px bg-border hidden md:block mx-1"></div>
                   {authLoading ? (
                     <div className="h-9 w-28 rounded-xl bg-muted/30 border border-border animate-pulse" />
@@ -625,10 +619,10 @@ export default function App() {
                     setActiveTab={setActiveTab}
                   />
                 </Suspense>
-                <main className="flex-1 p-6 md:p-8 w-full">
+                <main className="flex-1 w-full p-4 md:p-6 xl:p-8">
                   <Suspense fallback={
-                    <div className="flex items-center justify-center h-64">
-                      <Loader2 className="w-8 h-8 text-accent animate-spin" />
+                    <div className="mx-auto w-full max-w-6xl py-8">
+                      <LoadingSkeleton rows={5} />
                     </div>
                   }>
                     {renderContent()}

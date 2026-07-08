@@ -1,18 +1,26 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Globe, ShieldCheck, Zap, LineChart, FileText, Activity, LayoutDashboard, Database, HardDrive, ArrowRight, Search } from 'lucide-react';
+import { createAuditSubmitGuard } from '../lib/api/audit-submit-guard';
 
 interface Props {
-  onStartAudit: (url: string) => void;
+  onStartAudit: (url: string) => Promise<void> | void;
   onExploreFeatures: () => void;
 }
 
 export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) {
   const [url, setUrl] = useState('');
+  const [starting, setStarting] = useState(false);
+  const auditStartGuardRef = useRef(createAuditSubmitGuard());
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (url.trim()) {
-      onStartAudit(url);
+    if (!url.trim() || !auditStartGuardRef.current.begin()) return;
+    setStarting(true);
+    try {
+      await onStartAudit(url);
+    } finally {
+      auditStartGuardRef.current.end();
+      setStarting(false);
     }
   };
 
@@ -56,9 +64,10 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
               
               <button
                 type="submit"
+                disabled={starting || !url.trim()}
                 className="w-full md:w-auto bg-accent text-accent-foreground hover:bg-accent/90 px-8 py-4 rounded-2xl font-bold transition-colors whitespace-nowrap flex items-center justify-center gap-2"
               >
-                Start Quick Audit <ArrowRight className="w-5 h-5" />
+                {starting ? 'Starting audit...' : 'Start Quick Audit'} <ArrowRight className="w-5 h-5" />
               </button>
             </div>
           </form>
@@ -243,6 +252,22 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
       </section>
 
       {/* How it Works */}
+      <section className="border-y border-border bg-muted/25 px-6 py-24">
+        <div className="mx-auto max-w-7xl">
+          <div className="mb-12 text-center">
+            <div className="text-sm font-bold uppercase tracking-[0.18em] text-accent">Plans</div>
+            <h2 className="mt-2 text-4xl font-bold">Start free, scale when audits need more depth</h2>
+            <p className="mx-auto mt-4 max-w-2xl text-muted-foreground">The product stays resource-light: Vercel serves the app, Supabase stores live audit state, and Render runs the crawler worker.</p>
+          </div>
+          <div className="grid gap-6 lg:grid-cols-3">
+            <PlanCard title="Free Quick" price="$0" highlight="1 active audit" items={['5-page quick crawl', 'Passive security checks', 'Live progress updates', 'JSON/CSV export basics']} />
+            <PlanCard title="Paid Standard" price="Upgrade" featured highlight="Priority queue" items={['25-page standard crawl', 'More SEO categories', 'PDF-ready report workflow', 'Higher daily/monthly limits']} />
+            <PlanCard title="Agency / Admin" price="Scale" highlight="Deep workflow" items={['Deep audit mode when enabled', 'Highest queue priority', 'White-label-ready reporting', 'Admin operations panel']} />
+          </div>
+        </div>
+      </section>
+
+      {/* How it Works */}
       <section className="py-24 px-6 bg-accent/5 border-t border-accent/10">
         <div className="max-w-5xl mx-auto text-center">
           <h2 className="text-4xl font-bold mb-16">How it works</h2>
@@ -314,6 +339,28 @@ function Step({ number, title, desc }: { number: string, title: string, desc: st
       </div>
       <h4 className="font-bold text-lg mb-2">{title}</h4>
       <p className="text-muted-foreground text-sm">{desc}</p>
+    </div>
+  );
+}
+
+function PlanCard({ title, price, highlight, items, featured }: { title: string, price: string, highlight: string, items: string[], featured?: boolean }) {
+  return (
+    <div className={`rounded-3xl border p-7 shadow-sm transition-all hover:-translate-y-1 hover:shadow-xl ${featured ? 'border-accent bg-accent/10' : 'border-border bg-card'}`}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-2xl font-bold">{title}</h3>
+          <p className="mt-1 text-sm text-muted-foreground">{highlight}</p>
+        </div>
+        <div className="rounded-full bg-background px-3 py-1 text-sm font-bold text-accent">{price}</div>
+      </div>
+      <ul className="mt-6 space-y-3">
+        {items.map((item) => (
+          <li key={item} className="flex items-start gap-3 text-sm">
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-500" />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

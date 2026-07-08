@@ -44,8 +44,53 @@
     @apply bg-background text-foreground transition-colors duration-300 font-sans antialiased selection:bg-accent/20 selection:text-accent;
   }
 
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+  }
+
   h1, h2, h3, h4, h5, h6 {
     @apply font-display tracking-tight font-semibold text-foreground;
+  }
+}
+
+@layer utilities {
+  .grid-overlay {
+    background-image:
+      linear-gradient(to right, color-mix(in srgb, var(--border) 55%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in srgb, var(--border) 55%, transparent) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+
+  .animate-rise {
+    animation: rise 420ms ease-out both;
+  }
+
+  .animate-soft-pulse {
+    animation: soft-pulse 2.2s ease-in-out infinite;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes soft-pulse {
+  0%, 100% {
+    opacity: 0.65;
+  }
+  50% {
+    opacity: 1;
   }
 }
 
