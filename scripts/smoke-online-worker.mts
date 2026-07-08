@@ -8,6 +8,7 @@ import {
   loadWorkerConfig,
   updateWorkerState,
 } from '../src/workers/audit-worker-runtime.ts';
+import { startWorkerHealthServer } from '../src/workers/audit-worker-health.ts';
 import { isAuditQueuedTooLong } from '../src/lib/audit/queued-worker-warning.ts';
 
 const root = process.cwd();
@@ -25,10 +26,13 @@ assertThrowsWorkerEnv({ SUPABASE_URL: 'https://example.supabase.co' });
 const config = loadWorkerConfig({
   SUPABASE_URL: 'https://example.supabase.co/',
   SUPABASE_SERVICE_ROLE_KEY: 'service-role-key',
+  PORT: '3000',
 });
 assert.equal(config.workerId, 'worker-production-1');
 assert.equal(config.pollIntervalMs, 4000);
 assert.equal(config.supabaseHost, 'example.supabase.co');
+assert.equal(config.runtime, 'render-web-service');
+assert.deepEqual(config.supportedModes, ['quick', 'standard']);
 
 const workerSource = readFileSync(join(root, 'src/workers/audit-worker.ts'), 'utf8');
 assert.match(workerSource, /requireSupabaseAdminClient/);
@@ -53,6 +57,20 @@ assert.deepEqual(
   },
 );
 assert.ok(heartbeat.lastSeenAt);
+assert.equal(heartbeat.runtime, 'render-web-service');
+assert.equal(heartbeat.deepAuditEnabled, false);
+
+const server = startWorkerHealthServer(state, () => true, '0');
+assert.ok(server);
+await new Promise<void>((resolve) => server!.once('listening', () => resolve()));
+const address = server!.address();
+assert.equal(typeof address, 'object');
+const healthResponse = await fetch(`http://127.0.0.1:${(address as any).port}/health`);
+const health = await healthResponse.json();
+assert.equal(health.ok, true);
+assert.equal(health.runtime, 'render-web-service');
+assert.deepEqual(health.supportedModes, ['quick', 'standard']);
+server!.close();
 
 assert.equal(
   isAuditQueuedTooLong(
@@ -97,5 +115,9 @@ assert.match(dockerignore, /^node_modules$/m);
 const migration = readFileSync(join(root, 'supabase/migrations/002_worker_heartbeat.sql'), 'utf8');
 assert.match(migration, /add column if not exists value jsonb not null default '\{\}'::jsonb/i);
 assert.match(migration, /platform_settings_set_updated_at/i);
+
+const docs = readFileSync(join(root, 'docs/deployment/audit-worker-online.md'), 'utf8');
+assert.match(docs, /Render Free Web Service/);
+assert.match(docs, /uptime monitor/i);
 
 console.log('Online worker smoke test passed.');

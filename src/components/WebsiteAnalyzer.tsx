@@ -1,12 +1,15 @@
 import { API_ROUTES } from '../lib/api/routes';
+import { getAuthHeaders } from '../lib/api/auth-headers';
 import { safeJsonFetch } from '../lib/http/safe-json';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { LiveAuditProgress } from './audit/LiveAuditProgress';
 import { Globe, Loader2, FileText, AlertTriangle, CheckCircle2, Layers } from 'lucide-react';
 import { ParsedPageData } from '../lib/seo/html-parser';
 import { AuditResult } from '../lib/audit/types';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function WebsiteAnalyzer() {
+  const { user } = useAuth();
   const [url, setUrl] = useState('');
   const [mode, setMode] = useState<'quick' | 'standard' | 'deep'>('standard');
   const [loading, setLoading] = useState(false);
@@ -19,6 +22,14 @@ export default function WebsiteAnalyzer() {
   const [error, setError] = useState<string | null>(null);
 
   const [auditId, setAuditId] = useState<string | null>(null);
+  const plan = user?.plan || 'free';
+  const canUseStandard = plan === 'paid' || plan === 'agency' || plan === 'admin';
+  const canUseDeep = plan === 'agency' || plan === 'admin';
+
+  useEffect(() => {
+    if (mode === 'standard' && !canUseStandard) setMode('quick');
+    if (mode === 'deep' && !canUseDeep) setMode('quick');
+  }, [canUseDeep, canUseStandard, mode]);
 
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,7 +43,7 @@ export default function WebsiteAnalyzer() {
     try {
       const dataResp = await safeJsonFetch<any>(API_ROUTES.websiteAnalyze, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ url: url.trim(), mode })
       });
       const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
@@ -105,9 +116,9 @@ export default function WebsiteAnalyzer() {
               onChange={e => setMode(e.target.value as any)}
               className="bg-muted/50 border border-border rounded-xl py-3 px-3 outline-none focus:border-accent"
             >
-              <option value="quick">Quick - 10 pages</option>
-              <option value="standard">Standard - 25 pages</option>
-              <option value="deep">Deep - 50 pages</option>
+              <option value="quick">Quick - Free lightweight</option>
+              <option value="standard" disabled={!canUseStandard}>Standard - Paid 25 pages {!canUseStandard ? '(locked)' : ''}</option>
+              <option value="deep" disabled={!canUseDeep}>Deep - Agency/Admin {!canUseDeep ? '(locked)' : ''}</option>
             </select>
           </div>
           <button

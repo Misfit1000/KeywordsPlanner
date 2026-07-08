@@ -12,6 +12,8 @@ export {
 
 export type AuditStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type AuditSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
+export type UserPlan = 'free' | 'paid' | 'agency' | 'admin';
+export type ProcessingTier = 'free' | 'paid' | 'agency' | 'admin';
 
 export interface ResourceAuditDocument {
   id: string;
@@ -22,6 +24,14 @@ export interface ResourceAuditDocument {
   finalUrl: string | null;
   hostname: string;
   mode: AuditMode;
+  plan: UserPlan;
+  requestedMode: AuditMode;
+  effectiveMode: AuditMode;
+  queuePriority: number;
+  processingTier: ProcessingTier;
+  quotaCounted: boolean;
+  workerRuntime: string | null;
+  estimatedWaitSeconds: number | null;
   status: AuditStatus;
   progress: number;
   currentPhase: string;
@@ -39,6 +49,7 @@ export interface ResourceAuditDocument {
   lowCount: number;
   createdAt: string;
   updatedAt: string;
+  startedAt: string | null;
   completedAt: string | null;
   expiresAt: string;
   cancelledAt: string | null;

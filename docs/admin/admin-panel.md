@@ -1,0 +1,94 @@
+# SEOIntel Admin Panel
+
+Admin routes live under `/admin`:
+
+- `/admin`
+- `/admin/users`
+- `/admin/audits`
+- `/admin/queue`
+- `/admin/workers`
+- `/admin/settings`
+- `/admin/plans`
+
+## Assign Admin
+
+Set this server-side env var on Vercel:
+
+```bash
+ADMIN_EMAILS=owner@example.com,ops@example.com
+```
+
+When one of those users signs in, the server-side profile bootstrap sets:
+
+- `role=admin`
+- `plan=admin`
+- `subscription_status=active`
+
+Do not expose `ADMIN_EMAILS` to browser code.
+
+## Manage Users
+
+Admins can:
+
+- Search users by email.
+- Change role: `user`, `support`, `admin`.
+- Change plan: `free`, `paid`, `agency`, `admin`.
+- Change subscription status.
+- Reset quotas.
+
+All user changes are logged in `admin_actions`.
+
+## Manage Audits
+
+Admins can:
+
+- View latest audits.
+- Filter visually by status, plan, mode, user, and error.
+- Cancel queued/running audits.
+- Retry failed audits.
+- Recover stale locked audits.
+- Raise or lower queue priority.
+
+## Inspect Queue
+
+The queue page shows queued/running audits ordered by:
+
+1. Highest `queue_priority`.
+2. Oldest `created_at`.
+
+## Inspect Workers
+
+The workers page reads `platform_settings` rows keyed as `audit_worker:*` and shows:
+
+- workerId
+- status
+- lastSeenAt
+- currentAuditId
+- runtime
+- supported modes
+- stale/sleeping warning
+
+If no heartbeat exists, deploy the Render Web Service worker and verify `/health`.
+
+## Settings
+
+Safe settings include:
+
+- platform name
+- support email
+- queue fairness paid burst
+- guest audit enabled
+
+Secrets are never displayed or editable in the admin panel.
+
+## Plans
+
+The plans page edits `plan_limits`:
+
+- daily/monthly quotas
+- page limits
+- allowed modes
+- priority
+- export/PDF/white-label/embed/API flags
+
+Run `supabase/migrations/003_plans_admin_limits.sql` before using the panel.

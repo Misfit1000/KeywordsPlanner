@@ -33,6 +33,13 @@ function severityClass(severity: string) {
   return 'bg-muted text-muted-foreground border-border';
 }
 
+function tierLabel(tier?: string) {
+  if (tier === 'admin') return 'Admin Deep Audit';
+  if (tier === 'agency') return 'Agency Deep Audit';
+  if (tier === 'paid') return 'Paid Standard Audit';
+  return 'Free Lightweight Audit';
+}
+
 function formatLastUpdate(lastUpdateAt: number | undefined, now: number) {
   if (!lastUpdateAt) return 'waiting for first update';
   const seconds = Math.max(0, Math.floor((now - lastUpdateAt) / 1000));
@@ -242,10 +249,12 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
             <div className="font-semibold">Audit is queued because no online worker has claimed it yet.</div>
             <ul className="list-disc pl-5 space-y-1">
               <li>Confirm the worker service is deployed and running.</li>
+              <li>If using Render Free Web Service, it may be asleep until /health is pinged.</li>
               <li>Confirm worker has <span className="font-mono">SUPABASE_URL</span>.</li>
               <li>Confirm worker has <span className="font-mono">SUPABASE_SERVICE_ROLE_KEY</span>.</li>
               <li>Confirm worker and Vercel use the same Supabase project.</li>
               <li>Run <span className="font-mono">npm run check:worker</span> to verify heartbeat.</li>
+              <li>Add an uptime monitor pinging <span className="font-mono">/health</span> every 10 minutes.</li>
             </ul>
             <div className="grid gap-2 md:grid-cols-2">
               <Info label="Audit ID" value={audit.id} />
@@ -264,6 +273,8 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
           <Info label="Final URL" value={audit.finalUrl || 'Waiting for first fetch'} />
           <Info label="Hostname" value={audit.hostname} />
           <Info label="Mode" value={getAuditModeLabel(audit.mode)} />
+          <Info label="Processing tier" value={tierLabel(audit.processingTier)} />
+          <Info label="Plan" value={audit.plan || 'free'} />
           <Info label="Status" value={audit.status} />
           <Info label="Current page" value={audit.currentUrl || 'Waiting for worker'} />
           <Info label="Current check" value={audit.currentCheck || 'Queued'} />
@@ -273,6 +284,13 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
           <Info label="Security" value="Passive checks only" />
         </div>
       </div>
+
+      {audit.status === 'completed' && audit.processingTier === 'free' && (
+        <div className="bg-accent/10 border border-accent/20 rounded-xl p-4 text-sm">
+          <div className="font-semibold text-foreground">Unlock full 25-page audit, deeper checks, priority queue, PDF reports.</div>
+          <div className="text-muted-foreground mt-1">Free reports show lightweight SEO and passive security results. Paid reports unlock the full standard audit categories.</div>
+        </div>
+      )}
 
       <div className="grid md:grid-cols-4 gap-4">
         <Metric icon={<Clock />} label="Pages Crawled" value={`${audit.pagesCrawled}/${audit.pageLimit}`} />

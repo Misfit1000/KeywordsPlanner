@@ -16,6 +16,7 @@ const navItems: { icon: any, label: string, id: TabType, adminOnly?: boolean }[]
  { icon: BarChart3, label: 'Search Data', id: 'search-data' },
  { icon: FileText, label: 'Content Briefs', id: 'content-briefs' },
  { icon: BarChart3, label: 'Rankings Data', id: 'rank-tracker' },
+ { icon: ShieldAlert, label: 'Admin Panel', id: 'admin-dashboard', adminOnly: true },
 ];
 
 interface SidebarProps {
@@ -80,7 +81,10 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab }: Si
 
  <div className="p-6 border-t border-border w-64">
  <nav className="space-y-1">
- <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors">
+ <button
+ onClick={() => setActiveTab('settings')}
+ className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+ >
  <Settings className="w-5 h-5"/>
  Settings
  </button>

@@ -1,7 +1,8 @@
 services:
-  - type: worker
+  - type: web
     name: seointel-audit-worker
     runtime: node
+    plan: free
     buildCommand: npm ci --legacy-peer-deps
     startCommand: npm run worker:audit
     autoDeploy: true
@@ -16,3 +17,7 @@ services:
         value: "4000"
       - key: WORKER_HEALTH_PORT
         sync: false
+      - key: WORKER_RUNTIME
+        value: render-web-service
+      - key: DEEP_AUDIT_ENABLED
+        value: "false"

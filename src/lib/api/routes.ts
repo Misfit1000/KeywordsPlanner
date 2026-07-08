@@ -6,6 +6,7 @@ export const API_ROUTES = {
   auditCancel: (id: string) => `/api/tools/audit/cancel/${id}`,
   auditExport: (id: string, format: string) => `/api/tools/audit/export/${id}/${format}`,
   auditRerun: (id: string) => `/api/tools/audit/rerun/${id}`,
+  meProfile: "/api/tools/me/profile",
   securityStart: "/api/tools/audit/start", // Based on the code, security audit calls /api/tools/audit/start with type="security"
   keywordResearch: "/api/tools/keyword/research",
   websiteAnalyze: "/api/tools/website/analyze",

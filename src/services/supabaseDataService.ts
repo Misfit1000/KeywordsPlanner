@@ -53,6 +53,34 @@ function toCamelRow(row: any) {
     supportEmail: row.support_email ?? row.supportEmail,
     requireEmailVerification: row.require_email_verification ?? row.requireEmailVerification,
     publicRegistration: row.public_registration ?? row.publicRegistration,
+    subscriptionStatus: row.subscription_status ?? row.subscriptionStatus,
+    auditQuotaUsedDaily: row.audit_quota_used_daily ?? row.auditQuotaUsedDaily,
+    auditQuotaUsedMonthly: row.audit_quota_used_monthly ?? row.auditQuotaUsedMonthly,
+    quotaResetDailyAt: row.quota_reset_daily_at ?? row.quotaResetDailyAt,
+    quotaResetMonthlyAt: row.quota_reset_monthly_at ?? row.quotaResetMonthlyAt,
+    submittedInput: row.submitted_input ?? row.submittedInput,
+    normalizedUrl: row.normalized_url ?? row.normalizedUrl,
+    requestedMode: row.requested_mode ?? row.requestedMode,
+    effectiveMode: row.effective_mode ?? row.effectiveMode,
+    queuePriority: row.queue_priority ?? row.queuePriority,
+    processingTier: row.processing_tier ?? row.processingTier,
+    lockedBy: row.locked_by ?? row.lockedBy,
+    leaseExpiresAt: row.lease_expires_at ?? row.leaseExpiresAt,
+    dailyAudits: row.daily_audits ?? row.dailyAudits,
+    monthlyAudits: row.monthly_audits ?? row.monthlyAudits,
+    maxPagesQuick: row.max_pages_quick ?? row.maxPagesQuick,
+    maxPagesStandard: row.max_pages_standard ?? row.maxPagesStandard,
+    maxPagesDeep: row.max_pages_deep ?? row.maxPagesDeep,
+    allowedModes: row.allowed_modes ?? row.allowedModes,
+    auditTimeoutSeconds: row.audit_timeout_seconds ?? row.auditTimeoutSeconds,
+    maxEventsPerAudit: row.max_events_per_audit ?? row.maxEventsPerAudit,
+    maxIssuesPerAudit: row.max_issues_per_audit ?? row.maxIssuesPerAudit,
+    exportsEnabled: row.exports_enabled ?? row.exportsEnabled,
+    pdfEnabled: row.pdf_enabled ?? row.pdfEnabled,
+    whiteLabelEnabled: row.white_label_enabled ?? row.whiteLabelEnabled,
+    embedEnabled: row.embed_enabled ?? row.embedEnabled,
+    apiEnabled: row.api_enabled ?? row.apiEnabled,
+    scheduledAuditsEnabled: row.scheduled_audits_enabled ?? row.scheduledAuditsEnabled,
     createdAt: row.created_at ?? row.createdAt,
     updatedAt: row.updated_at ?? row.updatedAt,
   };
@@ -103,7 +131,8 @@ export const initUserProfile = async (uid: string, data: any) => {
       email: data.email,
       display_name: data.displayName,
       plan: 'free',
-      role: 'member',
+      role: 'user',
+      subscription_status: 'inactive',
     });
     if (error) throw error;
   }
@@ -144,6 +173,21 @@ export const updateUserRole = async (uid: string, role: string) => {
   if (error) throw error;
 };
 
+export const updateUserAdminFields = async (uid: string, patch: any, adminUserId?: string) => {
+  const client = assertClient();
+  const update: any = { updated_at: new Date().toISOString() };
+  for (const key of ['role', 'plan', 'subscription_status', 'disabled']) {
+    if (key in patch) update[key] = patch[key];
+  }
+  if (patch.resetQuotas) {
+    update.audit_quota_used_daily = 0;
+    update.audit_quota_used_monthly = 0;
+  }
+  const { error } = await client.from('user_profiles').update(update).eq('id', uid);
+  if (error) throw error;
+  await logAdminAction(adminUserId, 'update_user', 'user', uid, update);
+};
+
 export const deleteUserDoc = async (uid: string) => {
   const client = assertClient();
   const { error } = await client.from('user_profiles').delete().eq('id', uid);
@@ -156,6 +200,86 @@ export const getAllProjects = async () => {
   const { data, error } = await client.from('projects').select('*').order('created_at', { ascending: false });
   if (error) throw error;
   return (data ?? []).map(toCamelRow);
+};
+
+export const getAdminAudits = async (limit = 50) => {
+  const client = clientOrNull();
+  if (!client) return [];
+  const { data, error } = await client
+    .from('audits')
+    .select('id,user_id,submitted_input,normalized_url,status,plan,requested_mode,effective_mode,queue_priority,processing_tier,current_phase,locked_by,lease_expires_at,error,created_at,updated_at')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []).map(toCamelRow);
+};
+
+export const getAdminWorkers = async () => {
+  const client = clientOrNull();
+  if (!client) return [];
+  const { data, error } = await client
+    .from('platform_settings')
+    .select('id,key,value,updated_at')
+    .like('id', 'audit_worker:%')
+    .order('updated_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(toCamelRow);
+};
+
+export const getPlanLimits = async () => {
+  const client = clientOrNull();
+  if (!client) return [];
+  const { data, error } = await client.from('plan_limits').select('*').order('priority', { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map(toCamelRow);
+};
+
+export const updatePlanLimit = async (plan: string, patch: any, adminUserId?: string) => {
+  const client = assertClient();
+  const row: any = { updated_at: new Date().toISOString() };
+  for (const [key, value] of Object.entries(patch)) {
+    const snake = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+    row[snake] = value;
+  }
+  const { error } = await client.from('plan_limits').update(row).eq('plan', plan);
+  if (error) throw error;
+  await logAdminAction(adminUserId, 'update_plan_limit', 'plan', plan, row);
+};
+
+export const updateAuditAdminAction = async (auditId: string, patch: any, adminUserId?: string) => {
+  const client = assertClient();
+  const row: any = { updated_at: new Date().toISOString() };
+  if ('status' in patch) row.status = patch.status;
+  if ('queuePriority' in patch) row.queue_priority = patch.queuePriority;
+  if ('currentPhase' in patch) row.current_phase = patch.currentPhase;
+  if ('lockedBy' in patch) row.locked_by = patch.lockedBy;
+  if ('lockedAt' in patch) row.locked_at = patch.lockedAt;
+  if ('leaseExpiresAt' in patch) row.lease_expires_at = patch.leaseExpiresAt;
+  if ('error' in patch) row.error = patch.error;
+  const { error } = await client.from('audits').update(row).eq('id', auditId);
+  if (error) throw error;
+  await logAdminAction(adminUserId, 'update_audit', 'audit', auditId, row);
+};
+
+export const getAdminActions = async (limit = 50) => {
+  const client = clientOrNull();
+  if (!client) return [];
+  const { data, error } = await client.from('admin_actions').select('*').order('created_at', { ascending: false }).limit(limit);
+  if (error) throw error;
+  return (data ?? []).map(toCamelRow);
+};
+
+export const logAdminAction = async (adminUserId: string | undefined, action: string, targetType?: string, targetId?: string, metadata: any = {}) => {
+  const client = clientOrNull();
+  if (!client || !adminUserId) return;
+  const { error } = await client.from('admin_actions').insert({
+    admin_user_id: adminUserId,
+    action,
+    target_type: targetType,
+    target_id: targetId,
+    metadata,
+  });
+  if (error) throw error;
 };
 
 export const getAllKeywords = async () => {
@@ -216,6 +340,7 @@ export const updatePlatformSettings = async (data: any) => {
     support_email: data.supportEmail,
     require_email_verification: data.requireEmailVerification,
     public_registration: data.publicRegistration,
+    value: data.value ?? {},
     updated_at: new Date().toISOString(),
   }, { onConflict: 'id' });
   if (error) throw error;

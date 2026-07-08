@@ -8,7 +8,7 @@ export function startWorkerHealthServer(
 ) {
   if (!portValue) return null;
   const port = Number(portValue);
-  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
     throw new Error('WORKER_HEALTH_PORT must be a valid TCP port.');
   }
 
@@ -19,6 +19,14 @@ export function startWorkerHealthServer(
       status: state.status,
       lastSeenAt: state.lastSeenAt,
       currentAuditId: state.currentAuditId,
+      runtime: state.runtime,
+      supportedModes: state.supportedModes,
+      deepAuditEnabled: state.deepAuditEnabled,
+      planLimitsSummary: {
+        free: { modes: ['quick'], maxPages: 5, priority: 10 },
+        paid: { modes: ['quick', 'standard'], maxPages: 25, priority: 50 },
+        agency: { modes: state.deepAuditEnabled ? ['quick', 'standard', 'deep'] : ['quick', 'standard'], maxPages: state.deepAuditEnabled ? 50 : 25, priority: 100 },
+      },
     };
 
     if (req.url === '/ready') {

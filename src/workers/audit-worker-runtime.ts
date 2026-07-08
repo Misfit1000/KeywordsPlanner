@@ -15,6 +15,9 @@ export interface AuditWorkerConfig {
   supabaseUrl: string;
   supabaseHost: string;
   version: string;
+  runtime: string;
+  supportedModes: Array<'quick' | 'standard' | 'deep'>;
+  deepAuditEnabled: boolean;
 }
 
 export interface AuditWorkerRuntimeState {
@@ -24,6 +27,9 @@ export interface AuditWorkerRuntimeState {
   pollIntervalMs: number;
   currentAuditId: string | null;
   version: string;
+  runtime: string;
+  supportedModes: Array<'quick' | 'standard' | 'deep'>;
+  deepAuditEnabled: boolean;
 }
 
 function parsePollInterval(value: string | undefined) {
@@ -51,6 +57,9 @@ export function loadWorkerConfig(env: WorkerEnv = process.env): AuditWorkerConfi
       env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ||
       env.npm_package_version ||
       '0.0.0',
+    runtime: env.WORKER_RUNTIME || (env.RENDER || env.PORT ? 'render-web-service' : 'node-worker'),
+    supportedModes: env.DEEP_AUDIT_ENABLED === 'true' ? ['quick', 'standard', 'deep'] : ['quick', 'standard'],
+    deepAuditEnabled: env.DEEP_AUDIT_ENABLED === 'true',
   };
 }
 
@@ -62,6 +71,9 @@ export function createInitialWorkerState(config: AuditWorkerConfig): AuditWorker
     pollIntervalMs: config.pollIntervalMs,
     currentAuditId: null,
     version: config.version,
+    runtime: config.runtime,
+    supportedModes: config.supportedModes,
+    deepAuditEnabled: config.deepAuditEnabled,
   };
 }
 
@@ -83,5 +95,8 @@ export function buildWorkerHeartbeat(state: AuditWorkerRuntimeState): WorkerHear
     pollIntervalMs: state.pollIntervalMs,
     currentAuditId: state.currentAuditId,
     version: state.version,
+    runtime: state.runtime,
+    supportedModes: state.supportedModes,
+    deepAuditEnabled: state.deepAuditEnabled,
   };
 }

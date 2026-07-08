@@ -1,4 +1,5 @@
 import { API_ROUTES } from '../lib/api/routes';
+import { getAuthHeaders } from '../lib/api/auth-headers';
 import { safeJsonFetch } from '../lib/http/safe-json';
 import { normalizeDomainInput } from '../lib/seo/url-utils';
 import React, { useState } from 'react';
@@ -25,9 +26,9 @@ export default function SecurityAudit() {
     try {
       const dataResp = await safeJsonFetch<any>(API_ROUTES.auditStart, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
         
-        body: JSON.stringify({ url: targetUrl, type: 'security', options: {} })
+        body: JSON.stringify({ url: targetUrl, mode: 'quick', type: 'security', options: {} })
       });
       const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
       if (!data.success) throw new Error(data.error);

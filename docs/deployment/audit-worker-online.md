@@ -4,9 +4,17 @@ The live site needs three separate parts:
 
 1. Vercel frontend and lightweight API routes.
 2. Supabase Postgres and Realtime.
-3. An always-on Node audit worker running outside Vercel.
+3. An online Node audit worker running outside Vercel.
 
-Vercel creates queued audit rows and returns an audit ID immediately. The worker claims those queued rows from Supabase, crawls public pages with resource-light fetches, writes live events/pages/issues/reports, and refreshes its lease while it works. If the worker is not running, audits remain queued.
+Vercel creates queued audit rows and returns an audit ID immediately. The worker claims those queued rows from Supabase, crawls public pages with resource-light fetches, writes live events/pages/issues/reports, and refreshes its lease while it works. If the worker is not running or a free Render web service is asleep, audits remain queued until it wakes.
+
+## Free vs Paid Behavior
+
+- Free: Quick Audit only, 5 pages, low concurrency, lightweight SEO checks, passive security headers, JSON export.
+- Paid: Quick and Standard audits, up to 25 pages, higher queue priority, deeper SEO categories, PDF/report features.
+- Agency/Admin: Quick, Standard, and Deep when a dedicated worker enables `DEEP_AUDIT_ENABLED=true`.
+
+Deep Audit is disabled on the Render Free Web Service workaround by default because free web services can sleep and should run low resource workloads only.
 
 ## Required Supabase Step
 
@@ -55,12 +63,12 @@ Audit <auditId> running
 Audit <auditId> completed
 ```
 
-## Render Background Worker
+## Render Free Web Service
 
-Render is the recommended first deployment path.
+Render Free Web Service is the recommended MVP workaround because it exposes `/health` and `/ready`.
 
 1. Push `main` to GitHub.
-2. In Render, create a new Blueprint or Background Worker from the GitHub repo.
+2. In Render, create a new Blueprint or Web Service from the GitHub repo.
 3. If using the Blueprint, select `render.yaml`.
 4. Confirm:
 
@@ -76,6 +84,8 @@ SUPABASE_URL
 SUPABASE_SERVICE_ROLE_KEY
 AUDIT_WORKER_ID=worker-production-1
 AUDIT_POLL_INTERVAL_MS=4000
+WORKER_RUNTIME=render-web-service
+DEEP_AUDIT_ENABLED=false
 ```
 
 6. Deploy the service and watch logs for the expected startup lines.
@@ -86,6 +96,22 @@ npm run check:worker
 ```
 
 8. Start a Quick Audit on the Vercel preview or production site. The audit should move from queued to running and show live events.
+
+9. Add an uptime monitor that pings:
+
+```text
+https://your-render-service.onrender.com/health
+```
+
+Ping every 10 minutes. Render Free Web Service may sleep without traffic, so queued audits can wait until `/health` wakes the worker.
+
+Admin bootstrap:
+
+```bash
+ADMIN_EMAILS=owner@example.com,ops@example.com
+```
+
+Set `ADMIN_EMAILS` on Vercel so the server-side profile bootstrap can assign `role=admin` and `plan=admin`.
 
 ## Railway
 

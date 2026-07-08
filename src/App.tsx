@@ -5,6 +5,7 @@ import { useAuth } from './contexts/AuthContext';
 import { useTheme } from './contexts/ThemeContext';
 import { API_ROUTES } from './lib/api/routes';
 import { safeJsonFetch } from './lib/http/safe-json';
+import { getAuthHeaders } from './lib/api/auth-headers';
 
 // Lazy load heavy components
 const Login = lazy(() => import('./components/Login'));
@@ -284,7 +285,7 @@ export default function App() {
     setStartAuditError(null);
     const response = await safeJsonFetch<any>(API_ROUTES.auditStart, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ url: rawUrl, mode }),
     });
     if (!response.success) {
@@ -385,6 +386,7 @@ export default function App() {
             inDepth={inDepthAnalysis}
             isLoggedIn={!!user}
             onRunInDepth={() => handleSearch(undefined, searchedKeyword, true)}
+            onOpenSeoAudit={() => setActiveTab('seo-audit')}
           />
         );
       case 'keyword-research':

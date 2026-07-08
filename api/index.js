@@ -870,7 +870,10 @@ function toWorkerHeartbeat(row) {
     lastSeenAt: String(value.lastSeenAt || row.updated_at || nowIso()),
     pollIntervalMs: Number(value.pollIntervalMs || 0),
     currentAuditId: value.currentAuditId ?? null,
-    version: String(value.version || "unknown")
+    version: String(value.version || "unknown"),
+    runtime: value.runtime || void 0,
+    supportedModes: Array.isArray(value.supportedModes) ? value.supportedModes : void 0,
+    deepAuditEnabled: typeof value.deepAuditEnabled === "boolean" ? value.deepAuditEnabled : void 0
   };
 }
 function assertNoError(error, action) {
@@ -889,6 +892,14 @@ function toAuditDocument(row) {
     finalUrl: row.final_url ?? null,
     hostname: row.hostname,
     mode: row.mode,
+    plan: row.plan ?? "free",
+    requestedMode: row.requested_mode ?? row.mode ?? "quick",
+    effectiveMode: row.effective_mode ?? row.mode ?? "quick",
+    queuePriority: row.queue_priority ?? 10,
+    processingTier: row.processing_tier ?? row.plan ?? "free",
+    quotaCounted: row.quota_counted ?? false,
+    workerRuntime: row.worker_runtime ?? null,
+    estimatedWaitSeconds: row.estimated_wait_seconds ?? null,
     status: row.status,
     progress: row.progress ?? 0,
     currentPhase: row.current_phase ?? "Queued",
@@ -906,6 +917,7 @@ function toAuditDocument(row) {
     lowCount: row.low_count ?? 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    startedAt: row.started_at ?? null,
     completedAt: row.completed_at ?? null,
     expiresAt: row.expires_at,
     cancelledAt: row.cancelled_at ?? null,
@@ -926,6 +938,14 @@ function auditToRow(audit) {
     final_url: audit.finalUrl,
     hostname: audit.hostname,
     mode: audit.mode,
+    plan: audit.plan ?? "free",
+    requested_mode: audit.requestedMode ?? audit.mode,
+    effective_mode: audit.effectiveMode ?? audit.mode,
+    queue_priority: audit.queuePriority ?? 10,
+    processing_tier: audit.processingTier ?? audit.plan ?? "free",
+    quota_counted: audit.quotaCounted ?? false,
+    worker_runtime: audit.workerRuntime,
+    estimated_wait_seconds: audit.estimatedWaitSeconds,
     status: audit.status,
     progress: audit.progress,
     current_phase: audit.currentPhase,
@@ -943,6 +963,7 @@ function auditToRow(audit) {
     low_count: audit.lowCount,
     created_at: audit.createdAt,
     updated_at: audit.updatedAt,
+    started_at: audit.startedAt,
     completed_at: audit.completedAt,
     expires_at: audit.expiresAt,
     cancelled_at: audit.cancelledAt,
@@ -962,6 +983,14 @@ function auditPatchToRow(patch) {
   if ("finalUrl" in patch) row.final_url = patch.finalUrl;
   if ("hostname" in patch) row.hostname = patch.hostname;
   if ("mode" in patch) row.mode = patch.mode;
+  if ("plan" in patch) row.plan = patch.plan;
+  if ("requestedMode" in patch) row.requested_mode = patch.requestedMode;
+  if ("effectiveMode" in patch) row.effective_mode = patch.effectiveMode;
+  if ("queuePriority" in patch) row.queue_priority = patch.queuePriority;
+  if ("processingTier" in patch) row.processing_tier = patch.processingTier;
+  if ("quotaCounted" in patch) row.quota_counted = patch.quotaCounted;
+  if ("workerRuntime" in patch) row.worker_runtime = patch.workerRuntime;
+  if ("estimatedWaitSeconds" in patch) row.estimated_wait_seconds = patch.estimatedWaitSeconds;
   if ("status" in patch) row.status = patch.status;
   if ("progress" in patch) row.progress = patch.progress;
   if ("currentPhase" in patch) row.current_phase = patch.currentPhase;
@@ -978,6 +1007,7 @@ function auditPatchToRow(patch) {
   if ("mediumCount" in patch) row.medium_count = patch.mediumCount;
   if ("lowCount" in patch) row.low_count = patch.lowCount;
   if ("completedAt" in patch) row.completed_at = patch.completedAt;
+  if ("startedAt" in patch) row.started_at = patch.startedAt;
   if ("expiresAt" in patch) row.expires_at = patch.expiresAt;
   if ("cancelledAt" in patch) row.cancelled_at = patch.cancelledAt;
   if ("error" in patch) row.error = patch.error;
@@ -1134,7 +1164,10 @@ var init_audit_repository = __esm({
           lastSeenAt: heartbeat.lastSeenAt || nowIso(),
           pollIntervalMs: heartbeat.pollIntervalMs,
           currentAuditId: heartbeat.currentAuditId ?? null,
-          version: heartbeat.version || "unknown"
+          version: heartbeat.version || "unknown",
+          runtime: heartbeat.runtime,
+          supportedModes: heartbeat.supportedModes,
+          deepAuditEnabled: heartbeat.deepAuditEnabled
         };
         const { error } = await client.from("platform_settings").upsert(
           {
@@ -1155,14 +1188,17 @@ var init_audit_repository = __esm({
       },
       async getLatestAuditDiagnostics(limit = 5) {
         const client = requireSupabaseAdminClient();
-        const { data, error } = await client.from("audits").select("id,status,submitted_input,normalized_url,current_phase,locked_by,lease_expires_at,error,created_at,updated_at").order("created_at", { ascending: false }).limit(limit);
+        const { data, error } = await client.from("audits").select("id,status,submitted_input,normalized_url,current_phase,locked_by,lease_expires_at,plan,requested_mode,effective_mode,queue_priority,processing_tier,error,created_at,updated_at").order("created_at", { ascending: false }).limit(limit);
         assertNoError(error, "Get latest audit diagnostics");
         return data ?? [];
       },
       async createAuditJob(input) {
         const id = randomUUID();
-        const config = getAuditModeConfig(input.mode);
+        const config = getAuditModeConfig(input.effectiveMode || input.mode);
         const timestamp = nowIso();
+        const effectiveMode = input.effectiveMode || config.mode;
+        const requestedMode = input.requestedMode || input.mode || effectiveMode;
+        const plan = input.plan || "free";
         const audit = {
           id,
           userId: input.userId ?? null,
@@ -1171,13 +1207,21 @@ var init_audit_repository = __esm({
           normalizedUrl: input.normalizedUrl,
           finalUrl: null,
           hostname: input.hostname,
-          mode: config.mode,
+          mode: effectiveMode,
+          plan,
+          requestedMode,
+          effectiveMode,
+          queuePriority: input.queuePriority ?? 10,
+          processingTier: input.processingTier ?? plan,
+          quotaCounted: false,
+          workerRuntime: null,
+          estimatedWaitSeconds: input.estimatedWaitSeconds ?? null,
           status: "queued",
           progress: 0,
           currentPhase: "Queued",
           currentUrl: null,
           currentCheck: null,
-          pageLimit: config.pageLimit,
+          pageLimit: input.pageLimit ?? config.pageLimit,
           pagesDiscovered: 0,
           pagesCrawled: 0,
           checksTotal: 0,
@@ -1189,6 +1233,7 @@ var init_audit_repository = __esm({
           lowCount: 0,
           createdAt: timestamp,
           updatedAt: timestamp,
+          startedAt: null,
           completedAt: null,
           expiresAt: expiresAtIso(),
           cancelledAt: null,
@@ -1447,16 +1492,16 @@ var init_audit_repository = __esm({
       async getLiveData(auditId) {
         return this.getAuditLiveSnapshot(auditId);
       },
-      async claimQueuedAuditJob(workerId) {
+      async claimQueuedAuditJob(workerId, workerRuntime = "node-worker") {
         const leaseExpiresAt = new Date(Date.now() + AUDIT_LIMITS.lockLeaseMs).toISOString();
         const timestamp = nowIso();
         const client = getSupabaseAdminClient();
         if (client) {
-          const queued = await client.from("audits").select("*").eq("status", "queued").order("created_at", { ascending: true }).limit(100);
+          const queued = await client.from("audits").select("*").eq("status", "queued").order("queue_priority", { ascending: false }).order("created_at", { ascending: true }).limit(100);
           assertNoError(queued.error, "Find queued audit job");
           let candidate = (queued.data ?? []).find((row) => isClaimableLock(row, timestamp)) ?? null;
           if (!candidate) {
-            const stale = await client.from("audits").select("*").eq("status", "running").order("lease_expires_at", { ascending: true, nullsFirst: true }).order("created_at", { ascending: true }).limit(100);
+            const stale = await client.from("audits").select("*").eq("status", "running").order("lease_expires_at", { ascending: true, nullsFirst: true }).order("queue_priority", { ascending: false }).order("created_at", { ascending: true }).limit(100);
             assertNoError(stale.error, "Find stale audit job");
             candidate = (stale.data ?? []).find((row) => isStaleRunningLock(row, timestamp)) ?? null;
           }
@@ -1469,6 +1514,8 @@ var init_audit_repository = __esm({
             locked_by: workerId,
             locked_at: timestamp,
             lease_expires_at: leaseExpiresAt,
+            worker_runtime: workerRuntime,
+            started_at: candidate.started_at ?? timestamp,
             updated_at: timestamp
           };
           const attempts = [];
@@ -1496,7 +1543,7 @@ var init_audit_repository = __esm({
         const next = Array.from(memory.audits.values()).filter((audit) => {
           if (audit.status === "queued") return !audit.lockedBy || !audit.leaseExpiresAt || audit.leaseExpiresAt <= timestamp;
           return audit.status === "running" && (!audit.leaseExpiresAt || audit.leaseExpiresAt <= timestamp);
-        }).sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+        }).sort((a, b) => b.queuePriority - a.queuePriority || a.createdAt.localeCompare(b.createdAt))[0];
         if (!next) return null;
         const claimed = {
           ...next,
@@ -1506,13 +1553,15 @@ var init_audit_repository = __esm({
           lockedBy: workerId,
           lockedAt: timestamp,
           leaseExpiresAt,
+          workerRuntime,
+          startedAt: next.startedAt ?? timestamp,
           updatedAt: timestamp
         };
         memory.audits.set(next.id, claimed);
         return claimed;
       },
-      async claimNextQueuedAudit(workerId) {
-        return this.claimQueuedAuditJob(workerId);
+      async claimNextQueuedAudit(workerId, workerRuntime) {
+        return this.claimQueuedAuditJob(workerId, workerRuntime);
       },
       async refreshAuditLease(auditId, workerId) {
         const timestamp = nowIso();
@@ -1656,6 +1705,386 @@ var init_audit_repository = __esm({
   }
 });
 
+// src/lib/billing/entitlements.ts
+import { randomUUID as randomUUID2 } from "node:crypto";
+function nextDailyResetMs() {
+  const date = /* @__PURE__ */ new Date();
+  date.setUTCHours(24, 0, 0, 0);
+  return date.getTime();
+}
+function nextMonthlyResetMs() {
+  const date = /* @__PURE__ */ new Date();
+  date.setUTCMonth(date.getUTCMonth() + 1, 1);
+  date.setUTCHours(0, 0, 0, 0);
+  return date.getTime();
+}
+function normalizeRole(value) {
+  if (value === "admin") return "admin";
+  if (value === "support" || value === "staff") return "support";
+  return "user";
+}
+function normalizePlan(value) {
+  if (value === "paid" || value === "agency" || value === "admin") return value;
+  return "free";
+}
+function normalizeSubscriptionStatus(value) {
+  if (value === "trialing" || value === "active" || value === "past_due" || value === "cancelled") return value;
+  return "inactive";
+}
+function getAdminEmailSet() {
+  return new Set(
+    String(process.env.ADMIN_EMAILS || "").split(",").map((email) => email.trim().toLowerCase()).filter(Boolean)
+  );
+}
+function isBootstrapAdminEmail(email) {
+  if (!email) return false;
+  return getAdminEmailSet().has(email.trim().toLowerCase());
+}
+function rowToPlanLimits(row) {
+  const fallback = DEFAULT_PLAN_LIMITS[normalizePlan(row?.plan)];
+  return {
+    plan: fallback.plan,
+    label: row?.label ?? fallback.label,
+    dailyAudits: row?.daily_audits ?? fallback.dailyAudits,
+    monthlyAudits: row?.monthly_audits ?? fallback.monthlyAudits,
+    maxPagesQuick: row?.max_pages_quick ?? fallback.maxPagesQuick,
+    maxPagesStandard: row?.max_pages_standard ?? fallback.maxPagesStandard,
+    maxPagesDeep: row?.max_pages_deep ?? fallback.maxPagesDeep,
+    allowedModes: row?.allowed_modes ?? fallback.allowedModes,
+    auditTimeoutSeconds: row?.audit_timeout_seconds ?? fallback.auditTimeoutSeconds,
+    concurrency: row?.concurrency ?? fallback.concurrency,
+    maxEventsPerAudit: row?.max_events_per_audit ?? fallback.maxEventsPerAudit,
+    maxIssuesPerAudit: row?.max_issues_per_audit ?? fallback.maxIssuesPerAudit,
+    priority: row?.priority ?? fallback.priority,
+    exportsEnabled: row?.exports_enabled ?? fallback.exportsEnabled,
+    pdfEnabled: row?.pdf_enabled ?? fallback.pdfEnabled,
+    whiteLabelEnabled: row?.white_label_enabled ?? fallback.whiteLabelEnabled,
+    embedEnabled: row?.embed_enabled ?? fallback.embedEnabled,
+    apiEnabled: row?.api_enabled ?? fallback.apiEnabled,
+    scheduledAuditsEnabled: row?.scheduled_audits_enabled ?? fallback.scheduledAuditsEnabled
+  };
+}
+function rowToProfile(row) {
+  return {
+    id: row.id,
+    email: row.email ?? null,
+    fullName: row.full_name ?? row.display_name ?? null,
+    role: normalizeRole(row.role),
+    plan: normalizePlan(row.plan),
+    subscriptionStatus: normalizeSubscriptionStatus(row.subscription_status),
+    auditQuotaUsedDaily: Number(row.audit_quota_used_daily ?? 0),
+    auditQuotaUsedMonthly: Number(row.audit_quota_used_monthly ?? 0)
+  };
+}
+async function getAuthenticatedUserFromRequest(req) {
+  const header = String(req.headers?.authorization || req.headers?.Authorization || "");
+  const token = header.startsWith("Bearer ") ? header.slice("Bearer ".length).trim() : "";
+  if (!token) return null;
+  const client = getSupabaseAdminClient();
+  if (!client) return null;
+  const { data, error } = await client.auth.getUser(token);
+  if (error || !data.user) return null;
+  return data.user;
+}
+async function ensureUserProfileFromAuthUser(user) {
+  const client = requireSupabaseAdminClient();
+  const email = user.email ?? null;
+  const isAdminEmail = isBootstrapAdminEmail(email);
+  const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+  const metadata = user.user_metadata || {};
+  const fullName = metadata.full_name || metadata.display_name || (email ? email.split("@")[0] : "User");
+  const { data: existing, error: readError } = await client.from("user_profiles").select("*").eq("id", user.id).maybeSingle();
+  if (readError) throw readError;
+  const nextRole = isAdminEmail ? "admin" : normalizeRole(existing?.role);
+  const nextPlan = isAdminEmail ? "admin" : normalizePlan(existing?.plan);
+  const nextSubscriptionStatus = nextPlan === "free" ? normalizeSubscriptionStatus(existing?.subscription_status) : "active";
+  const { data, error } = await client.from("user_profiles").upsert(
+    {
+      id: user.id,
+      email,
+      full_name: existing?.full_name ?? fullName,
+      role: nextRole,
+      plan: nextPlan,
+      subscription_status: nextSubscriptionStatus,
+      quota_reset_daily_at: existing?.quota_reset_daily_at ?? new Date(nextDailyResetMs()).toISOString(),
+      quota_reset_monthly_at: existing?.quota_reset_monthly_at ?? new Date(nextMonthlyResetMs()).toISOString(),
+      updated_at: timestamp
+    },
+    { onConflict: "id" }
+  ).select("*").single();
+  if (error) throw error;
+  return rowToProfile(data);
+}
+async function getPlanLimits(plan) {
+  const fallback = DEFAULT_PLAN_LIMITS[normalizePlan(plan)];
+  const client = getSupabaseAdminClient();
+  if (!client) return fallback;
+  const { data, error } = await client.from("plan_limits").select("*").eq("plan", fallback.plan).maybeSingle();
+  if (error || !data) return fallback;
+  return rowToPlanLimits(data);
+}
+async function getUserEntitlements(userId) {
+  const client = requireSupabaseAdminClient();
+  await resetQuotaIfNeeded(userId);
+  const { data, error } = await client.from("user_profiles").select("*").eq("id", userId).maybeSingle();
+  if (error) throw error;
+  if (!data) throw new EntitlementError("User profile not found.", { status: 401 });
+  const profile = rowToProfile(data);
+  return { profile, limits: await getPlanLimits(profile.plan) };
+}
+function resolveEffectiveAuditMode(userPlan, requestedMode, options = {}) {
+  const plan = normalizePlan(userPlan);
+  if (plan === "free" && requestedMode !== "quick") {
+    throw new EntitlementError("Standard and Deep audits require a paid plan.", { upgradeRequired: true });
+  }
+  if (plan === "paid" && requestedMode === "deep") {
+    throw new EntitlementError("Deep Audit requires an agency plan.", { upgradeRequired: true });
+  }
+  if ((plan === "agency" || plan === "admin") && requestedMode === "deep" && !options.deepAuditEnabled) {
+    throw new EntitlementError("Deep Audit requires a dedicated always-on worker.", { upgradeRequired: plan !== "admin" });
+  }
+  return requestedMode;
+}
+function pageLimitForMode(limits, mode) {
+  if (mode === "deep") return limits.maxPagesDeep;
+  if (mode === "standard") return limits.maxPagesStandard;
+  return limits.maxPagesQuick;
+}
+async function getActiveAuditCount(userId) {
+  const client = requireSupabaseAdminClient();
+  const { count, error } = await client.from("audits").select("id", { count: "exact", head: true }).eq("user_id", userId).in("status", ["queued", "running"]);
+  if (error) throw error;
+  return count ?? 0;
+}
+function getGuestUsage(guestKey) {
+  const now = Date.now();
+  const existing = guestUsage.get(guestKey) ?? {
+    daily: 0,
+    monthly: 0,
+    dailyResetAt: nextDailyResetMs(),
+    monthlyResetAt: nextMonthlyResetMs()
+  };
+  if (existing.dailyResetAt <= now) {
+    existing.daily = 0;
+    existing.dailyResetAt = nextDailyResetMs();
+  }
+  if (existing.monthlyResetAt <= now) {
+    existing.monthly = 0;
+    existing.monthlyResetAt = nextMonthlyResetMs();
+  }
+  guestUsage.set(guestKey, existing);
+  return existing;
+}
+async function canStartAudit(userId, requestedMode, options = {}) {
+  const effectiveMode = resolveEffectiveAuditMode(userId ? (await getUserEntitlements(userId)).profile.plan : "free", requestedMode, options);
+  if (!userId) {
+    const limits2 = DEFAULT_PLAN_LIMITS.free;
+    const usage = getGuestUsage(options.guestKey || "guest:unknown");
+    if (usage.daily >= limits2.dailyAudits || usage.monthly >= limits2.monthlyAudits) {
+      throw new EntitlementError("You have reached your free audit limit. Upgrade for more audits.", { status: 429, upgradeRequired: true });
+    }
+    return {
+      userId: null,
+      plan: "free",
+      role: "user",
+      subscriptionStatus: "inactive",
+      requestedMode,
+      effectiveMode,
+      processingTier: "free",
+      pageLimit: limits2.maxPagesQuick,
+      queuePriority: limits2.priority,
+      quotaRemaining: {
+        daily: Math.max(0, limits2.dailyAudits - usage.daily - 1),
+        monthly: Math.max(0, limits2.monthlyAudits - usage.monthly - 1)
+      },
+      limits: limits2
+    };
+  }
+  const { profile, limits } = await getUserEntitlements(userId);
+  const finalMode = resolveEffectiveAuditMode(profile.plan, requestedMode, options);
+  if (!limits.allowedModes.includes(finalMode)) {
+    throw new EntitlementError("This audit mode is not enabled for your plan.", { upgradeRequired: true });
+  }
+  if (profile.plan === "free" && await getActiveAuditCount(userId) > 0) {
+    throw new EntitlementError("You already have an audit in progress. Please wait for it to finish.", { status: 429 });
+  }
+  if (profile.plan !== "admin") {
+    if (profile.auditQuotaUsedDaily >= limits.dailyAudits || profile.auditQuotaUsedMonthly >= limits.monthlyAudits) {
+      throw new EntitlementError("You have reached your free audit limit. Upgrade for more audits.", {
+        status: 429,
+        upgradeRequired: profile.plan === "free"
+      });
+    }
+  }
+  return {
+    userId,
+    plan: profile.plan,
+    role: profile.role,
+    subscriptionStatus: profile.subscriptionStatus,
+    requestedMode,
+    effectiveMode: finalMode,
+    processingTier: profile.plan,
+    pageLimit: pageLimitForMode(limits, finalMode),
+    queuePriority: limits.priority,
+    quotaRemaining: {
+      daily: Math.max(0, limits.dailyAudits - profile.auditQuotaUsedDaily - 1),
+      monthly: Math.max(0, limits.monthlyAudits - profile.auditQuotaUsedMonthly - 1)
+    },
+    limits
+  };
+}
+async function consumeAuditQuota(userId, auditId, mode, options = {}) {
+  if (!userId) {
+    const usage = getGuestUsage(options.guestKey || "guest:unknown");
+    usage.daily += 1;
+    usage.monthly += 1;
+    return;
+  }
+  const client = requireSupabaseAdminClient();
+  const { data: profile, error: readError } = await client.from("user_profiles").select("audit_quota_used_daily,audit_quota_used_monthly,plan").eq("id", userId).maybeSingle();
+  if (readError) throw readError;
+  const plan = normalizePlan(options.plan || profile?.plan);
+  const { error: updateError } = await client.from("user_profiles").update({
+    audit_quota_used_daily: Number(profile?.audit_quota_used_daily ?? 0) + 1,
+    audit_quota_used_monthly: Number(profile?.audit_quota_used_monthly ?? 0) + 1,
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  }).eq("id", userId);
+  if (updateError) throw updateError;
+  const { error: insertError } = await client.from("audit_usage_events").insert({
+    id: randomUUID2(),
+    user_id: userId,
+    audit_id: auditId,
+    plan,
+    mode,
+    pages_limit: options.pagesLimit ?? null
+  });
+  if (insertError) throw insertError;
+}
+async function resetQuotaIfNeeded(userId) {
+  const client = requireSupabaseAdminClient();
+  const { data, error } = await client.from("user_profiles").select("quota_reset_daily_at,quota_reset_monthly_at").eq("id", userId).maybeSingle();
+  if (error || !data) {
+    if (error) throw error;
+    return;
+  }
+  const now = Date.now();
+  const patch = {};
+  if (!data.quota_reset_daily_at || new Date(data.quota_reset_daily_at).getTime() <= now) {
+    patch.audit_quota_used_daily = 0;
+    patch.quota_reset_daily_at = new Date(nextDailyResetMs()).toISOString();
+  }
+  if (!data.quota_reset_monthly_at || new Date(data.quota_reset_monthly_at).getTime() <= now) {
+    patch.audit_quota_used_monthly = 0;
+    patch.quota_reset_monthly_at = new Date(nextMonthlyResetMs()).toISOString();
+  }
+  if (Object.keys(patch).length) {
+    patch.updated_at = (/* @__PURE__ */ new Date()).toISOString();
+    const { error: updateError } = await client.from("user_profiles").update(patch).eq("id", userId);
+    if (updateError) throw updateError;
+  }
+}
+var EntitlementError, DEFAULT_PLAN_LIMITS, guestUsage;
+var init_entitlements = __esm({
+  "src/lib/billing/entitlements.ts"() {
+    init_server();
+    EntitlementError = class extends Error {
+      constructor(message, options = {}) {
+        super(message);
+        this.name = "EntitlementError";
+        this.status = options.status ?? 403;
+        this.upgradeRequired = options.upgradeRequired ?? false;
+      }
+    };
+    DEFAULT_PLAN_LIMITS = {
+      free: {
+        plan: "free",
+        label: "Free",
+        dailyAudits: 3,
+        monthlyAudits: 30,
+        maxPagesQuick: 5,
+        maxPagesStandard: 0,
+        maxPagesDeep: 0,
+        allowedModes: ["quick"],
+        auditTimeoutSeconds: 5,
+        concurrency: 1,
+        maxEventsPerAudit: 100,
+        maxIssuesPerAudit: 150,
+        priority: 10,
+        exportsEnabled: true,
+        pdfEnabled: false,
+        whiteLabelEnabled: false,
+        embedEnabled: false,
+        apiEnabled: false,
+        scheduledAuditsEnabled: false
+      },
+      paid: {
+        plan: "paid",
+        label: "Paid",
+        dailyAudits: 25,
+        monthlyAudits: 500,
+        maxPagesQuick: 10,
+        maxPagesStandard: 25,
+        maxPagesDeep: 0,
+        allowedModes: ["quick", "standard"],
+        auditTimeoutSeconds: 8,
+        concurrency: 2,
+        maxEventsPerAudit: 300,
+        maxIssuesPerAudit: 1e3,
+        priority: 50,
+        exportsEnabled: true,
+        pdfEnabled: true,
+        whiteLabelEnabled: true,
+        embedEnabled: false,
+        apiEnabled: false,
+        scheduledAuditsEnabled: false
+      },
+      agency: {
+        plan: "agency",
+        label: "Agency",
+        dailyAudits: 100,
+        monthlyAudits: 3e3,
+        maxPagesQuick: 10,
+        maxPagesStandard: 25,
+        maxPagesDeep: 50,
+        allowedModes: ["quick", "standard", "deep"],
+        auditTimeoutSeconds: 10,
+        concurrency: 3,
+        maxEventsPerAudit: 500,
+        maxIssuesPerAudit: 3e3,
+        priority: 100,
+        exportsEnabled: true,
+        pdfEnabled: true,
+        whiteLabelEnabled: true,
+        embedEnabled: true,
+        apiEnabled: true,
+        scheduledAuditsEnabled: true
+      },
+      admin: {
+        plan: "admin",
+        label: "Admin",
+        dailyAudits: 1e3,
+        monthlyAudits: 1e5,
+        maxPagesQuick: 10,
+        maxPagesStandard: 25,
+        maxPagesDeep: 75,
+        allowedModes: ["quick", "standard", "deep"],
+        auditTimeoutSeconds: 10,
+        concurrency: 3,
+        maxEventsPerAudit: 1e3,
+        maxIssuesPerAudit: 5e3,
+        priority: 999,
+        exportsEnabled: true,
+        pdfEnabled: true,
+        whiteLabelEnabled: true,
+        embedEnabled: true,
+        apiEnabled: true,
+        scheduledAuditsEnabled: true
+      }
+    };
+    guestUsage = /* @__PURE__ */ new Map();
+  }
+});
+
 // src/api/index.ts
 var index_exports = {};
 __export(index_exports, {
@@ -1677,6 +2106,84 @@ function asyncJsonRoute(handler2) {
     }
   };
 }
+function guestKeyForRequest(req) {
+  const forwarded = String(req.headers?.["x-forwarded-for"] || "").split(",")[0].trim();
+  return `guest:${forwarded || req.ip || req.socket?.remoteAddress || "unknown"}`;
+}
+function isDeepAuditEnabled() {
+  return process.env.DEEP_AUDIT_ENABLED === "true";
+}
+async function getRequester(req) {
+  const authUser = await getAuthenticatedUserFromRequest(req);
+  if (!authUser) return { userId: null, profile: null };
+  const profile = await ensureUserProfileFromAuthUser(authUser);
+  return { userId: authUser.id, profile };
+}
+function sendEntitlementError(res, error) {
+  if (error instanceof EntitlementError) {
+    return res.status(error.status).json({
+      success: false,
+      error: error.message,
+      upgradeRequired: error.upgradeRequired
+    });
+  }
+  throw error;
+}
+async function startQueuedAudit(req, res, defaultMode = "quick") {
+  const { url, mode = defaultMode, projectId = null } = req.body || {};
+  const normalized = normalizeUserUrl(String(url || ""));
+  if (!normalized.isValid) {
+    return res.status(400).json({ success: false, error: normalized.error || "Invalid URL" });
+  }
+  const requestedMode = getAuditModeConfig(mode).mode;
+  const { userId } = await getRequester(req);
+  let decision;
+  try {
+    decision = await canStartAudit(userId, requestedMode, {
+      guestKey: guestKeyForRequest(req),
+      deepAuditEnabled: isDeepAuditEnabled()
+    });
+  } catch (error) {
+    return sendEntitlementError(res, error);
+  }
+  const audit = await auditRepository.createAuditJob({
+    submittedInput: String(url || "").trim(),
+    normalizedUrl: normalized.normalizedUrl,
+    hostname: normalized.hostname,
+    mode: decision.effectiveMode,
+    requestedMode: decision.requestedMode,
+    effectiveMode: decision.effectiveMode,
+    plan: decision.plan,
+    processingTier: decision.processingTier,
+    pageLimit: decision.pageLimit,
+    queuePriority: decision.queuePriority,
+    userId: decision.userId,
+    projectId
+  });
+  await consumeAuditQuota(decision.userId, audit.id, decision.effectiveMode, {
+    plan: decision.plan,
+    pagesLimit: decision.pageLimit,
+    guestKey: guestKeyForRequest(req)
+  });
+  await auditRepository.updateAudit(audit.id, { quotaCounted: true });
+  console.info(`Audit start using Supabase project: ${getSupabaseProjectHostname() || "not configured"}`);
+  res.json({
+    success: true,
+    data: {
+      auditId: audit.id,
+      status: "queued",
+      submittedInput: audit.submittedInput,
+      normalizedUrl: audit.normalizedUrl,
+      hostname: audit.hostname,
+      requestedMode: decision.requestedMode,
+      effectiveMode: decision.effectiveMode,
+      plan: decision.plan,
+      pageLimit: decision.pageLimit,
+      queuePriority: decision.queuePriority,
+      quotaRemaining: decision.quotaRemaining
+    }
+  });
+}
 var apiRouter;
 var init_index = __esm({
   "src/api/index.ts"() {
@@ -1688,35 +2195,20 @@ var init_index = __esm({
     init_audit_repository();
     init_server();
     init_resource_types();
+    init_entitlements();
     apiRouter = Router();
+    apiRouter.get("/me/profile", asyncJsonRoute(async (req, res) => {
+      const authUser = await getAuthenticatedUserFromRequest(req);
+      if (!authUser) {
+        return res.status(401).json({ success: false, error: "Not authenticated" });
+      }
+      const profile = await ensureUserProfileFromAuthUser(authUser);
+      const limits = await getPlanLimits(profile.plan);
+      res.json({ success: true, data: { profile, limits } });
+    }));
     apiRouter.post("/audit/start", asyncJsonRoute(async (req, res) => {
       try {
-        const { url, mode = "quick", userId = null, projectId = null } = req.body || {};
-        const normalized = normalizeUserUrl(String(url || ""));
-        if (!normalized.isValid) {
-          return res.status(400).json({ success: false, error: normalized.error || "Invalid URL" });
-        }
-        const config = getAuditModeConfig(mode);
-        console.info(`Audit start using Supabase project: ${getSupabaseProjectHostname() || "not configured"}`);
-        const audit = await auditRepository.createAuditJob({
-          submittedInput: String(url || "").trim(),
-          normalizedUrl: normalized.normalizedUrl,
-          hostname: normalized.hostname,
-          mode: config.mode,
-          userId,
-          projectId
-        });
-        res.json({
-          success: true,
-          data: {
-            auditId: audit.id,
-            status: "queued",
-            submittedInput: audit.submittedInput,
-            normalizedUrl: audit.normalizedUrl,
-            hostname: audit.hostname,
-            mode: audit.mode
-          }
-        });
+        return startQueuedAudit(req, res, "quick");
       } catch (error) {
         res.status(500).json({ success: false, error: error.message || "Internal Server Error" });
       }
@@ -1827,30 +2319,7 @@ var init_index = __esm({
     }));
     apiRouter.post("/website/analyze", asyncJsonRoute(async (req, res) => {
       try {
-        const { url, mode = "standard" } = req.body || {};
-        const normalized = normalizeUserUrl(String(url || ""));
-        if (!normalized.isValid) {
-          return res.status(400).json({ success: false, error: normalized.error || "Invalid URL" });
-        }
-        const config = getAuditModeConfig(mode);
-        console.info(`Audit start using Supabase project: ${getSupabaseProjectHostname() || "not configured"}`);
-        const audit = await auditRepository.createAuditJob({
-          submittedInput: String(url || "").trim(),
-          normalizedUrl: normalized.normalizedUrl,
-          hostname: normalized.hostname,
-          mode: config.mode
-        });
-        res.json({
-          success: true,
-          data: {
-            auditId: audit.id,
-            status: "queued",
-            submittedInput: audit.submittedInput,
-            normalizedUrl: audit.normalizedUrl,
-            hostname: audit.hostname,
-            mode: audit.mode
-          }
-        });
+        return startQueuedAudit(req, res, "standard");
       } catch (e) {
         res.status(500).json({ success: false, error: e.message || "Internal Server Error" });
       }

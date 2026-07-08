@@ -20,6 +20,7 @@
     "smoke:api-hardening": "tsx scripts/smoke-api-hardening.mjs",
     "smoke:resource-light-audit": "tsx scripts/smoke-resource-light-audit.mjs",
     "smoke:online-worker": "tsx scripts/smoke-online-worker.mts",
+    "smoke:plans-admin": "tsx scripts/smoke-plans-admin.mts",
     "smoke:supabase-schema": "node scripts/smoke-supabase-schema.mjs",
     "smoke:url": "tsx scripts/smoke-url-normalization.mjs",
     "e2e:local-audit": "node scripts/e2e-local-audit.mjs",

@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
+import { API_ROUTES } from "../lib/api/routes";
+import { safeJsonFetch } from "../lib/http/safe-json";
 
 export interface User {
   id: string;
@@ -10,7 +12,11 @@ export interface User {
   photoURL: string;
   creationTime: string;
   lastSignInTime: string;
-  role: 'admin' | 'staff' | 'member';
+  role: 'admin' | 'support' | 'user';
+  plan: 'free' | 'paid' | 'agency' | 'admin';
+  subscriptionStatus: 'inactive' | 'trialing' | 'active' | 'past_due' | 'cancelled';
+  auditQuotaUsedDaily: number;
+  auditQuotaUsedMonthly: number;
 }
 
 interface AuthContextType {
@@ -61,27 +67,57 @@ function scheduleIdleWork(callback: () => void) {
   return () => window.clearTimeout(timeout);
 }
 
-async function mapSupabaseUser(supabaseUser: SupabaseUser, dataService: SupabaseDataService): Promise<User> {
+async function fetchServerProfile(accessToken?: string) {
+  if (!accessToken) return null;
+  try {
+    const response = await safeJsonFetch<any>(API_ROUTES.meProfile, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.success) return null;
+    return response.data.data?.profile || response.data.profile || null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeRole(value: unknown): User['role'] {
+  if (value === 'admin') return 'admin';
+  if (value === 'support' || value === 'staff') return 'support';
+  return 'user';
+}
+
+function normalizePlan(value: unknown): User['plan'] {
+  if (value === 'paid' || value === 'agency' || value === 'admin') return value;
+  return 'free';
+}
+
+async function mapSupabaseUser(supabaseUser: SupabaseUser, dataService: SupabaseDataService, accessToken?: string): Promise<User> {
   const email = supabaseUser.email || '';
   const metadata = supabaseUser.user_metadata || {};
 
   try {
+    const serverProfile = await fetchServerProfile(accessToken);
     await dataService.initUserProfile(supabaseUser.id, {
       email,
       displayName: metadata.display_name || metadata.full_name || (email ? email.split('@')[0] : 'User'),
     });
     const extraData = await dataService.getUserProfile(supabaseUser.id) || {};
+    const profile = serverProfile || extraData;
 
     return {
       id: supabaseUser.id,
-      username: extraData.username || email.split('@')[0] || 'User',
+      username: profile.username || email.split('@')[0] || 'User',
       email,
-      fullName: metadata.full_name || extraData.fullName || extraData.displayName || '',
-      bio: extraData.bio || '',
-      photoURL: metadata.avatar_url || extraData.photoURL || fallbackAvatar(supabaseUser.id),
+      fullName: metadata.full_name || profile.fullName || profile.full_name || profile.displayName || '',
+      bio: profile.bio || '',
+      photoURL: metadata.avatar_url || profile.photoURL || fallbackAvatar(supabaseUser.id),
       creationTime: supabaseUser.created_at || new Date().toISOString(),
       lastSignInTime: supabaseUser.last_sign_in_at || new Date().toISOString(),
-      role: extraData.role || 'member',
+      role: normalizeRole(profile.role),
+      plan: normalizePlan(profile.plan),
+      subscriptionStatus: profile.subscriptionStatus || profile.subscription_status || 'inactive',
+      auditQuotaUsedDaily: Number(profile.auditQuotaUsedDaily ?? profile.audit_quota_used_daily ?? 0),
+      auditQuotaUsedMonthly: Number(profile.auditQuotaUsedMonthly ?? profile.audit_quota_used_monthly ?? 0),
     };
   } catch (err) {
     console.error("Error loading user profile:", err);
@@ -94,7 +130,11 @@ async function mapSupabaseUser(supabaseUser: SupabaseUser, dataService: Supabase
       photoURL: metadata.avatar_url || fallbackAvatar(supabaseUser.id),
       creationTime: supabaseUser.created_at || new Date().toISOString(),
       lastSignInTime: supabaseUser.last_sign_in_at || new Date().toISOString(),
-      role: 'member',
+      role: 'user',
+      plan: 'free',
+      subscriptionStatus: 'inactive',
+      auditQuotaUsedDaily: 0,
+      auditQuotaUsedMonthly: 0,
     };
   }
 }
@@ -120,14 +160,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const dataService = await loadSupabaseDataService();
 
       const { data } = await client.auth.getUser();
+      const session = await client.auth.getSession();
       if (active) {
-        setUser(data.user ? await mapSupabaseUser(data.user, dataService) : null);
+        setUser(data.user ? await mapSupabaseUser(data.user, dataService, session.data.session?.access_token) : null);
         setLoading(false);
       }
 
       const { data: subscription } = client.auth.onAuthStateChange(async (_event, session) => {
         if (!active) return;
-        setUser(session?.user ? await mapSupabaseUser(session.user, dataService) : null);
+        setUser(session?.user ? await mapSupabaseUser(session.user, dataService, session.access_token) : null);
         setLoading(false);
       });
       unsubscribe = () => subscription.subscription.unsubscribe();

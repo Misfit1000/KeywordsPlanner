@@ -7,6 +7,14 @@ import { auditStore } from '../lib/audit/audit-store';
 import { auditRepository } from '../lib/supabase/audit-repository';
 import { getSupabaseProjectHostname } from '../lib/supabase/server';
 import { getAuditModeConfig, type AuditMode } from '../lib/audit/resource-types';
+import {
+  EntitlementError,
+  canStartAudit,
+  consumeAuditQuota,
+  ensureUserProfileFromAuthUser,
+  getAuthenticatedUserFromRequest,
+  getPlanLimits,
+} from '../lib/billing/entitlements';
 
 
 function asyncJsonRoute(handler: any) {
@@ -27,37 +35,107 @@ function asyncJsonRoute(handler: any) {
 
 export const apiRouter = Router();
 
+function guestKeyForRequest(req: any) {
+  const forwarded = String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim();
+  return `guest:${forwarded || req.ip || req.socket?.remoteAddress || 'unknown'}`;
+}
+
+function isDeepAuditEnabled() {
+  return process.env.DEEP_AUDIT_ENABLED === 'true';
+}
+
+async function getRequester(req: any) {
+  const authUser = await getAuthenticatedUserFromRequest(req);
+  if (!authUser) return { userId: null, profile: null };
+  const profile = await ensureUserProfileFromAuthUser(authUser);
+  return { userId: authUser.id, profile };
+}
+
+function sendEntitlementError(res: any, error: unknown) {
+  if (error instanceof EntitlementError) {
+    return res.status(error.status).json({
+      success: false,
+      error: error.message,
+      upgradeRequired: error.upgradeRequired,
+    });
+  }
+  throw error;
+}
+
+apiRouter.get('/me/profile', asyncJsonRoute(async (req, res) => {
+  const authUser = await getAuthenticatedUserFromRequest(req);
+  if (!authUser) {
+    return res.status(401).json({ success: false, error: 'Not authenticated' });
+  }
+  const profile = await ensureUserProfileFromAuthUser(authUser);
+  const limits = await getPlanLimits(profile.plan);
+  res.json({ success: true, data: { profile, limits } });
+}));
+
+async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'quick') {
+  const { url, mode = defaultMode, projectId = null } = req.body || {};
+  const normalized = normalizeUserUrl(String(url || ''));
+  if (!normalized.isValid) {
+    return res.status(400).json({ success: false, error: normalized.error || 'Invalid URL' });
+  }
+
+  const requestedMode = getAuditModeConfig(mode).mode as AuditMode;
+  const { userId } = await getRequester(req);
+  let decision;
+  try {
+    decision = await canStartAudit(userId, requestedMode, {
+      guestKey: guestKeyForRequest(req),
+      deepAuditEnabled: isDeepAuditEnabled(),
+    });
+  } catch (error) {
+    return sendEntitlementError(res, error);
+  }
+
+  const audit = await auditRepository.createAuditJob({
+    submittedInput: String(url || '').trim(),
+    normalizedUrl: normalized.normalizedUrl,
+    hostname: normalized.hostname,
+    mode: decision.effectiveMode,
+    requestedMode: decision.requestedMode,
+    effectiveMode: decision.effectiveMode,
+    plan: decision.plan,
+    processingTier: decision.processingTier,
+    pageLimit: decision.pageLimit,
+    queuePriority: decision.queuePriority,
+    userId: decision.userId,
+    projectId,
+  });
+
+  await consumeAuditQuota(decision.userId, audit.id, decision.effectiveMode, {
+    plan: decision.plan,
+    pagesLimit: decision.pageLimit,
+    guestKey: guestKeyForRequest(req),
+  });
+  await auditRepository.updateAudit(audit.id, { quotaCounted: true });
+
+  console.info(`Audit start using Supabase project: ${getSupabaseProjectHostname() || 'not configured'}`);
+  res.json({
+    success: true,
+    data: {
+      auditId: audit.id,
+      status: 'queued',
+      submittedInput: audit.submittedInput,
+      normalizedUrl: audit.normalizedUrl,
+      hostname: audit.hostname,
+      requestedMode: decision.requestedMode,
+      effectiveMode: decision.effectiveMode,
+      plan: decision.plan,
+      pageLimit: decision.pageLimit,
+      queuePriority: decision.queuePriority,
+      quotaRemaining: decision.quotaRemaining,
+    },
+  });
+}
+
 
 apiRouter.post('/audit/start', asyncJsonRoute(async (req, res) => {
   try {
-    const { url, mode = 'quick', userId = null, projectId = null } = req.body || {};
-    const normalized = normalizeUserUrl(String(url || ''));
-    if (!normalized.isValid) {
-      return res.status(400).json({ success: false, error: normalized.error || 'Invalid URL' });
-    }
-
-    const config = getAuditModeConfig(mode);
-    console.info(`Audit start using Supabase project: ${getSupabaseProjectHostname() || 'not configured'}`);
-    const audit = await auditRepository.createAuditJob({
-      submittedInput: String(url || '').trim(),
-      normalizedUrl: normalized.normalizedUrl,
-      hostname: normalized.hostname,
-      mode: config.mode as AuditMode,
-      userId,
-      projectId,
-    });
-
-    res.json({
-      success: true,
-      data: {
-        auditId: audit.id,
-        status: 'queued',
-        submittedInput: audit.submittedInput,
-        normalizedUrl: audit.normalizedUrl,
-        hostname: audit.hostname,
-        mode: audit.mode,
-      }
-    });
+    return startQueuedAudit(req, res, 'quick');
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message || 'Internal Server Error' });
   }
@@ -191,32 +269,7 @@ apiRouter.post('/keyword/research', asyncJsonRoute((req, res) => {
 
 apiRouter.post('/website/analyze', asyncJsonRoute(async (req, res) => {
   try {
-    const { url, mode = 'standard' } = req.body || {};
-    const normalized = normalizeUserUrl(String(url || ''));
-    if (!normalized.isValid) {
-      return res.status(400).json({ success: false, error: normalized.error || 'Invalid URL' });
-    }
-
-    const config = getAuditModeConfig(mode);
-    console.info(`Audit start using Supabase project: ${getSupabaseProjectHostname() || 'not configured'}`);
-    const audit = await auditRepository.createAuditJob({
-      submittedInput: String(url || '').trim(),
-      normalizedUrl: normalized.normalizedUrl,
-      hostname: normalized.hostname,
-      mode: config.mode,
-    });
-
-    res.json({
-      success: true,
-      data: {
-        auditId: audit.id,
-        status: 'queued',
-        submittedInput: audit.submittedInput,
-        normalizedUrl: audit.normalizedUrl,
-        hostname: audit.hostname,
-        mode: audit.mode,
-      }
-    });
+    return startQueuedAudit(req, res, 'standard');
   } catch(e: any) {
     res.status(500).json({ success: false, error: e.message || 'Internal Server Error' });
   }

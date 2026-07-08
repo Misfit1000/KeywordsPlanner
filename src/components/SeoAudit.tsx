@@ -1,11 +1,14 @@
 import { API_ROUTES } from '../lib/api/routes';
+import { getAuthHeaders } from '../lib/api/auth-headers';
 import { safeJsonFetch } from '../lib/http/safe-json';
 import { LiveAuditProgress } from './audit/LiveAuditProgress';
 import React, { useState, useEffect } from 'react';
-import { Activity, Play, RefreshCw, AlertTriangle, CheckCircle2, Globe, Clock, Layers, ShieldAlert, Zap } from 'lucide-react';
+import { Activity, Play, RefreshCw, AlertTriangle, CheckCircle2, Globe, Layers, ShieldAlert, Lock } from 'lucide-react';
 import { FullAuditResult, AuditIssue } from '../lib/audit/types';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
+  const { user } = useAuth();
   const [url, setUrl] = useState(initialUrl || '');
   const [mode, setMode] = useState<'quick' | 'standard' | 'deep'>('quick');
   const [loading, setLoading] = useState(false);
@@ -13,12 +16,20 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
   const [status, setStatus] = useState<string>('');
   const [auditResult, setAuditResult] = useState<FullAuditResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const plan = user?.plan || 'free';
+  const canUseStandard = plan === 'paid' || plan === 'agency' || plan === 'admin';
+  const canUseDeep = plan === 'agency' || plan === 'admin';
 
   useEffect(() => {
     if (initialUrl && !loading && !jobId && !auditResult) {
       startAudit();
     }
   }, [initialUrl]);
+
+  useEffect(() => {
+    if (mode === 'standard' && !canUseStandard) setMode('quick');
+    if (mode === 'deep' && !canUseDeep) setMode('quick');
+  }, [canUseDeep, canUseStandard, mode]);
 
   const startAudit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -36,7 +47,7 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
     try {
       const dataResp = await safeJsonFetch<any>(API_ROUTES.auditStart, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ url: url.trim(), mode })
       });
       const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
@@ -77,9 +88,9 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
               onChange={e => setMode(e.target.value as any)}
               className="bg-muted/50 border border-border rounded-xl py-3 px-3 outline-none focus:border-accent"
             >
-              <option value="quick">Quick - 10 pages</option>
-              <option value="standard">Standard - 25 pages</option>
-              <option value="deep">Deep - 50 pages</option>
+              <option value="quick">Quick - Free lightweight</option>
+              <option value="standard" disabled={!canUseStandard}>Standard - Paid 25 pages {!canUseStandard ? '(locked)' : ''}</option>
+              <option value="deep" disabled={!canUseDeep}>Deep - Agency/Admin {!canUseDeep ? '(locked)' : ''}</option>
             </select>
           </div>
           <button
@@ -93,7 +104,13 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
         </form>
         {mode === 'deep' && (
           <div className="mt-3 text-sm text-yellow-600 bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
-            Deep audits may take longer and use more resources.
+            Deep Audit requires an agency/admin plan and a dedicated always-on worker.
+          </div>
+        )}
+        {plan === 'free' && (
+          <div className="mt-3 text-sm text-muted-foreground bg-muted/40 border border-border rounded-lg p-3 flex items-start gap-2">
+            <Lock className="w-4 h-4 mt-0.5" />
+            Free users get Quick Audit with 5 pages and passive security checks. Upgrade unlocks Standard, priority queue, PDF reports, and deeper categories.
           </div>
         )}
       </div>

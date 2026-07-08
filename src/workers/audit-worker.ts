@@ -14,13 +14,13 @@ import {
   updateWorkerState,
   type AuditWorkerRuntimeState,
 } from './audit-worker-runtime';
+import { getAuditProfileForDocument, isSeoIssueAllowedForProfile } from '../lib/audit/audit-profiles';
 import {
   type AuditSeverity,
   type ResourceAuditDocument,
   type ResourceAuditIssue,
   type ResourceAuditPage,
   type ResourceAuditReport,
-  getAuditModeConfig,
 } from '../lib/audit/resource-types';
 import { AUDIT_LIMITS } from '../lib/audit/audit-config';
 import type { AuditIssue } from '../lib/audit/types';
@@ -173,7 +173,7 @@ async function addIssue(auditId: string, issue: Omit<ResourceAuditIssue, 'id' | 
 }
 
 async function processAudit(audit: ResourceAuditDocument) {
-  const config = getAuditModeConfig(audit.mode);
+  const config = getAuditProfileForDocument(audit);
   const queue: QueueItem[] = [{ url: audit.normalizedUrl, depth: 0 }];
   const visited = new Set<string>();
   const pages: ResourceAuditPage[] = [];
@@ -335,7 +335,11 @@ async function processAudit(audit: ResourceAuditDocument) {
       progress: 55 + Math.floor((pages.length / config.pageLimit) * 20),
     }, { type: 'check_started', message: `Running SEO checks for ${fetched.finalUrl}` });
 
-    const seoIssues = fetched.parsed ? runAllChecks(flatPageData).map((issue) => mapAuditIssue(issue, fetched.finalUrl)) : [];
+    const seoIssues = fetched.parsed
+      ? runAllChecks(flatPageData)
+        .filter((issue) => isSeoIssueAllowedForProfile(config, issue))
+        .map((issue) => mapAuditIssue(issue, fetched.finalUrl))
+      : [];
     for (const issue of seoIssues) {
       await ensureNotCancelled(audit.id);
       await addIssue(audit.id, issue);
@@ -541,7 +545,7 @@ export async function runOneAudit(
   workerId = process.env.AUDIT_WORKER_ID || `worker-${process.pid}`,
   runtimeState?: AuditWorkerRuntimeState,
 ) {
-  const audit = await auditRepository.claimNextQueuedAudit(workerId);
+  const audit = await auditRepository.claimNextQueuedAudit(workerId, runtimeState?.runtime || 'node-worker');
   if (!audit) {
     if (runtimeState) {
       await writeWorkerHeartbeat(runtimeState, { status: 'idle', currentAuditId: null });
@@ -553,7 +557,7 @@ export async function runOneAudit(
   if (runtimeState) {
     await writeWorkerHeartbeat(runtimeState, { status: 'running', currentAuditId: audit.id });
   }
-  console.log(`Claimed audit ${audit.id} for ${audit.normalizedUrl}`);
+  console.log(`Claimed audit ${audit.id} plan=${audit.plan} priority=${audit.queuePriority} mode=${audit.effectiveMode} url=${audit.normalizedUrl}`);
   console.log(`Audit ${audit.id} running`);
 
   const stopLeaseRefresher = createLeaseRefresher(audit.id, workerId);
@@ -610,7 +614,7 @@ export async function runAuditWorkerLoop() {
   let workerReady = false;
   let shutdownRequested = false;
   let shuttingDown = false;
-  const healthServer = startWorkerHealthServer(state, () => workerReady, process.env.WORKER_HEALTH_PORT);
+  const healthServer = startWorkerHealthServer(state, () => workerReady, process.env.WORKER_HEALTH_PORT || process.env.PORT);
 
   const shutdown = async (signal: NodeJS.Signals) => {
     if (shuttingDown) return;

@@ -41,6 +41,9 @@ const heartbeats = (heartbeatResult.data ?? []).map((row) => ({
   currentAuditId: row.value?.currentAuditId || null,
   pollIntervalMs: row.value?.pollIntervalMs || null,
   version: row.value?.version || 'unknown',
+  runtime: row.value?.runtime || 'unknown',
+  supportedModes: Array.isArray(row.value?.supportedModes) ? row.value.supportedModes.join(',') : 'unknown',
+  deepAuditEnabled: row.value?.deepAuditEnabled === true,
 }));
 
 console.log(`Supabase project: ${new URL(supabaseUrl).hostname}`);

@@ -1,579 +1,379 @@
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Users, Activity, Settings, Database, ShieldAlert, Loader2, Search, Edit2, Trash2, Plus, X, MoreVertical, Shield, Folder, Key, Globe } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Activity, AlertTriangle, Database, Loader2, RefreshCw, Search, Settings, ShieldAlert, SlidersHorizontal, Users, Wifi } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { getAllUsers, updateUserRole, deleteUserDoc, getAllProjects, getAllKeywords, getAllCompetitors, deleteAnyDocument, getPlatformSettings, updatePlatformSettings } from '../services/supabaseDataService';
+import {
+  getAdminActions,
+  getAdminAudits,
+  getAdminWorkers,
+  getAllUsers,
+  getPlanLimits,
+  getPlatformSettings,
+  updateAuditAdminAction,
+  updatePlanLimit,
+  updatePlatformSettings,
+  updateUserAdminFields,
+} from '../services/supabaseDataService';
 
-type AdminTab = 'overview' | 'users' | 'content' | 'settings';
+type AdminTab = 'overview' | 'users' | 'audits' | 'queue' | 'workers' | 'settings' | 'plans';
+
+const tabs: Array<{ id: AdminTab; label: string; icon: any; path: string }> = [
+  { id: 'overview', label: 'Overview', icon: Activity, path: '/admin' },
+  { id: 'users', label: 'Users', icon: Users, path: '/admin/users' },
+  { id: 'audits', label: 'Audits', icon: Database, path: '/admin/audits' },
+  { id: 'queue', label: 'Queue', icon: SlidersHorizontal, path: '/admin/queue' },
+  { id: 'workers', label: 'Workers', icon: Wifi, path: '/admin/workers' },
+  { id: 'settings', label: 'Settings', icon: Settings, path: '/admin/settings' },
+  { id: 'plans', label: 'Plans', icon: ShieldAlert, path: '/admin/plans' },
+];
+
+function tabFromPath() {
+  const match = window.location.pathname.match(/^\/admin\/([^/]+)/);
+  const id = match?.[1] as AdminTab | undefined;
+  return tabs.some((tab) => tab.id === id) ? id! : 'overview';
+}
 
 export default function AdminDashboard() {
- const { user } = useAuth();
- const [activeTab, setActiveTab] = useState<AdminTab>('overview');
- 
- if (!user || user.role !== 'admin') {
- return (
- <div className="flex flex-col items-center justify-center py-32 space-y-6">
- <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center shadow-sm">
- <ShieldAlert className="w-8 h-8 text-red-500"/>
- </div>
- <div className="text-center">
- <h3 className="text-2xl font-bold text-foreground mb-2">Access Denied</h3>
- <p className="text-muted-foreground max-w-md mb-6">You do not have permission to view this page.</p>
- {!user && (
-   <button
-     onClick={() => window.dispatchEvent(new CustomEvent('open-login'))}
-     className="px-6 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors"
-   >
-     Log In
-   </button>
- )}
- </div>
- </div>
- );
- }
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<AdminTab>(tabFromPath);
 
- return (
- <div className="flex flex-col md:flex-row gap-6 min-h-[80vh]">
- {/* Admin Sidebar */}
- <div className="w-full md:w-64 shrink-0 space-y-2">
- <div className="px-4 py-3 mb-4 bg-card border border-border rounded-xl shadow-lg">
- <h2 className="font-bold text-foreground flex items-center gap-2">
- <Shield className="w-5 h-5 text-accent"/>
- Admin Panel
- </h2>
- <p className="text-xs text-muted-foreground mt-1">Manage users and content</p>
- </div>
- 
- <nav className="space-y-1">
- {[
- { id: 'overview', label: 'Overview', icon: Activity },
- { id: 'users', label: 'Users Management', icon: Users },
- { id: 'content', label: 'Content Data', icon: Database },
- { id: 'settings', label: 'Settings', icon: Settings },
- ].map((item) => {
- const Icon = item.icon;
- const isActive = activeTab === item.id;
- return (
- <button
- key={item.id}
- onClick={() => setActiveTab(item.id as AdminTab)}
- className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-left font-bold text-sm ${
- isActive 
- ? 'bg-accent/10 text-accent shadow-sm border border-accent/20' 
- : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
- }`}
- >
- <Icon className="w-5 h-5"/>
- <span>{item.label}</span>
- </button>
- );
- })}
- </nav>
- </div>
+  if (!user || user.role !== 'admin') {
+    return (
+      <div className="flex flex-col items-center justify-center py-32 space-y-4">
+        <ShieldAlert className="w-12 h-12 text-red-500" />
+        <h2 className="text-2xl font-bold">403 Admin access required</h2>
+        <p className="text-muted-foreground">Sign in with an admin account assigned through ADMIN_EMAILS or the admin panel.</p>
+      </div>
+    );
+  }
 
- {/* Admin Content Area */}
- <div className="flex-1 bg-card border border-border rounded-3xl p-6 overflow-hidden shadow-lg">
- <AnimatePresence mode="wait">
- <motion.div
- key={activeTab}
- initial={{ opacity: 0, y: 10 }}
- animate={{ opacity: 1, y: 0 }}
- exit={{ opacity: 0, y: -10 }}
- transition={{ duration: 0.2 }}
- className="h-full"
- >
- {activeTab === 'overview' && <AdminOverview />}
- {activeTab === 'users' && <AdminUsers />}
- {activeTab === 'content' && <AdminContent />}
- {activeTab === 'settings' && <AdminSettings />}
- </motion.div>
- </AnimatePresence>
- </div>
- </div>
- );
+  const switchTab = (tab: AdminTab) => {
+    setActiveTab(tab);
+    window.history.replaceState(null, '', tabs.find((item) => item.id === tab)?.path || '/admin');
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Admin Panel</h1>
+        <p className="text-muted-foreground">Manage users, plans, audit queue, workers, and safe platform settings.</p>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => switchTab(tab.id)}
+              className={`px-3 py-2 rounded-xl border text-sm font-semibold flex items-center gap-2 ${
+                activeTab === tab.id ? 'bg-accent text-accent-foreground border-accent' : 'bg-card border-border hover:bg-muted'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {activeTab === 'overview' && <AdminOverview />}
+      {activeTab === 'users' && <AdminUsers adminUserId={user.id} />}
+      {activeTab === 'audits' && <AdminAudits adminUserId={user.id} />}
+      {activeTab === 'queue' && <AdminQueue adminUserId={user.id} />}
+      {activeTab === 'workers' && <AdminWorkers />}
+      {activeTab === 'settings' && <AdminSettings />}
+      {activeTab === 'plans' && <AdminPlans adminUserId={user.id} />}
+    </div>
+  );
+}
+
+function useAdminData<T>(loader: () => Promise<T>, deps: React.DependencyList = []) {
+  const [data, setData] = useState<T | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = () => {
+    setLoading(true);
+    loader()
+      .then((next) => {
+        setData(next);
+        setError(null);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load admin data'))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(refresh, deps);
+  return { data, error, loading, refresh };
 }
 
 function AdminOverview() {
- const [stats, setStats] = useState({ users: 0, projects: 0, keywords: 0 });
- const [loading, setLoading] = useState(true);
+  const users = useAdminData(() => getAllUsers(), []);
+  const audits = useAdminData(() => getAdminAudits(100), []);
+  const workers = useAdminData(() => getAdminWorkers(), []);
+  const actions = useAdminData(() => getAdminActions(10), []);
 
- useEffect(() => {
- const loadStats = async () => {
- try {
- const [users, projects, keywords] = await Promise.all([
- getAllUsers(),
- getAllProjects(),
- getAllKeywords()
- ]);
- setStats({
- users: users.length,
- projects: projects.length,
- keywords: keywords.length
- });
- } catch (error) {
- console.error("Failed to load stats", error);
- } finally {
- setLoading(false);
- }
- };
- loadStats();
- }, []);
+  const stats = useMemo(() => {
+    const userRows = users.data || [];
+    const auditRows = audits.data || [];
+    return {
+      totalUsers: userRows.length,
+      freeUsers: userRows.filter((item: any) => item.plan === 'free').length,
+      paidUsers: userRows.filter((item: any) => item.plan === 'paid').length,
+      agencyUsers: userRows.filter((item: any) => item.plan === 'agency').length,
+      queued: auditRows.filter((item: any) => item.status === 'queued').length,
+      running: auditRows.filter((item: any) => item.status === 'running').length,
+      failed: auditRows.filter((item: any) => item.status === 'failed').length,
+      completed: auditRows.filter((item: any) => item.status === 'completed').length,
+    };
+  }, [users.data, audits.data]);
 
- if (loading) {
- return (
- <div className="flex justify-center py-12">
- <Loader2 className="w-8 h-8 text-accent animate-spin"/>
- </div>
- );
- }
+  if (users.loading || audits.loading || workers.loading) return <Loading />;
 
- return (
- <div className="space-y-6">
- <h3 className="text-2xl font-bold text-foreground">Dashboard Overview</h3>
- <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
- <div className="bg-card border border-border rounded-2xl p-5 shadow-lg hover:shadow-accent/10 hover:border-accent/30 transition-all group">
- <div className="text-muted-foreground text-xs font-bold mb-1">Total Users</div>
- <div className="text-4xl font-bold text-foreground drop-shadow-sm">{stats.users}</div>
- <div className="text-emerald-500 text-xs mt-2 flex items-center gap-1 font-bold">
- <Activity className="w-3 h-3"/> Live
- </div>
- </div>
- <div className="bg-card border border-border rounded-2xl p-5 shadow-lg hover:shadow-purple-500/10 hover:border-purple-500/30 transition-all group">
- <div className="text-muted-foreground text-xs font-bold mb-1">Active Projects</div>
- <div className="text-4xl font-bold text-foreground drop-shadow-sm">{stats.projects}</div>
- <div className="text-emerald-500 text-xs mt-2 flex items-center gap-1 font-bold">
- <Activity className="w-3 h-3"/> Live
- </div>
- </div>
- <div className="bg-card border border-border rounded-2xl p-5 shadow-lg hover:shadow-emerald-500/10 hover:border-emerald-500/30 transition-all group">
- <div className="text-muted-foreground text-xs font-bold mb-1">Saved Keywords</div>
- <div className="text-4xl font-bold text-emerald-500 drop-shadow-sm">{stats.keywords}</div>
- <div className="text-muted-foreground text-xs mt-2">Across all users</div>
- </div>
- </div>
- 
- <div className="bg-card border border-border rounded-2xl p-6 mt-6 shadow-lg">
- <h4 className="font-bold text-foreground mb-4">System Status</h4>
- <div className="space-y-4">
- <div className="flex items-center gap-4 pb-4 border-b border-border/50">
- <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-500 shadow-sm">
- <Shield className="w-5 h-5"/>
- </div>
- <div>
- <p className="text-sm font-bold text-foreground">Database Connection</p>
- <p className="text-xs text-muted-foreground">Supabase is connected and operational</p>
- </div>
- <div className="ml-auto text-xs text-emerald-500 font-bold">Healthy</div>
- </div>
- </div>
- </div>
- </div>
- );
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Metric label="Total users" value={stats.totalUsers} />
+        <Metric label="Free/Paid/Agency" value={`${stats.freeUsers}/${stats.paidUsers}/${stats.agencyUsers}`} />
+        <Metric label="Queued/Running" value={`${stats.queued}/${stats.running}`} />
+        <Metric label="Failed/Completed" value={`${stats.failed}/${stats.completed}`} />
+      </div>
+      <div className="grid lg:grid-cols-2 gap-4">
+        <Panel title="Worker heartbeat">
+          {(workers.data || []).length ? (workers.data || []).map((worker: any) => <WorkerRow key={worker.id} worker={worker} />) : <Empty text="No worker heartbeat found." />}
+        </Panel>
+        <Panel title="Latest admin actions">
+          {(actions.data || []).length ? <SimpleTable rows={actions.data || []} columns={['action', 'targetType', 'targetId', 'createdAt']} /> : <Empty text="No admin actions logged yet." />}
+        </Panel>
+      </div>
+    </div>
+  );
 }
 
-function AdminUsers() {
- const [users, setUsers] = useState<any[]>([]);
- const [loading, setLoading] = useState(true);
- const [searchTerm, setSearchTerm] = useState('');
- const [editingUser, setEditingUser] = useState<any | null>(null);
+function AdminUsers({ adminUserId }: { adminUserId: string }) {
+  const users = useAdminData(() => getAllUsers(), []);
+  const [search, setSearch] = useState('');
+  const rows = (users.data || []).filter((item: any) => String(item.email || '').toLowerCase().includes(search.toLowerCase()));
 
- useEffect(() => {
- loadUsers();
- }, []);
+  const updateUser = async (id: string, patch: any) => {
+    await updateUserAdminFields(id, patch, adminUserId);
+    users.refresh();
+  };
 
- const loadUsers = async () => {
- try {
- const data = await getAllUsers();
- setUsers(data);
- } catch (error) {
- console.error("Failed to load users", error);
- } finally {
- setLoading(false);
- }
- };
-
- const handleRoleChange = async (userId: string, newRole: string) => {
- try {
- await updateUserRole(userId, newRole);
- setUsers(users.map(u => u.id === userId ? { ...u, role: newRole } : u));
- setEditingUser(null);
- } catch (error) {
- console.error("Failed to update role", error);
- }
- };
-
- const handleDeleteUser = async (userId: string) => {
- if (!window.confirm("Are you sure you want to delete this user?")) return;
- try {
- await deleteUserDoc(userId);
- setUsers(users.filter(u => u.id !== userId));
- } catch (error) {
- console.error("Failed to delete user", error);
- }
- };
-
- const filteredUsers = users.filter(u => 
- u.email?.toLowerCase().includes(searchTerm.toLowerCase()) || 
- u.displayName?.toLowerCase().includes(searchTerm.toLowerCase())
- );
-
- return (
- <div className="space-y-6">
- <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
- <h3 className="text-2xl font-bold text-foreground">Users Management</h3>
- <div className="relative w-full sm:w-64">
- <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"/>
- <input
- type="text"
- placeholder="Search users..."
- value={searchTerm}
- onChange={(e) => setSearchTerm(e.target.value)}
- className="w-full bg-background/50 border border-border rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
- />
- </div>
- </div>
-
- {loading ? (
- <div className="flex justify-center py-12">
- <Loader2 className="w-8 h-8 text-accent animate-spin"/>
- </div>
- ) : (
- <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-lg">
- <div className="overflow-x-auto">
- <table className="w-full text-sm text-left">
- <thead className="text-xs text-muted-foreground font-bold bg-muted/20 border-b border-border">
- <tr>
- <th className="px-6 py-4">User</th>
- <th className="px-6 py-4">Role</th>
- <th className="px-6 py-4">Joined</th>
- <th className="px-6 py-4 text-right">Actions</th>
- </tr>
- </thead>
- <tbody>
- {filteredUsers.map((u) => (
- <tr key={u.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
- <td className="px-6 py-4">
- <div className="flex items-center gap-3">
- <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center text-accent font-bold shadow-sm">
- {u.displayName?.charAt(0)?.toUpperCase() || u.email?.charAt(0)?.toUpperCase() || '?'}
- </div>
- <div>
- <div className="font-bold text-foreground">{u.displayName || 'No Name'}</div>
- <div className="text-xs text-muted-foreground">{u.email}</div>
- </div>
- </div>
- </td>
- <td className="px-6 py-4">
- <span className={`inline-flex items-center px-2 py-1 rounded-md text-[10px] font-bold border ${
- u.role === 'admin' ? 'bg-purple-500/10 text-purple-500 border-purple-500/20 shadow-sm' :
- u.role === 'staff' ? 'bg-accent/10 text-accent border-accent/20 shadow-sm' :
- 'bg-slate-500/10 text-slate-400 border-slate-500/20'
- }`}>
- {u.role || 'member'}
- </span>
- </td>
- <td className="px-6 py-4 text-muted-foreground font-bold">
- {u.createdAt ? new Date(u.createdAt.seconds ? u.createdAt.seconds * 1000 : u.createdAt).toLocaleDateString() : 'Unknown'}
- </td>
- <td className="px-6 py-4 text-right">
- <div className="flex items-center justify-end gap-2">
- <button
- onClick={() => setEditingUser(u)}
- className="p-1.5 text-muted-foreground hover:text-accent hover:bg-accent/10 rounded-md transition-colors"
- title="Edit Role"
- >
- <Edit2 className="w-4 h-4"/>
- </button>
- <button
- onClick={() => handleDeleteUser(u.id)}
- className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors"
- title="Delete User"
- >
- <Trash2 className="w-4 h-4"/>
- </button>
- </div>
- </td>
- </tr>
- ))}
- </tbody>
- </table>
- </div>
- </div>
- )}
-
- {/* Edit Role Modal */}
- <AnimatePresence>
- {editingUser && (
- <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
- <motion.div
- initial={{ opacity: 0, scale: 0.95 }}
- animate={{ opacity: 1, scale: 1 }}
- exit={{ opacity: 0, scale: 0.95 }}
- className="bg-card border border-border rounded-2xl p-6 w-full max-w-sm shadow-2xl"
- >
- <div className="flex items-center justify-between mb-4">
- <h3 className="text-xl font-bold text-foreground">Edit User Role</h3>
- <button onClick={() => setEditingUser(null)} className="text-muted-foreground hover:text-foreground">
- <X className="w-5 h-5"/>
- </button>
- </div>
- <div className="mb-4">
- <p className="text-sm text-muted-foreground mb-1">User: <span className="text-foreground font-bold">{editingUser.email}</span></p>
- </div>
- <div className="space-y-2">
- {['admin', 'staff', 'member'].map(role => (
- <button
- key={role}
- onClick={() => handleRoleChange(editingUser.id, role)}
- className={`w-full text-left px-4 py-3 rounded-xl border ${
- editingUser.role === role 
- ? 'bg-accent/10 border-accent/50 text-accent shadow-sm' 
- : 'bg-background border-border text-foreground hover:bg-muted/50'
- } transition-colors font-bold text-sm`}
- >
- {role}
- </button>
- ))}
- </div>
- </motion.div>
- </div>
- )}
- </AnimatePresence>
- </div>
- );
+  return (
+    <Panel title="Users">
+      <div className="relative max-w-sm mb-4">
+        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by email" className="w-full bg-background border border-border rounded-xl pl-9 pr-3 py-2" />
+      </div>
+      {users.loading ? <Loading /> : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-muted-foreground border-b border-border">
+              <tr><th className="p-3">Email</th><th className="p-3">Role</th><th className="p-3">Plan</th><th className="p-3">Status</th><th className="p-3">Quota</th><th className="p-3">Actions</th></tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rows.map((item: any) => (
+                <tr key={item.id}>
+                  <td className="p-3">{item.email || item.id}</td>
+                  <td className="p-3"><Select value={item.role || 'user'} options={['user', 'support', 'admin']} onChange={(role) => updateUser(item.id, { role })} /></td>
+                  <td className="p-3"><Select value={item.plan || 'free'} options={['free', 'paid', 'agency', 'admin']} onChange={(plan) => updateUser(item.id, { plan, subscription_status: plan === 'free' ? 'inactive' : 'active' })} /></td>
+                  <td className="p-3"><Select value={item.subscriptionStatus || 'inactive'} options={['inactive', 'trialing', 'active', 'past_due', 'cancelled']} onChange={(subscription_status) => updateUser(item.id, { subscription_status })} /></td>
+                  <td className="p-3">{item.auditQuotaUsedDaily || 0} daily / {item.auditQuotaUsedMonthly || 0} monthly</td>
+                  <td className="p-3"><button onClick={() => updateUser(item.id, { resetQuotas: true })} className="px-3 py-1.5 rounded-lg border border-border hover:bg-muted">Reset quotas</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Panel>
+  );
 }
 
-function AdminContent() {
- const [activeTab, setActiveTab] = useState<'projects' | 'keywords' | 'competitors'>('projects');
- const [data, setData] = useState<any[]>([]);
- const [loading, setLoading] = useState(true);
+function AdminAudits({ adminUserId }: { adminUserId: string }) {
+  const audits = useAdminData(() => getAdminAudits(100), []);
+  if (audits.loading) return <Loading />;
+  return (
+    <Panel title="Latest audits">
+      <AuditTable rows={audits.data || []} adminUserId={adminUserId} refresh={audits.refresh} />
+    </Panel>
+  );
+}
 
- useEffect(() => {
- loadData();
- }, [activeTab]);
+function AdminQueue({ adminUserId }: { adminUserId: string }) {
+  const audits = useAdminData(() => getAdminAudits(100), []);
+  const rows = (audits.data || [])
+    .filter((item: any) => item.status === 'queued' || item.status === 'running')
+    .sort((a: any, b: any) => (b.queuePriority - a.queuePriority) || String(a.createdAt).localeCompare(String(b.createdAt)));
 
- const loadData = async () => {
- setLoading(true);
- try {
- let result: any[] = [];
- if (activeTab === 'projects') result = await getAllProjects();
- if (activeTab === 'keywords') result = await getAllKeywords();
- if (activeTab === 'competitors') result = await getAllCompetitors();
- setData(result);
- } catch (error) {
- console.error("Failed to load content", error);
- } finally {
- setLoading(false);
- }
- };
+  if (audits.loading) return <Loading />;
+  return (
+    <Panel title="Priority queue">
+      <AuditTable rows={rows} adminUserId={adminUserId} refresh={audits.refresh} />
+    </Panel>
+  );
+}
 
- const handleDelete = async (item: any) => {
- if (!window.confirm("Are you sure you want to delete this item?")) return;
- try {
- const path = `users/${item.userId}/${activeTab}/${item.id}`;
- await deleteAnyDocument(path);
- setData(data.filter(d => d.id !== item.id));
- } catch (error) {
- console.error("Failed to delete item", error);
- }
- };
+function AuditTable({ rows, adminUserId, refresh }: { rows: any[]; adminUserId: string; refresh: () => void }) {
+  const updateAudit = async (id: string, patch: any) => {
+    await updateAuditAdminAction(id, patch, adminUserId);
+    refresh();
+  };
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="text-left text-muted-foreground border-b border-border">
+          <tr><th className="p-3">URL</th><th className="p-3">Status</th><th className="p-3">Plan</th><th className="p-3">Mode</th><th className="p-3">Priority</th><th className="p-3">Lock</th><th className="p-3">Actions</th></tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {rows.map((item) => (
+            <tr key={item.id}>
+              <td className="p-3 max-w-sm break-all"><div className="font-medium">{item.normalizedUrl}</div><div className="text-xs text-muted-foreground">{item.error || item.currentPhase}</div></td>
+              <td className="p-3 capitalize">{item.status}</td>
+              <td className="p-3 capitalize">{item.plan || 'free'}</td>
+              <td className="p-3">{item.effectiveMode || item.requestedMode || 'quick'}</td>
+              <td className="p-3"><input type="number" defaultValue={item.queuePriority || 10} className="w-20 bg-background border border-border rounded-lg px-2 py-1" onBlur={(event) => updateAudit(item.id, { queuePriority: Number(event.currentTarget.value) })} /></td>
+              <td className="p-3 text-xs">{item.lockedBy || 'none'}<br />{item.leaseExpiresAt || ''}</td>
+              <td className="p-3 flex flex-wrap gap-2">
+                {['queued', 'running'].includes(item.status) && <button onClick={() => updateAudit(item.id, { status: 'cancelled', currentPhase: 'Cancelled by admin', lockedBy: null, lockedAt: null, leaseExpiresAt: null })} className="px-2 py-1 rounded border border-border hover:bg-muted">Cancel</button>}
+                {item.status === 'failed' && <button onClick={() => updateAudit(item.id, { status: 'queued', currentPhase: 'Retry queued', error: null, lockedBy: null, lockedAt: null, leaseExpiresAt: null })} className="px-2 py-1 rounded border border-border hover:bg-muted">Retry</button>}
+                {item.leaseExpiresAt && new Date(item.leaseExpiresAt).getTime() < Date.now() && <button onClick={() => updateAudit(item.id, { status: 'queued', currentPhase: 'Recovered by admin', lockedBy: null, lockedAt: null, leaseExpiresAt: null })} className="px-2 py-1 rounded border border-border hover:bg-muted">Recover stale</button>}
+              </td>
+            </tr>
+          ))}
+          {!rows.length && <tr><td colSpan={7}><Empty text="No audits found." /></td></tr>}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
- return (
- <div className="space-y-6">
- <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
- <h3 className="text-2xl font-bold text-foreground">Content Management</h3>
- <div className="flex flex-wrap bg-muted/50 p-1 rounded-xl gap-1 border border-border">
- <button 
- onClick={() => setActiveTab('projects')}
- className={`px-4 py-1.5 text-sm font-bold rounded-lg transition-colors ${activeTab === 'projects' ? 'bg-accent/20 text-accent shadow-sm border border-accent/30' : 'text-muted-foreground hover:text-foreground'}`}
- >
- Projects
- </button>
- <button 
- onClick={() => setActiveTab('keywords')}
- className={`px-4 py-1.5 text-sm font-bold rounded-lg transition-colors ${activeTab === 'keywords' ? 'bg-accent/20 text-accent shadow-sm border border-accent/30' : 'text-muted-foreground hover:text-foreground'}`}
- >
- Keywords
- </button>
- <button 
- onClick={() => setActiveTab('competitors')}
- className={`px-4 py-1.5 text-sm font-bold rounded-lg transition-colors ${activeTab === 'competitors' ? 'bg-accent/20 text-accent shadow-sm border border-accent/30' : 'text-muted-foreground hover:text-foreground'}`}
- >
- Competitors
- </button>
- </div>
- </div>
-
- {loading ? (
- <div className="flex justify-center py-12">
- <Loader2 className="w-8 h-8 text-accent animate-spin"/>
- </div>
- ) : (
- <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-lg">
- <div className="overflow-x-auto">
- <table className="w-full text-sm text-left">
- <thead className="text-xs text-muted-foreground font-bold bg-muted/20 border-b border-border">
- <tr>
- <th className="px-6 py-4">ID</th>
- <th className="px-6 py-4">User ID</th>
- <th className="px-6 py-4">Details</th>
- <th className="px-6 py-4 text-right">Actions</th>
- </tr>
- </thead>
- <tbody>
- {data.map((item) => (
- <tr key={item.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
- <td className="px-6 py-4 text-xs text-muted-foreground font-bold">{item.id.slice(0, 8)}...</td>
- <td className="px-6 py-4 text-xs text-muted-foreground font-bold">{item.userId?.slice(0, 8)}...</td>
- <td className="px-6 py-4">
- {activeTab === 'projects' && <span className="font-bold text-foreground">{item.name}</span>}
- {activeTab === 'keywords' && <span className="font-bold text-foreground">{item.term}</span>}
- {activeTab === 'competitors' && <span className="font-bold text-foreground">{item.domainUrl}</span>}
- </td>
- <td className="px-6 py-4 text-right">
- <button
- onClick={() => handleDelete(item)}
- className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors"
- title="Delete Item"
- >
- <Trash2 className="w-4 h-4"/>
- </button>
- </td>
- </tr>
- ))}
- {data.length === 0 && (
- <tr>
- <td colSpan={4} className="px-6 py-8 text-center text-muted-foreground">
- No {activeTab} found.
- </td>
- </tr>
- )}
- </tbody>
- </table>
- </div>
- </div>
- )}
- </div>
- );
+function AdminWorkers() {
+  const workers = useAdminData(() => getAdminWorkers(), []);
+  if (workers.loading) return <Loading />;
+  return (
+    <Panel title="Workers">
+      {(workers.data || []).length ? (workers.data || []).map((worker: any) => <WorkerRow key={worker.id} worker={worker} />) : <Empty text="No audit_worker:* heartbeat rows found." />}
+      <div className="mt-4 text-sm text-muted-foreground">
+        Render Free Web Service can sleep. Add an uptime monitor pinging the worker /health URL every 10 minutes.
+      </div>
+    </Panel>
+  );
 }
 
 function AdminSettings() {
- const [settings, setSettings] = useState({
- platformName: 'SEOIntel Audit',
- supportEmail: 'support@keywordintelligence.com',
- requireEmailVerification: false,
- publicRegistration: true
- });
- const [loading, setLoading] = useState(true);
- const [saving, setSaving] = useState(false);
+  const settings = useAdminData(() => getPlatformSettings(), []);
+  const [draft, setDraft] = useState<any>({});
 
- useEffect(() => {
- const loadSettings = async () => {
- try {
- const data = await getPlatformSettings();
- setSettings(data as any);
- } catch (error) {
- console.error("Failed to load settings", error);
- } finally {
- setLoading(false);
- }
- };
- loadSettings();
- }, []);
+  useEffect(() => {
+    if (settings.data) setDraft(settings.data);
+  }, [settings.data]);
 
- const handleSave = async () => {
- setSaving(true);
- try {
- await updatePlatformSettings(settings);
- alert('Settings saved successfully!');
- } catch (error) {
- console.error("Failed to save settings", error);
- alert('Failed to save settings.');
- } finally {
- setSaving(false);
- }
- };
+  const save = async () => {
+    await updatePlatformSettings(draft);
+    settings.refresh();
+  };
 
- if (loading) {
- return (
- <div className="flex justify-center py-12">
- <Loader2 className="w-8 h-8 text-accent animate-spin"/>
- </div>
- );
- }
+  if (settings.loading) return <Loading />;
+  return (
+    <Panel title="Safe platform settings">
+      <div className="grid md:grid-cols-2 gap-4">
+        <Field label="Platform name" value={draft.platformName || ''} onChange={(platformName) => setDraft({ ...draft, platformName })} />
+        <Field label="Support email" value={draft.supportEmail || ''} onChange={(supportEmail) => setDraft({ ...draft, supportEmail })} />
+        <Field label="Queue fairness paid burst" value={String(draft.value?.queueFairnessPaidBurst ?? 5)} onChange={(value) => setDraft({ ...draft, value: { ...(draft.value || {}), queueFairnessPaidBurst: Number(value) } })} />
+        <Field label="Guest audit enabled" value={String(draft.value?.guestAuditEnabled ?? true)} onChange={(value) => setDraft({ ...draft, value: { ...(draft.value || {}), guestAuditEnabled: value === 'true' } })} />
+      </div>
+      <button onClick={save} className="mt-4 px-4 py-2 rounded-xl bg-accent text-accent-foreground font-semibold">Save settings</button>
+    </Panel>
+  );
+}
 
- return (
- <div className="space-y-6">
- <h3 className="text-2xl font-bold text-foreground">Platform Settings</h3>
- <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
- <div className="bg-card border border-border rounded-2xl p-6 shadow-lg">
- <h4 className="font-bold text-foreground mb-4 flex items-center gap-2">
- <Settings className="w-5 h-5 text-accent"/>
- General Configuration
- </h4>
- <div className="space-y-4">
- <div>
- <label className="block text-sm font-bold text-muted-foreground mb-1">Platform Name</label>
- <input 
- type="text"
- value={settings.platformName} 
- onChange={(e) => setSettings({...settings, platformName: e.target.value})}
- className="w-full bg-background/50 border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
- />
- </div>
- <div>
- <label className="block text-sm font-bold text-muted-foreground mb-1">Support Email</label>
- <input 
- type="email"
- value={settings.supportEmail} 
- onChange={(e) => setSettings({...settings, supportEmail: e.target.value})}
- className="w-full bg-background/50 border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
- />
- </div>
- <button 
- onClick={handleSave}
- disabled={saving}
- className="px-6 py-2 bg-accent text-accent-foreground hover:bg-accent/90 rounded-xl text-sm font-bold transition-all disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-accent/20"
- >
- {saving && <Loader2 className="w-4 h-4 animate-spin"/>}
- Save Settings
- </button>
- </div>
- </div>
- 
- <div className="bg-card border border-border rounded-2xl p-6 shadow-lg">
- <h4 className="font-bold text-foreground mb-4 flex items-center gap-2">
- <ShieldAlert className="w-5 h-5 text-red-500"/>
- Security & Access
- </h4>
- <div className="space-y-4">
- <div className="flex items-center justify-between p-4 bg-background/50 border border-border rounded-xl">
- <div>
- <div className="font-bold text-foreground text-sm">Require Email Verification</div>
- <div className="text-xs text-muted-foreground">Users must verify email before login</div>
- </div>
- <div 
- onClick={() => setSettings({...settings, requireEmailVerification: !settings.requireEmailVerification})}
- className={`w-12 h-6 rounded-full relative cursor-pointer transition-colors ${settings.requireEmailVerification ? 'bg-accent shadow-sm' : 'bg-slate-600'}`}
- >
- <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${settings.requireEmailVerification ? 'right-1' : 'left-1'}`}></div>
- </div>
- </div>
- <div className="flex items-center justify-between p-4 bg-background/50 border border-border rounded-xl">
- <div>
- <div className="font-bold text-foreground text-sm">Public Registration</div>
- <div className="text-xs text-muted-foreground">Allow new users to sign up</div>
- </div>
- <div 
- onClick={() => setSettings({...settings, publicRegistration: !settings.publicRegistration})}
- className={`w-12 h-6 rounded-full relative cursor-pointer transition-colors ${settings.publicRegistration ? 'bg-accent shadow-sm' : 'bg-slate-600'}`}
- >
- <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${settings.publicRegistration ? 'right-1' : 'left-1'}`}></div>
- </div>
- </div>
- </div>
- </div>
- </div>
- </div>
- );
+function AdminPlans({ adminUserId }: { adminUserId: string }) {
+  const plans = useAdminData(() => getPlanLimits(), []);
+  const update = async (plan: string, key: string, value: any) => {
+    await updatePlanLimit(plan, { [key]: value }, adminUserId);
+    plans.refresh();
+  };
+  if (plans.loading) return <Loading />;
+  return (
+    <Panel title="Plan limits">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="text-left text-muted-foreground border-b border-border">
+            <tr><th className="p-3">Plan</th><th className="p-3">Daily</th><th className="p-3">Monthly</th><th className="p-3">Quick/Standard/Deep pages</th><th className="p-3">Priority</th><th className="p-3">Features</th></tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {(plans.data || []).map((plan: any) => (
+              <tr key={plan.plan}>
+                <td className="p-3 font-semibold capitalize">{plan.label || plan.plan}</td>
+                <td className="p-3"><NumberInput value={plan.dailyAudits} onBlur={(value) => update(plan.plan, 'dailyAudits', value)} /></td>
+                <td className="p-3"><NumberInput value={plan.monthlyAudits} onBlur={(value) => update(plan.plan, 'monthlyAudits', value)} /></td>
+                <td className="p-3">{plan.maxPagesQuick}/{plan.maxPagesStandard}/{plan.maxPagesDeep}</td>
+                <td className="p-3"><NumberInput value={plan.priority} onBlur={(value) => update(plan.plan, 'priority', value)} /></td>
+                <td className="p-3 text-xs">PDF {String(plan.pdfEnabled)} · White-label {String(plan.whiteLabelEnabled)} · API {String(plan.apiEnabled)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  );
+}
+
+function WorkerRow({ worker }: { worker: any }) {
+  const value = worker.value || {};
+  const lastSeen = value.lastSeenAt || worker.updatedAt;
+  const stale = lastSeen ? Date.now() - new Date(lastSeen).getTime() > 90_000 : true;
+  return (
+    <div className="rounded-xl border border-border p-4 mb-3">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <div className="font-semibold">{value.workerId || worker.id}</div>
+          <div className="text-sm text-muted-foreground">status={value.status || 'unknown'} runtime={value.runtime || 'unknown'} currentAuditId={value.currentAuditId || 'none'}</div>
+        </div>
+        <div className={`text-sm font-semibold ${stale ? 'text-yellow-600' : 'text-green-600'}`}>{stale ? 'Stale or sleeping' : 'Healthy'}</div>
+      </div>
+      <div className="text-xs text-muted-foreground mt-2">lastSeenAt: {lastSeen || 'never'} · supportedModes: {(value.supportedModes || []).join(', ') || 'unknown'}</div>
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: React.ReactNode }) {
+  return <div className="bg-card border border-border rounded-xl p-4"><div className="text-sm text-muted-foreground">{label}</div><div className="text-2xl font-bold">{value}</div></div>;
+}
+
+function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+  return <section className="bg-card border border-border rounded-xl p-5"><h2 className="text-xl font-bold mb-4">{title}</h2>{children}</section>;
+}
+
+function Empty({ text }: { text: string }) {
+  return <div className="p-6 text-center text-muted-foreground">{text}</div>;
+}
+
+function Loading() {
+  return <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-accent" /></div>;
+}
+
+function Select({ value, options, onChange }: { value: string; options: string[]; onChange: (value: string) => void }) {
+  return <select value={value} onChange={(event) => onChange(event.target.value)} className="bg-background border border-border rounded-lg px-2 py-1">{options.map((option) => <option key={option} value={option}>{option}</option>)}</select>;
+}
+
+function Field({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return <label className="block text-sm"><span className="text-muted-foreground">{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 w-full bg-background border border-border rounded-lg px-3 py-2" /></label>;
+}
+
+function NumberInput({ value, onBlur }: { value: number; onBlur: (value: number) => void }) {
+  return <input type="number" defaultValue={value} onBlur={(event) => onBlur(Number(event.currentTarget.value))} className="w-24 bg-background border border-border rounded-lg px-2 py-1" />;
+}
+
+function SimpleTable({ rows, columns }: { rows: any[]; columns: string[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="text-left text-muted-foreground border-b border-border"><tr>{columns.map((column) => <th key={column} className="p-2">{column}</th>)}</tr></thead>
+        <tbody className="divide-y divide-border">{rows.map((row, index) => <tr key={row.id || index}>{columns.map((column) => <td key={column} className="p-2">{String(row[column] ?? '')}</td>)}</tr>)}</tbody>
+      </table>
+    </div>
+  );
 }
