@@ -43,7 +43,7 @@ export default function Reports() {
                     }
                 }
             } else {
-                csvContent = "URL,Title,Issue,Severity\nhttps://example.com,Home,Missing H1,High\n"; // Placeholder for other audits
+                csvContent = "URL,Title,Fix,Priority\nhttps://example.com,Home,Missing main heading,High\n"; // Placeholder for other audits
             }
             const csvStr = "data:text/csv;charset=utf-8," + encodeURIComponent(csvContent);      
       const a = document.createElement('a');      
@@ -64,32 +64,32 @@ export default function Reports() {
     <div className="w-full space-y-8 animate-rise">
       <SectionHeader
         eyebrow="Reports"
-        title="Reports & Exports"
-        description="Understand audit health quickly, then export JSON, CSV, or printable reports for clients and developers."
+        title="Client-ready website reports"
+        description="Start with the executive summary, show top fixes first, then export details for clients and developers."
       />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Overall score" value="84" detail="Latest report sample" icon={<PieChart className="h-6 w-6" />} tone="green" />
-        <MetricCard label="Critical issues" value="3" detail="Prioritize first" icon={<AlertTriangle className="h-6 w-6" />} tone="red" />
-        <MetricCard label="Security grade" value="A-" detail="Passive checks" icon={<ShieldCheck className="h-6 w-6" />} tone="green" />
+        <MetricCard label="Urgent fixes" value="3" detail="Fix these first" icon={<AlertTriangle className="h-6 w-6" />} tone="red" />
+        <MetricCard label="Browser safety" value="A-" detail="Non-invasive checks" icon={<ShieldCheck className="h-6 w-6" />} tone="green" />
         <MetricCard label="Export formats" value="3" detail="JSON, CSV, PDF" icon={<Download className="h-6 w-6" />} tone="accent" />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">
         <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-          <h2 className="text-xl font-bold">Category score bars</h2>
-          <p className="mb-5 text-sm text-muted-foreground">Preview the same hierarchy used in audit reports.</p>
+          <h2 className="text-xl font-bold">Executive summary</h2>
+          <p className="mb-5 text-sm text-muted-foreground">A quick score breakdown before the detailed fix list.</p>
           <BarList items={[
             { label: 'SEO', value: 84, tone: 'green' },
-            { label: 'Technical', value: 76, tone: 'accent' },
-            { label: 'Performance', value: 68, tone: 'yellow' },
-            { label: 'Security', value: 88, tone: 'green' },
-            { label: 'Crawlability', value: 79, tone: 'accent' },
+            { label: 'Website health', value: 76, tone: 'accent' },
+            { label: 'Speed signals', value: 68, tone: 'yellow' },
+            { label: 'Browser safety', value: 88, tone: 'green' },
+            { label: 'Google access', value: 79, tone: 'accent' },
           ]} />
         </div>
         <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-          <h2 className="text-xl font-bold">Severity distribution</h2>
-          <p className="mb-5 text-sm text-muted-foreground">A compact summary for client-facing reports.</p>
+          <h2 className="text-xl font-bold">Fix priority</h2>
+          <p className="mb-5 text-sm text-muted-foreground">A compact view of what should be handled first.</p>
           <SeverityStack critical={3} high={6} medium={12} low={8} />
         </div>
       </div>
@@ -97,8 +97,8 @@ export default function Reports() {
       <SitePreviewSection
         url="https://example.com"
         hostname="example.com"
-        title="Example Homepage - Full SEO and Security Audit Preview"
-        description="A polished report preview showing how crawled metadata becomes desktop, mobile, and Google-style search result previews."
+        title="Example Homepage - SEO and Browser Safety Report"
+        description="A polished report preview showing how scanned page details become desktop, mobile, and Google-style previews."
       />
 
       <div className="grid gap-6 xl:grid-cols-2">
@@ -107,18 +107,18 @@ export default function Reports() {
             <div className="flex items-center gap-3">
               <div className="rounded-2xl bg-accent/10 p-3 text-accent"><Search className="h-6 w-6" /></div>
               <div>
-                <h2 className="text-xl font-bold">SEO Audit Report</h2>
-                <p className="text-sm text-muted-foreground">Title/meta, crawlability, indexability, content, links, schema, and SERP readiness.</p>
+                <h2 className="text-xl font-bold">SEO visibility report</h2>
+                <p className="text-sm text-muted-foreground">Titles, descriptions, Google access, content structure, links, and search previews.</p>
               </div>
             </div>
             <StatusBadge tone="accent">Full audit</StatusBadge>
           </div>
           <BarList items={[
-            { label: 'Title / meta / SERP', value: 86, tone: 'green' },
-            { label: 'Crawlability / sitemap', value: 78, tone: 'accent' },
+            { label: 'Title / description / Google preview', value: 86, tone: 'green' },
+            { label: 'Google access / site map', value: 78, tone: 'accent' },
             { label: 'Internal links', value: 72, tone: 'accent' },
             { label: 'Images / alt text', value: 66, tone: 'yellow' },
-            { label: 'Schema / social metadata', value: 61, tone: 'yellow' },
+            { label: 'Structured data / social previews', value: 61, tone: 'yellow' },
           ]} />
         </div>
         <div className="rounded-2xl border border-border bg-card p-6 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg">
@@ -126,18 +126,18 @@ export default function Reports() {
             <div className="flex items-center gap-3">
               <div className="rounded-2xl bg-green-500/10 p-3 text-green-600"><Lock className="h-6 w-6" /></div>
               <div>
-                <h2 className="text-xl font-bold">Security Audit Report</h2>
-                <p className="text-sm text-muted-foreground">HTTPS, HSTS, CSP, X-Frame-Options, content-type, referrer policy, and passive posture.</p>
+                <h2 className="text-xl font-bold">Browser safety report</h2>
+                <p className="text-sm text-muted-foreground">HTTPS, browser protection settings, privacy policy signals, and passive safety posture.</p>
               </div>
             </div>
             <StatusBadge tone="success">Passive</StatusBadge>
           </div>
           <BarList items={[
             { label: 'HTTPS / redirects', value: 92, tone: 'green' },
-            { label: 'Security headers', value: 74, tone: 'accent' },
+            { label: 'Browser protections', value: 74, tone: 'accent' },
             { label: 'Cookie posture', value: 70, tone: 'accent' },
-            { label: 'Mixed-content indicators', value: 88, tone: 'green' },
-            { label: 'Exposed file checks', value: 82, tone: 'green' },
+            { label: 'Mixed content signals', value: 88, tone: 'green' },
+            { label: 'Public file signals', value: 82, tone: 'green' },
           ]} />
         </div>
       </div>
@@ -148,8 +148,8 @@ export default function Reports() {
           <div className="p-3 bg-accent/10 rounded-xl">
              <FileJson className="w-6 h-6 text-accent" />
           </div>
-          <h2 className="text-xl font-bold font-display">Full JSON Audit</h2>        
-          <p className="text-sm text-muted-foreground">Export the complete audit payload containing all issues, pages crawled, and domain statistics as a structured JSON object.</p>                
+          <h2 className="text-xl font-bold font-display">Full audit data</h2>
+          <p className="text-sm text-muted-foreground">Export the complete report data with fixes, pages scanned, and site summary fields.</p>
           <button onClick={handleExportJson} disabled={!!loading} className="mt-auto px-4 py-2 bg-muted hover:bg-muted/80 font-semibold rounded-lg inline-flex items-center gap-2 transition-colors">          
             {loading === 'json' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}          
             Export JSON        
@@ -161,14 +161,14 @@ export default function Reports() {
              <FileSpreadsheet className="w-6 h-6 text-green-500" />
           </div>
           <h2 className="text-xl font-bold font-display">CSV Exports</h2>        
-          <p className="text-sm text-muted-foreground">Download standard CSV sheets for specific datasets to import into Excel or Google Sheets.</p>                
+          <p className="text-sm text-muted-foreground">Download spreadsheet-friendly files for fixes, scanned pages, search data, and keywords.</p>
           
           <div className="flex flex-wrap gap-2 mt-auto">
             <button onClick={() => handleExportCsv('issues')} disabled={!!loading} className="px-3 py-1.5 bg-muted hover:bg-muted/80 text-sm font-medium rounded-lg inline-flex items-center gap-2 transition-colors">          
-              {loading === 'csv-issues' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Audit Issues CSV        
+              {loading === 'csv-issues' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Fixes CSV
             </button>      
             <button onClick={() => handleExportCsv('pages')} disabled={!!loading} className="px-3 py-1.5 bg-muted hover:bg-muted/80 text-sm font-medium rounded-lg inline-flex items-center gap-2 transition-colors">          
-              {loading === 'csv-pages' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Crawled Pages CSV        
+              {loading === 'csv-pages' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Scanned Pages CSV
             </button>
             <button onClick={() => handleExportCsv('search')} disabled={!!loading} className="px-3 py-1.5 bg-muted hover:bg-muted/80 text-sm font-medium rounded-lg inline-flex items-center gap-2 transition-colors">          
               {loading === 'csv-search' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Search Data CSV        
@@ -183,8 +183,8 @@ export default function Reports() {
           <div className="p-3 bg-purple-500/10 rounded-xl">
              <Printer className="w-6 h-6 text-purple-500" />
           </div>
-          <h2 className="text-xl font-bold font-display">Printable PDF Report</h2>        
-          <p className="text-sm text-muted-foreground">Generate a clean, print-ready document summarizing the project dashboard and main SEO audit issues for client delivery.</p>                
+          <h2 className="text-xl font-bold font-display">Printable client report</h2>
+          <p className="text-sm text-muted-foreground">Create a clean print-ready report with summary scores, top fixes, and next steps.</p>
           <button onClick={handlePrint} className="mt-auto px-4 py-2 bg-muted hover:bg-muted/80 font-semibold rounded-lg inline-flex items-center gap-2 transition-colors">          
             <Printer className="w-4 h-4" />          
             Print / Save as PDF        

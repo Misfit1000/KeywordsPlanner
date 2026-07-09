@@ -15,7 +15,7 @@ export default function CompetitorGap() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight mb-2">Competitor Keyword Gap</h1>
         <p className="text-muted-foreground">
-          Competitor Gap is being rebuilt as a worker-backed feature.
+          Competitor Gap is being rebuilt as a safe background analysis feature.
         </p>
       </div>
 
@@ -24,7 +24,7 @@ export default function CompetitorGap() {
         <div>
           <p className="font-semibold">Temporarily disabled</p>
           <p className="text-sm">
-            Competitor Gap is temporarily disabled while worker-backed analysis is being enabled. This prevents long competitor crawls from running inside Vercel API routes.
+            Competitor Gap is temporarily disabled while safe background analysis is being enabled. This prevents long competitor scans from running inside live website requests.
           </p>
         </div>
       </div>
@@ -73,7 +73,7 @@ export default function CompetitorGap() {
               className="px-6 py-2.5 bg-muted text-muted-foreground font-semibold rounded-xl cursor-not-allowed flex items-center gap-2"
             >
               <Target className="w-5 h-5" />
-              Worker-backed analysis coming soon
+              Background analysis coming soon
             </button>
           </div>
         </form>

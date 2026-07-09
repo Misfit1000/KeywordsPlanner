@@ -72,11 +72,11 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
   return (
     <div className="w-full space-y-6 animate-rise">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight mb-2">Full SEO Audit</h1>
-        <p className="text-muted-foreground">Run a comprehensive, rule-based SEO audit using local crawling and analysis.</p>
+        <h1 className="text-3xl font-bold tracking-tight mb-2">SEO visibility audit</h1>
+        <p className="text-muted-foreground">Check titles, descriptions, Google access, page structure, links, and search previews with clear next steps.</p>
       </div>
 
-      <div className="bg-card border border-border p-5 md:p-6 rounded-2xl shadow-sm">
+      <div className="trust-card p-5 md:p-6">
         <form onSubmit={startAudit} className="flex flex-col md:flex-row gap-4">
           <div className="flex-1 relative">
             <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -84,40 +84,40 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
               type="text"
               value={url}
               onChange={e => setUrl(e.target.value)}
-              placeholder="Enter website URL to audit (e.g. https://example.com)"
+              placeholder="Enter a website URL (e.g. https://example.com)"
               className="w-full bg-muted/50 border border-border rounded-xl py-3 pl-10 pr-4 outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all"
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium whitespace-nowrap">Audit Mode</label>
+            <label className="text-sm font-medium whitespace-nowrap">Audit type</label>
             <select
               value={mode}
               onChange={e => setMode(e.target.value as any)}
               className="bg-muted/50 border border-border rounded-xl py-3 px-3 outline-none focus:border-accent"
             >
-              <option value="quick">Quick - Free lightweight 5 pages</option>
-              <option value="standard" disabled={!canUseStandard}>Full Standard - Paid/Admin 25 pages {!canUseStandard ? '(locked)' : ''}</option>
-              <option value="deep" disabled={!canUseDeep}>Deep - Agency/Admin expanded crawl {!canUseDeep ? '(locked)' : ''}</option>
+              <option value="quick">Quick - free 5-page scan</option>
+              <option value="standard" disabled={!canUseStandard}>Full - paid/admin 25-page scan {!canUseStandard ? '(locked)' : ''}</option>
+              <option value="deep" disabled={!canUseDeep}>Deep - agency/admin expanded scan {!canUseDeep ? '(locked)' : ''}</option>
             </select>
           </div>
           <button
             type="submit"
             disabled={loading || !url.trim()}
-            className="px-6 py-3 bg-accent text-accent-foreground font-semibold rounded-xl hover:bg-accent/90 disabled:opacity-50 flex items-center justify-center gap-2 min-w-[140px]"
+            className="trust-button min-w-[140px] px-6 py-3"
           >
             {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Play className="w-5 h-5" />}
-            {loading ? 'Starting audit...' : 'Start Audit'}
+            {loading ? 'Starting scan...' : 'Start scan'}
           </button>
         </form>
         {mode === 'deep' && (
-          <div className="mt-3 text-sm text-yellow-600 bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
-            Deep Audit requires an agency/admin plan and a dedicated always-on worker.
+          <div className="mt-3 text-sm text-amber-700 bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
+            Deep audit requires an agency/admin plan and a dedicated always-on audit engine.
           </div>
         )}
         {plan === 'free' && (
           <div className="mt-3 text-sm text-muted-foreground bg-muted/40 border border-border rounded-lg p-3 flex items-start gap-2">
             <Lock className="w-4 h-4 mt-0.5" />
-            Free users get lightweight Quick Audit with 5 pages and passive security checks. Paid/Admin accounts get full 25-page audits, priority queue, richer reports, and deeper SEO + security categories.
+            Free users get a quick 5-page scan and passive browser safety checks. Paid/Admin accounts get larger scans, faster starts, richer reports, and deeper SEO plus safety categories.
           </div>
         )}
       </div>
@@ -150,7 +150,7 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-card border border-border p-6 rounded-2xl flex items-center justify-between shadow-sm hover:shadow-md transition-shadow group">
               <div>
-                <p className="text-sm text-muted-foreground">Overall SEO Score</p>
+                <p className="text-sm text-muted-foreground">SEO visibility score</p>
                 <p className={`text-4xl font-bold font-display ${auditResult.overallScore >= 80 ? 'text-green-500' : auditResult.overallScore >= 50 ? 'text-yellow-500' : 'text-red-500'}`}>
                   {auditResult.overallScore}
                 </p>
@@ -160,7 +160,7 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
             
             <div className="bg-card border border-border p-6 rounded-2xl flex items-center justify-between shadow-sm hover:shadow-md transition-shadow group">
               <div>
-                <p className="text-sm text-muted-foreground">Pages Crawled</p>
+                <p className="text-sm text-muted-foreground">Pages scanned</p>
                 <p className="text-4xl font-bold font-display text-accent">{auditResult.pagesCrawled}</p>
               </div>
               <Layers className="w-10 h-10 text-accent/20 group-hover:scale-110 transition-transform" />
@@ -168,7 +168,7 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
 
             <div className="bg-card border border-border p-6 rounded-2xl flex items-center justify-between shadow-sm hover:shadow-md transition-shadow group">
               <div>
-                <p className="text-sm text-muted-foreground">Critical Issues</p>
+                <p className="text-sm text-muted-foreground">Urgent fixes</p>
                 <p className="text-4xl font-bold font-display text-red-500">{auditResult.criticalIssues}</p>
               </div>
               <ShieldAlert className="w-10 h-10 text-red-500/20 group-hover:scale-110 transition-transform" />
@@ -176,7 +176,7 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
 
             <div className="bg-card border border-border p-6 rounded-2xl flex items-center justify-between shadow-sm hover:shadow-md transition-shadow group">
               <div>
-                <p className="text-sm text-muted-foreground">Total Issues</p>
+                <p className="text-sm text-muted-foreground">Open fixes</p>
                 <p className="text-4xl font-bold font-display text-orange-500">{auditResult.allIssues.length}</p>
               </div>
               <AlertTriangle className="w-10 h-10 text-orange-500/20 group-hover:scale-110 transition-transform" />
@@ -185,13 +185,13 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
           
           <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
             <div className="p-4 border-b border-border bg-muted/20 flex justify-between items-center">
-              <h3 className="font-semibold text-lg">Top SEO Issues</h3>
+              <h3 className="font-semibold text-lg">Top SEO fixes first</h3>
             </div>
             <div className="divide-y divide-border max-h-[600px] overflow-y-auto">
               {auditResult.allIssues.length === 0 ? (
                 <div className="p-8 text-center text-green-500 flex flex-col items-center gap-3">
                   <CheckCircle2 className="w-10 h-10" />
-                  <p className="font-medium text-lg">Amazing! No issues found on crawled pages.</p>
+                  <p className="font-medium text-lg">No SEO fixes found on scanned pages.</p>
                 </div>
               ) : (
                 auditResult.allIssues
@@ -219,18 +219,21 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
                             issue.severity === 'medium' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' : 
                             'bg-accent/10 text-accent border-accent/20'
                           }`}>
-                            {issue.severity.toUpperCase()}
+                            {priorityLabel(issue.severity)}
                           </span>
                           <span className="text-xs px-2 py-0.5 rounded-md bg-muted text-muted-foreground border border-border capitalize">
                             {issue.category}
                           </span>
                         </div>
                       </div>
-                      <p className="text-sm text-muted-foreground">{issue.description}</p>
+                      <p className="text-sm text-muted-foreground"><span className="font-medium text-foreground">Why it matters:</span> {issue.description}</p>
                       {issue.affectedUrl && (
                         <p className="text-xs mt-2 text-muted-foreground break-all bg-background p-1.5 rounded border border-border inline-block">
-                          URL: <a href={issue.affectedUrl} target="_blank" rel="noreferrer" className="text-accent hover:underline">{issue.affectedUrl}</a>
+                          Page: <a href={issue.affectedUrl} target="_blank" rel="noreferrer" className="text-accent hover:underline">{issue.affectedUrl}</a>
                         </p>
+                      )}
+                      {issue.recommendation && (
+                        <p className="mt-2 text-sm"><span className="font-medium">How to fix:</span> {issue.recommendation}</p>
                       )}
                     </div>
                   </div>
@@ -242,4 +245,12 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
       )}
     </div>
   );
+}
+
+function priorityLabel(severity: string) {
+  if (severity === 'critical') return 'FIX NOW';
+  if (severity === 'high') return 'HIGH PRIORITY';
+  if (severity === 'medium') return 'REVIEW SOON';
+  if (severity === 'low') return 'NICE TO FIX';
+  return severity.toUpperCase();
 }

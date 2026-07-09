@@ -21,7 +21,7 @@ const tabs: Array<{ id: AdminTab; label: string; icon: any; path: string }> = [
   { id: 'users', label: 'Users', icon: Users, path: '/admin/users' },
   { id: 'audits', label: 'Audits', icon: Database, path: '/admin/audits' },
   { id: 'queue', label: 'Queue', icon: SlidersHorizontal, path: '/admin/queue' },
-  { id: 'workers', label: 'Workers', icon: Wifi, path: '/admin/workers' },
+  { id: 'workers', label: 'Audit Engine', icon: Wifi, path: '/admin/workers' },
   { id: 'settings', label: 'Settings', icon: Settings, path: '/admin/settings' },
   { id: 'plans', label: 'Plans', icon: ShieldAlert, path: '/admin/plans' },
 ];
@@ -78,7 +78,7 @@ export default function AdminDashboard() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Admin Panel</h1>
-        <p className="text-muted-foreground">Manage users, plans, audit queue, workers, and safe platform settings.</p>
+        <p className="text-muted-foreground">Manage users, plans, audit queue, audit engine health, and safe platform settings.</p>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -158,12 +158,12 @@ function AdminOverview() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Metric label="Total users" value={stats.totalUsers} />
         <Metric label="Free/Paid/Agency" value={`${stats.freeUsers}/${stats.paidUsers}/${stats.agencyUsers}`} />
-        <Metric label="Queued/Running" value={`${stats.queued}/${stats.running}`} />
+        <Metric label="Waiting/Checking" value={`${stats.queued}/${stats.running}`} />
         <Metric label="Failed/Completed" value={`${stats.failed}/${stats.completed}`} />
       </div>
       <div className="grid lg:grid-cols-2 gap-4">
-        <Panel title="Worker heartbeat">
-          {(workers.data || []).length ? (workers.data || []).map((worker: any) => <WorkerRow key={worker.id} worker={worker} />) : <Empty text="No worker heartbeat found." />}
+        <Panel title="Audit engine heartbeat">
+          {(workers.data || []).length ? (workers.data || []).map((worker: any) => <WorkerRow key={worker.id} worker={worker} />) : <Empty text="No audit engine heartbeat found." />}
         </Panel>
         <Panel title="Latest admin actions">
           {(actions.data || []).length ? <SimpleTable rows={actions.data || []} columns={['action', 'targetType', 'targetId', 'createdAt']} /> : <Empty text="No admin actions logged yet." />}
@@ -285,8 +285,8 @@ function AdminWorkers() {
   const workers = useAdminData(() => getAdminWorkers(), []);
   if (workers.loading) return <Loading />;
   return (
-    <Panel title="Workers">
-      {(workers.data || []).length ? (workers.data || []).map((worker: any) => <WorkerRow key={worker.id} worker={worker} />) : <Empty text="No audit_worker:* heartbeat rows found." />}
+    <Panel title="Audit engine">
+      {(workers.data || []).length ? (workers.data || []).map((worker: any) => <WorkerRow key={worker.id} worker={worker} />) : <Empty text="No audit engine heartbeat rows found." />}
       <div className="mt-4 text-sm text-muted-foreground">
         Render Free Web Service can sleep. Add an uptime monitor pinging only https://seointel-audit-worker.onrender.com/health every 10 minutes. Do not ping the homepage or audit start routes.
       </div>

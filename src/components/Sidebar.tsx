@@ -4,12 +4,12 @@ import { useAuth } from '../contexts/AuthContext';
 
 const navItems: { icon: any, label: string, id: TabType, adminOnly?: boolean }[] = [
  { icon: LayoutDashboard, label: 'Dashboard', id: 'dashboard' },
- { icon: Activity, label: 'SEO Audit', id: 'seo-audit' },
- { icon: ShieldCheck, label: 'Security Audit', id: 'security-audit' },
+ { icon: Activity, label: 'SEO Visibility Audit', id: 'seo-audit' },
+ { icon: ShieldCheck, label: 'Browser Safety Audit', id: 'security-audit' },
  { icon: Target, label: 'Competitor Content Gap', id: 'competitor-gap' },
- { icon: Globe, label: 'Crawl Website', id: 'website-analyzer' },
+ { icon: Globe, label: 'Website Scan', id: 'website-analyzer' },
  { icon: Upload, label: 'Data Sources / Imports', id: 'imports' },
- { icon: PieChart, label: 'Reports & Exports', id: 'reports' },
+ { icon: PieChart, label: 'Client Reports', id: 'reports' },
  { icon: Search, label: 'Content Opportunities', id: 'keyword-research' },
  { icon: Layers, label: 'Topic Clusters', id: 'keyword-clusters' },
  { icon: Globe, label: 'Public Web Discovery', id: 'public-discovery' },
@@ -49,7 +49,7 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab }: Si
  <div className="p-6 flex-1 w-64">
  <div className="flex items-center justify-between mb-6">
  <div className="text-xs font-bold text-muted-foreground">
- SEO Toolkit
+ Website toolkit
  </div>
  <button onClick={onClose} className="lg:hidden p-1 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors">
  <X className="w-4 h-4"/>

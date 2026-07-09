@@ -30,15 +30,51 @@ function elapsed(createdAt?: string) {
 function severityClass(severity: string) {
   if (severity === 'critical') return 'bg-red-500/10 text-red-500 border-red-500/20';
   if (severity === 'high') return 'bg-orange-500/10 text-orange-500 border-orange-500/20';
-  if (severity === 'medium') return 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20';
+  if (severity === 'medium') return 'bg-amber-500/10 text-amber-700 border-amber-500/20';
   return 'bg-muted text-muted-foreground border-border';
 }
 
+function priorityLabel(severity: string) {
+  if (severity === 'critical') return 'fix now';
+  if (severity === 'high') return 'high priority';
+  if (severity === 'medium') return 'review soon';
+  if (severity === 'low') return 'nice to fix';
+  return severity || 'info';
+}
+
 function tierLabel(tier?: string) {
-  if (tier === 'admin') return 'Admin Deep Audit';
-  if (tier === 'agency') return 'Agency Deep Audit';
-  if (tier === 'paid') return 'Paid Standard Audit';
-  return 'Free Lightweight Audit';
+  if (tier === 'admin') return 'Admin deep audit';
+  if (tier === 'agency') return 'Agency deep audit';
+  if (tier === 'paid') return 'Full audit';
+  return 'Free quick audit';
+}
+
+function statusLabel(status?: string) {
+  if (status === 'queued') return 'Waiting to start';
+  if (status === 'running') return 'Checking your site';
+  if (status === 'completed') return 'Report ready';
+  if (status === 'failed') return 'Needs attention';
+  if (status === 'cancelled') return 'Stopped';
+  return status || 'Loading';
+}
+
+function humanizeAuditText(value?: string | null) {
+  if (!value) return '';
+  return value
+    .replace(/audit worker/gi, 'audit engine')
+    .replace(/\bworker\b/gi, 'audit engine')
+    .replace(/crawler|crawling|crawled/gi, (match) => {
+      if (match.toLowerCase() === 'crawled') return 'scanned';
+      if (match.toLowerCase() === 'crawling') return 'scanning';
+      return 'website scanner';
+    })
+    .replace(/crawlability/gi, 'Google access')
+    .replace(/canonical/gi, 'preferred page URL')
+    .replace(/indexability/gi, 'Google indexing')
+    .replace(/robots\.txt/gi, 'search engine access rules')
+    .replace(/security headers/gi, 'browser protections')
+    .replace(/HSTS|CSP|X-Frame-Options|X-Content-Type-Options/gi, 'browser protection setting')
+    .replace(/SERP/gi, 'Google preview');
 }
 
 function formatLastUpdate(lastUpdateAt: number | undefined, now: number) {
@@ -109,7 +145,7 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
   const currentWork = useMemo(() => {
     if (!audit) {
       return {
-        phase: 'Connecting',
+        phase: 'Connecting live updates',
         action: 'Loading audit snapshot',
         target: auditId,
         message: connection.message,
@@ -118,25 +154,25 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
 
     if (audit.status === 'completed') {
       return {
-        phase: 'Completed',
+        phase: 'Report ready',
         action: 'Final report is ready',
         target: audit.finalUrl || audit.normalizedUrl,
-        message: latestEvent?.message || 'Audit completed.',
+        message: humanizeAuditText(latestEvent?.message) || 'Audit completed.',
       };
     }
 
     if (audit.status === 'failed') {
       return {
-        phase: 'Failed',
+        phase: 'Needs attention',
         action: audit.error || 'Audit failed',
         target: audit.currentUrl || audit.normalizedUrl,
-        message: latestEvent?.message || audit.error || 'The worker stopped before completing this audit.',
+        message: humanizeAuditText(latestEvent?.message || audit.error) || 'The audit engine stopped before completing this audit.',
       };
     }
 
     if (audit.status === 'cancelled') {
       return {
-        phase: 'Cancelled',
+        phase: 'Stopped',
         action: 'Audit stopped',
         target: audit.currentUrl || audit.normalizedUrl,
         message: latestEvent?.message || 'The audit was cancelled.',
@@ -144,10 +180,10 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
     }
 
     return {
-      phase: audit.currentPhase || latestEvent?.phase || 'Queued',
-      action: audit.currentCheck || latestEvent?.checkTitle || latestEvent?.message || 'Waiting for worker',
+      phase: humanizeAuditText(audit.currentPhase || latestEvent?.phase) || 'Waiting to start',
+      action: humanizeAuditText(audit.currentCheck || latestEvent?.checkTitle || latestEvent?.message) || 'Waiting for audit engine',
       target: audit.currentUrl || latestEvent?.currentUrl || latestEvent?.affectedUrl || audit.normalizedUrl,
-      message: latestEvent?.message || (audit.status === 'queued' ? 'Queued for the audit worker.' : 'Worker is updating live progress.'),
+      message: humanizeAuditText(latestEvent?.message) || (audit.status === 'queued' ? 'Waiting for the audit engine to start.' : 'The audit engine is updating live progress.'),
     };
   }, [audit, auditId, connection.message, latestEvent]);
 
@@ -182,7 +218,7 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
           <div className="flex items-center gap-3 text-muted-foreground">
             <Loader2 className="w-5 h-5 animate-spin text-accent" />
             <div>
-              <div className="font-medium text-foreground">Connecting to live audit...</div>
+              <div className="font-medium text-foreground">Connecting to live audit updates...</div>
               <div className="text-sm break-all">Audit ID: {auditId}</div>
             </div>
           </div>
@@ -203,12 +239,12 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
   const estimatedScore = Math.max(0, Math.min(100, 100 - audit.criticalCount * 12 - audit.highCount * 7 - audit.mediumCount * 3 - audit.lowCount));
   const categoryScores = [
     { label: 'SEO', value: Math.max(35, estimatedScore - audit.mediumCount), tone: estimatedScore > 70 ? 'green' as const : 'yellow' as const },
-    { label: 'Technical', value: Math.max(25, 92 - audit.highCount * 8), tone: 'accent' as const },
-    { label: 'Performance', value: Math.max(20, 88 - data.latestPages.length * 2), tone: 'yellow' as const },
-    { label: 'Security', value: Math.max(20, 96 - audit.criticalCount * 15 - audit.highCount * 5), tone: audit.criticalCount ? 'red' as const : 'green' as const },
-    { label: 'Crawlability', value: Math.min(100, Math.round((audit.pagesCrawled / Math.max(1, audit.pageLimit)) * 100)), tone: 'accent' as const },
-    { label: 'Mobile / Usability', value: Math.max(40, 84 - audit.lowCount * 2), tone: 'green' as const },
-    { label: 'Social / Metadata', value: Math.max(35, 80 - audit.mediumCount * 4), tone: 'accent' as const },
+    { label: 'Website health', value: Math.max(25, 92 - audit.highCount * 8), tone: 'accent' as const },
+    { label: 'Speed signals', value: Math.max(20, 88 - data.latestPages.length * 2), tone: 'yellow' as const },
+    { label: 'Browser safety', value: Math.max(20, 96 - audit.criticalCount * 15 - audit.highCount * 5), tone: audit.criticalCount ? 'red' as const : 'green' as const },
+    { label: 'Google access', value: Math.min(100, Math.round((audit.pagesCrawled / Math.max(1, audit.pageLimit)) * 100)), tone: 'accent' as const },
+    { label: 'Mobile experience', value: Math.max(40, 84 - audit.lowCount * 2), tone: 'green' as const },
+    { label: 'Social previews', value: Math.max(35, 80 - audit.mediumCount * 4), tone: 'accent' as const },
   ];
   const statusTone = audit.status === 'completed'
     ? 'success'
@@ -228,29 +264,29 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
               <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <StatusBadge tone={statusTone as any}>{audit.status.toUpperCase()}</StatusBadge>
+                    <StatusBadge tone={statusTone as any}>{statusLabel(audit.status)}</StatusBadge>
                     <StatusBadge tone="accent">{tierLabel(audit.processingTier)}</StatusBadge>
                     <ConnectionBadge connection={connection} now={now} />
                   </div>
-                  <h2 className="mt-4 text-3xl font-bold md:text-4xl">Live audit command center</h2>
+                  <h2 className="mt-4 text-3xl font-bold md:text-4xl">Live website scan</h2>
                   <p className="mt-2 max-w-3xl break-all text-muted-foreground">{audit.normalizedUrl}</p>
                 </div>
                 <div className="text-left md:text-right">
-                  <div className="text-sm text-muted-foreground">Estimated score</div>
+                  <div className="text-sm text-muted-foreground">Estimated site health</div>
                   <div className={`text-5xl font-bold ${estimatedScore >= 80 ? 'text-green-600' : estimatedScore >= 55 ? 'text-yellow-600' : 'text-red-600'}`}>
                     {estimatedScore}
                   </div>
                 </div>
               </div>
 
-              <ProgressBar label={audit.currentPhase || 'Queued'} value={progress} tone={audit.status === 'failed' ? 'red' : 'accent'} />
+              <ProgressBar label={humanizeAuditText(audit.currentPhase) || statusLabel(audit.status)} value={progress} tone={audit.status === 'failed' ? 'red' : 'accent'} />
               <CurrentWorkCard currentWork={currentWork} connection={connection} now={now} />
 
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <MetricCard label="Pages crawled" value={`${audit.pagesCrawled}/${audit.pageLimit}`} icon={<Clock className="h-5 w-5" />} />
-                <MetricCard label="Issues found" value={audit.issuesFound} icon={<AlertTriangle className="h-5 w-5" />} tone={audit.criticalCount ? 'red' : 'yellow'} />
-                <MetricCard label="Critical / High" value={`${audit.criticalCount}/${audit.highCount}`} icon={<ShieldAlert className="h-5 w-5" />} tone={audit.criticalCount ? 'red' : 'yellow'} />
-                <MetricCard label="Elapsed" value={elapsed(audit.createdAt)} icon={<Activity className="h-5 w-5" />} tone="blue" />
+                <MetricCard label="Pages scanned" value={`${audit.pagesCrawled}/${audit.pageLimit}`} icon={<Clock className="h-5 w-5" />} />
+                <MetricCard label="Fixes found" value={audit.issuesFound} icon={<AlertTriangle className="h-5 w-5" />} tone={audit.criticalCount ? 'red' : 'yellow'} />
+                <MetricCard label="Urgent / high" value={`${audit.criticalCount}/${audit.highCount}`} icon={<ShieldAlert className="h-5 w-5" />} tone={audit.criticalCount ? 'red' : 'yellow'} />
+                <MetricCard label="Time elapsed" value={elapsed(audit.createdAt)} icon={<Activity className="h-5 w-5" />} tone="blue" />
               </div>
             </div>
           </div>
@@ -261,22 +297,22 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
         url={audit.currentUrl || audit.finalUrl || firstPage?.url || audit.normalizedUrl}
         hostname={audit.hostname}
         title={firstPage?.title || `${audit.hostname} audit preview`}
-        description={firstPage?.metaDescription || latestEvent?.message || 'Preview updates from crawled metadata without storing raw HTML.'}
+        description={firstPage?.metaDescription || humanizeAuditText(latestEvent?.message) || 'Preview updates from scanned page details without storing raw HTML.'}
         canonicalUrl={audit.finalUrl || audit.normalizedUrl}
       />
 
       <div className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
         <SurfaceCard className="p-5 md:p-6">
           <div className="mb-5">
-            <h3 className="text-xl font-bold">Score categories</h3>
-            <p className="text-sm text-muted-foreground">Quick visual breakdown of audit health while the worker runs.</p>
+            <h3 className="text-xl font-bold">Health categories</h3>
+            <p className="text-sm text-muted-foreground">A quick breakdown while the audit engine checks your site.</p>
           </div>
           <BarList items={categoryScores} />
         </SurfaceCard>
         <SurfaceCard className="p-5 md:p-6">
           <div className="mb-5">
-            <h3 className="text-xl font-bold">Severity distribution</h3>
-            <p className="text-sm text-muted-foreground">Critical and high findings stay visible before the report completes.</p>
+            <h3 className="text-xl font-bold">Fix priority</h3>
+            <p className="text-sm text-muted-foreground">Urgent and high-priority findings stay visible before the report completes.</p>
           </div>
           <SeverityStack critical={audit.criticalCount} high={audit.highCount} medium={audit.mediumCount} low={audit.lowCount} />
         </SurfaceCard>
@@ -285,7 +321,7 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
       <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
-            <h2 className="text-2xl font-bold tracking-tight">Currently Auditing</h2>
+            <h2 className="text-2xl font-bold tracking-tight">Site being checked</h2>
             <p className="text-muted-foreground break-all">{audit.normalizedUrl}</p>
           </div>
           <div className="flex items-center gap-2">
@@ -313,7 +349,7 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
           <div className="h-full bg-accent transition-all duration-500" style={{ width: `${progress}%` }} />
         </div>
         <div className="mt-2 flex items-center justify-between text-sm text-muted-foreground">
-          <span>{audit.currentPhase || 'Queued'}</span>
+          <span>{humanizeAuditText(audit.currentPhase) || statusLabel(audit.status)}</span>
           <span className="font-mono text-foreground">{Math.round(progress)}%</span>
         </div>
 
@@ -327,62 +363,62 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
 
         {queuedTooLong && (
           <div className="mt-4 p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-800 text-sm space-y-3">
-            <div className="font-semibold">Audit is queued because no online worker has claimed it yet.</div>
+            <div className="font-semibold">The audit is waiting because no online audit engine has picked it up yet.</div>
             <ul className="list-disc pl-5 space-y-1">
-              <li>Confirm the worker service is deployed and running.</li>
-              <li>If using Render Free Web Service, it may be asleep until the worker health URL is pinged.</li>
-              <li>Confirm worker has <span className="font-mono">SUPABASE_URL</span>.</li>
-              <li>Confirm worker has <span className="font-mono">SUPABASE_SERVICE_ROLE_KEY</span>.</li>
-              <li>Confirm worker and Vercel use the same Supabase project.</li>
+              <li>Confirm the audit engine service is deployed and running.</li>
+              <li>If using Render Free Web Service, it may be asleep until the health URL is pinged.</li>
+              <li>Confirm the audit engine has <span className="font-mono">SUPABASE_URL</span>.</li>
+              <li>Confirm the audit engine has <span className="font-mono">SUPABASE_SERVICE_ROLE_KEY</span>.</li>
+              <li>Confirm the audit engine and Vercel use the same Supabase project.</li>
               <li>Run <span className="font-mono">npm run check:worker</span> to verify heartbeat.</li>
               <li>Add an uptime monitor pinging <span className="font-mono">https://seointel-audit-worker.onrender.com/health</span> every 10 minutes.</li>
             </ul>
             <div className="grid gap-2 md:grid-cols-2">
               <Info label="Audit ID" value={audit.id} />
               <Info label="Submitted URL" value={audit.submittedInput} />
-              <Info label="Normalized URL" value={audit.normalizedUrl} />
+              <Info label="Cleaned URL" value={audit.normalizedUrl} />
               <Info label="Created" value={new Date(audit.createdAt).toLocaleString()} />
-              <Info label="Current status" value={audit.status} />
-              <Info label="Current phase" value={audit.currentPhase || 'Queued'} />
+              <Info label="Current status" value={statusLabel(audit.status)} />
+              <Info label="Current stage" value={humanizeAuditText(audit.currentPhase) || statusLabel(audit.status)} />
             </div>
           </div>
         )}
 
         <div className="mt-6 grid md:grid-cols-2 xl:grid-cols-4 gap-3 text-sm">
           <Info label="Submitted input" value={audit.submittedInput} />
-          <Info label="Normalized URL" value={audit.normalizedUrl} />
+          <Info label="Cleaned URL" value={audit.normalizedUrl} />
           <Info label="Final URL" value={audit.finalUrl || 'Waiting for first fetch'} />
           <Info label="Hostname" value={audit.hostname} />
-          <Info label="Mode" value={getAuditModeLabel(audit.mode)} />
-          <Info label="Processing tier" value={tierLabel(audit.processingTier)} />
+          <Info label="Audit mode" value={getAuditModeLabel(audit.mode)} />
+          <Info label="Audit type" value={tierLabel(audit.processingTier)} />
           <Info label="Plan" value={audit.plan || 'free'} />
-          <Info label="Status" value={audit.status} />
-          <Info label="Current page" value={audit.currentUrl || 'Waiting for worker'} />
-          <Info label="Current check" value={audit.currentCheck || 'Queued'} />
+          <Info label="Status" value={statusLabel(audit.status)} />
+          <Info label="Page being checked" value={audit.currentUrl || 'Waiting for audit engine'} />
+          <Info label="Check running" value={humanizeAuditText(audit.currentCheck) || statusLabel(audit.status)} />
           <Info label="Pages" value={`${audit.pagesCrawled} / ${audit.pageLimit}`} />
-          <Info label="Issues" value={String(audit.issuesFound)} />
+          <Info label="Fixes found" value={String(audit.issuesFound)} />
           <Info label="Elapsed" value={elapsed(audit.createdAt)} />
-          <Info label="Security" value="Passive checks only" />
+          <Info label="Browser safety" value="Non-invasive checks only" />
         </div>
       </div>
 
       {audit.status === 'completed' && audit.processingTier === 'free' && (
         <div className="bg-accent/10 border border-accent/20 rounded-xl p-4 text-sm">
-          <div className="font-semibold text-foreground">Unlock full 25-page audit, deeper checks, priority queue, PDF reports.</div>
-          <div className="text-muted-foreground mt-1">Free reports show lightweight SEO and passive security results. Paid reports unlock the full standard audit categories.</div>
+          <div className="font-semibold text-foreground">Unlock a full 25-page audit, deeper checks, faster starts, and PDF reports.</div>
+          <div className="text-muted-foreground mt-1">Free reports show quick SEO and passive browser safety results. Paid reports unlock the full audit categories.</div>
         </div>
       )}
 
       <div className="grid md:grid-cols-4 gap-4">
-        <Metric icon={<Clock />} label="Pages Crawled" value={`${audit.pagesCrawled}/${audit.pageLimit}`} />
-        <Metric icon={<ShieldAlert />} label="Critical/High" value={`${audit.criticalCount}/${audit.highCount}`} />
-        <Metric icon={<AlertTriangle />} label="Total Issues" value={String(audit.issuesFound)} />
-        <Metric icon={audit.status === 'completed' ? <CheckCircle2 /> : <Loader2 className="animate-spin" />} label="Status" value={audit.status} />
+        <Metric icon={<Clock />} label="Pages scanned" value={`${audit.pagesCrawled}/${audit.pageLimit}`} />
+        <Metric icon={<ShieldAlert />} label="Urgent/high" value={`${audit.criticalCount}/${audit.highCount}`} />
+        <Metric icon={<AlertTriangle />} label="Fixes found" value={String(audit.issuesFound)} />
+        <Metric icon={audit.status === 'completed' ? <CheckCircle2 /> : <Loader2 className="animate-spin" />} label="Status" value={statusLabel(audit.status)} />
       </div>
 
       <section className="bg-card border border-border rounded-xl overflow-hidden">
         <div className="p-4 border-b border-border">
-          <h3 className="font-semibold">Live Pages</h3>
+          <h3 className="font-semibold">Pages checked</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -394,13 +430,13 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
                 <th className="text-left p-3">Size</th>
                 <th className="text-left p-3">Title</th>
                 <th className="text-left p-3">Words</th>
-                <th className="text-left p-3">Depth</th>
-                <th className="text-left p-3">Issues</th>
+                <th className="text-left p-3">Page level</th>
+                <th className="text-left p-3">Fixes</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {data.latestPages.length === 0 ? (
-                <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">No pages crawled yet.</td></tr>
+                <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">No pages scanned yet.</td></tr>
               ) : data.latestPages.map((page) => (
                 <tr key={page.id}>
                   <td className="p-3 font-mono">{page.statusCode}</td>
@@ -421,21 +457,21 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
       <div className="grid lg:grid-cols-2 gap-6">
         <section className="bg-card border border-border rounded-xl overflow-hidden">
           <div className="p-4 border-b border-border">
-            <h3 className="font-semibold">Live Issues</h3>
+            <h3 className="font-semibold">Fixes found</h3>
           </div>
           <div className="divide-y divide-border max-h-[520px] overflow-y-auto">
             {data.latestIssues.length === 0 ? (
-              <div className="p-6 text-center text-muted-foreground">Issues appear here as soon as they are detected.</div>
+              <div className="p-6 text-center text-muted-foreground">Fixes appear here as soon as they are detected.</div>
             ) : data.latestIssues.map((issue) => (
               <article key={issue.id} className="p-4 space-y-2">
                 <div className="flex items-start justify-between gap-3">
                   <h4 className="font-semibold">{issue.title}</h4>
-                  <span className={`text-xs px-2 py-1 rounded-md border capitalize ${severityClass(issue.severity)}`}>{issue.severity}</span>
+                  <span className={`text-xs px-2 py-1 rounded-md border capitalize ${severityClass(issue.severity)}`}>{priorityLabel(issue.severity)}</span>
                 </div>
                 <p className="text-sm text-muted-foreground">{issue.description}</p>
                 <p className="text-xs break-all"><span className="text-muted-foreground">URL:</span> {issue.affectedUrl}</p>
-                {issue.evidence && <p className="text-xs bg-muted/50 border border-border rounded p-2">{issue.evidence}</p>}
-                <p className="text-sm"><span className="font-medium">Recommendation:</span> {issue.recommendation}</p>
+                {issue.evidence && <p className="text-xs bg-muted/50 border border-border rounded p-2">{humanizeAuditText(issue.evidence)}</p>}
+                <p className="text-sm"><span className="font-medium">How to fix:</span> {humanizeAuditText(issue.recommendation)}</p>
               </article>
             ))}
           </div>
@@ -443,17 +479,17 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
 
         <section className="bg-card border border-border rounded-xl overflow-hidden">
           <div className="p-4 border-b border-border">
-            <h3 className="font-semibold">Timeline</h3>
+            <h3 className="font-semibold">Activity timeline</h3>
           </div>
           <div className="divide-y divide-border max-h-[520px] overflow-y-auto">
             {data.latestEvents.length === 0 ? (
-              <div className="p-6 text-center text-muted-foreground">Waiting for audit worker...</div>
+              <div className="p-6 text-center text-muted-foreground">Waiting for audit engine...</div>
             ) : data.latestEvents.map((event) => (
               <div key={event.id} className="p-3 flex gap-3 text-sm">
                 <span className="text-muted-foreground font-mono shrink-0">{new Date(event.timestamp).toLocaleTimeString()}</span>
                 <div>
-                  <div className="font-medium">{event.type}</div>
-                  <div className="text-muted-foreground break-all">{event.message || event.affectedUrl || event.currentUrl}</div>
+                  <div className="font-medium">{humanizeAuditText(event.type.replace(/_/g, ' '))}</div>
+                  <div className="text-muted-foreground break-all">{humanizeAuditText(event.message) || event.affectedUrl || event.currentUrl}</div>
                 </div>
               </div>
             ))}
@@ -471,13 +507,13 @@ function ConnectionBadge({ connection, now }: { connection: LiveAuditConnectionS
   const Icon = isWebSocket ? Wifi : isHealthy ? Radio : WifiOff;
   const label = isWebSocket
     ? connection.status === 'connected'
-      ? 'WebSocket live'
+      ? 'Live updates on'
       : connection.status === 'connecting'
-        ? 'WebSocket connecting'
+        ? 'Connecting updates'
         : connection.status === 'reconnecting'
-          ? 'WebSocket reconnecting'
-          : 'WebSocket issue'
-    : 'Polling fallback';
+          ? 'Reconnecting updates'
+          : 'Live update issue'
+    : 'Auto refresh mode';
 
   const colorClass = isHealthy
     ? 'border-green-500/20 bg-green-500/10 text-green-700'
@@ -486,7 +522,7 @@ function ConnectionBadge({ connection, now }: { connection: LiveAuditConnectionS
       : 'border-yellow-500/20 bg-yellow-500/10 text-yellow-700';
 
   return (
-    <div className={`rounded-lg border px-3 py-2 text-xs ${colorClass}`} title={connection.message}>
+    <div className={`rounded-lg border px-3 py-2 text-xs ${colorClass}`} title={humanizeAuditText(connection.message)}>
       <div className="flex items-center gap-2 font-medium whitespace-nowrap">
         <Icon className="w-4 h-4" />
         {label}
@@ -510,14 +546,14 @@ function CurrentWorkCard({
       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-2 font-semibold">
           <Activity className="w-4 h-4 text-accent" />
-          Working now
+          Checking now
         </div>
         <div className="text-xs text-muted-foreground">{formatLastUpdate(connection.lastUpdateAt, now)}</div>
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-3 text-sm">
-        <Info label="Phase" value={currentWork.phase} />
-        <Info label="Action" value={currentWork.action} />
-        <Info label="Target" value={currentWork.target || 'Waiting for worker'} />
+        <Info label="Stage" value={currentWork.phase} />
+        <Info label="Now checking" value={currentWork.action} />
+        <Info label="Page or URL" value={currentWork.target || 'Waiting for audit engine'} />
       </div>
       <div className="mt-3 rounded-lg border border-border bg-background/70 p-3 text-sm text-muted-foreground break-all">
         {currentWork.message}

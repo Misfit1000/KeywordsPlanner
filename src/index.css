@@ -17,31 +17,35 @@
 
 @layer base {
   :root {
-    --background: #f8fafc;
-    --foreground: #0f172a;
+    --background: #f6f8fb;
+    --foreground: #102033;
     --card: #ffffff;
-    --card-foreground: #0f172a;
-    --border: #e2e8f0;
+    --card-foreground: #102033;
+    --border: #dce6f2;
     --accent: #2563eb;
     --accent-foreground: #ffffff;
-    --muted: #f1f5f9;
-    --muted-foreground: #64748b;
+    --muted: #edf3f8;
+    --muted-foreground: #607089;
   }
 
   .dark {
-    --background: #020617;
-    --foreground: #f8fafc;
-    --card: #0f172a;
-    --card-foreground: #f8fafc;
-    --border: #1e293b;
-    --accent: #3b82f6;
+    --background: #07111f;
+    --foreground: #f4f8fb;
+    --card: #0d1b2d;
+    --card-foreground: #f4f8fb;
+    --border: #22354d;
+    --accent: #4f8df7;
     --accent-foreground: #ffffff;
-    --muted: #1e293b;
-    --muted-foreground: #94a3b8;
+    --muted: #14243a;
+    --muted-foreground: #9badc2;
   }
 
   body {
     @apply bg-background text-foreground transition-colors duration-300 font-sans antialiased selection:bg-accent/20 selection:text-accent;
+    background-image:
+      radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 11%, transparent) 0, transparent 32rem),
+      radial-gradient(circle at bottom right, color-mix(in srgb, #10b981 9%, transparent) 0, transparent 30rem);
+    background-attachment: fixed;
   }
 
   button,
@@ -81,6 +85,22 @@
 
   .animate-soft-pulse {
     animation: soft-pulse 2.2s ease-in-out infinite;
+  }
+
+  .trust-card {
+    @apply rounded-2xl border border-border bg-card/95 shadow-sm shadow-slate-950/5 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-slate-950/10 dark:shadow-black/20;
+  }
+
+  .trust-button {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 font-semibold text-accent-foreground shadow-sm shadow-blue-600/20 transition-all hover:-translate-y-0.5 hover:bg-accent/90 disabled:pointer-events-none disabled:opacity-55;
+  }
+
+  .quiet-button {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 font-semibold text-foreground transition-all hover:-translate-y-0.5 hover:bg-muted disabled:pointer-events-none disabled:opacity-55;
+  }
+
+  .section-shell {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
   }
 }
 
