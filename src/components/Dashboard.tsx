@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { API_ROUTES } from '../lib/api/routes';
 import { getAuthHeaders } from '../lib/api/auth-headers';
 import { safeJsonFetch } from '../lib/http/safe-json';
-import { BarList, MetricCard, ProgressBar, SectionHeader, SeverityStack, SitePreviewSection, StatusBadge, SurfaceCard } from './ui/visual-system';
+import { CategoryScoreBar, MetricCard, ProgressBar, RadialScoreGauge, SectionHeader, SeverityDistribution, SitePreviewSection, StatusBadge, SurfaceCard } from './ui/visual-system';
 
 export default function Dashboard(props: any) {
   const { user } = useAuth();
@@ -157,7 +157,16 @@ export default function Dashboard(props: any) {
             </div>
             <Activity className="h-5 w-5 text-accent" />
           </div>
-          <BarList items={categoryScores} />
+          <div className="grid gap-5 lg:grid-cols-[0.42fr_0.58fr]">
+            <div className="flex items-center justify-center rounded-3xl border border-border bg-background/70 p-5">
+              <RadialScoreGauge value={84} label="Latest health score" detail="Sample latest-audit dashboard view" />
+            </div>
+            <div className="grid gap-3">
+              {categoryScores.slice(0, 5).map((item) => (
+                <CategoryScoreBar key={item.label} label={item.label} value={item.value} tone={item.tone} />
+              ))}
+            </div>
+          </div>
         </SurfaceCard>
 
         <SurfaceCard className="p-6">
@@ -165,7 +174,7 @@ export default function Dashboard(props: any) {
             <h3 className="text-xl font-bold">Fix priority</h3>
             <p className="text-sm text-muted-foreground">Urgent and high-priority items stay visible.</p>
           </div>
-          <SeverityStack critical={3} high={6} medium={12} low={8} />
+          <SeverityDistribution critical={3} high={6} medium={12} low={8} />
           <button onClick={() => props.onOpenSeoAudit?.()} className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 font-semibold text-accent-foreground transition-colors hover:bg-accent/90">
             Open live audit <ArrowRight className="h-4 w-4" />
           </button>

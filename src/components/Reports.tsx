@@ -1,6 +1,6 @@
 import React, { useState } from "react"; 
 import { PieChart, Download, Loader2, FileJson, FileSpreadsheet, Printer, ShieldCheck, AlertTriangle, Search, Lock } from "lucide-react";
-import { BarList, MetricCard, SectionHeader, SeverityStack, SitePreviewSection, StatusBadge } from './ui/visual-system';
+import { BarList, CategoryScoreBar, MetricCard, RadialScoreGauge, SectionHeader, SeverityDistribution, SitePreviewSection, StatusBadge } from './ui/visual-system';
 
 export default function Reports() {   
   const [loading, setLoading] = useState<string | null>(null);  
@@ -79,18 +79,27 @@ export default function Reports() {
         <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
           <h2 className="text-xl font-bold">Executive summary</h2>
           <p className="mb-5 text-sm text-muted-foreground">A quick score breakdown before the detailed fix list.</p>
-          <BarList items={[
-            { label: 'SEO', value: 84, tone: 'green' },
-            { label: 'Website health', value: 76, tone: 'accent' },
-            { label: 'Speed signals', value: 68, tone: 'yellow' },
-            { label: 'Browser safety', value: 88, tone: 'green' },
-            { label: 'Google access', value: 79, tone: 'accent' },
-          ]} />
+          <div className="grid gap-5 lg:grid-cols-[0.42fr_0.58fr]">
+            <div className="flex items-center justify-center rounded-3xl border border-border bg-background/70 p-5">
+              <RadialScoreGauge value={84} label="Report score" detail="Example report summary" />
+            </div>
+            <div className="grid gap-3">
+              {[
+                { label: 'SEO', value: 84, tone: 'green' as const },
+                { label: 'Website health', value: 76, tone: 'accent' as const },
+                { label: 'Speed signals', value: 68, tone: 'yellow' as const },
+                { label: 'Browser safety', value: 88, tone: 'green' as const },
+                { label: 'Google access', value: 79, tone: 'accent' as const },
+              ].map((item) => (
+                <CategoryScoreBar key={item.label} label={item.label} value={item.value} tone={item.tone} />
+              ))}
+            </div>
+          </div>
         </div>
         <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
           <h2 className="text-xl font-bold">Fix priority</h2>
           <p className="mb-5 text-sm text-muted-foreground">A compact view of what should be handled first.</p>
-          <SeverityStack critical={3} high={6} medium={12} low={8} />
+          <SeverityDistribution critical={3} high={6} medium={12} low={8} />
         </div>
       </div>
 

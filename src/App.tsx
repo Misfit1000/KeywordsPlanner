@@ -467,7 +467,8 @@ export default function App() {
                     <a href="#free-tools" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">Free Tools</a>
                     <a href="#use-cases" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">Use Cases</a>
                     <a href="#pricing" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">Pricing</a>
-                    <a href="#resources" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">Resources</a>
+                    <a href="#reports" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">Reports</a>
+                    <a href="#faq" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">FAQ</a>
                   </nav>
                   <div className="flex items-center gap-3">
                     <ThemeToggle theme={theme} onToggle={toggleTheme} />

@@ -6,7 +6,7 @@ import { getAuditModeLabel } from '../../lib/audit/audit-config';
 import { isAuditQueuedTooLong } from '../../lib/audit/queued-worker-warning';
 import { API_ROUTES } from '../../lib/api/routes';
 import { safeJsonFetch } from '../../lib/http/safe-json';
-import { BarList, MetricCard, ProgressBar, SeverityStack, SitePreviewSection, StatusBadge, SurfaceCard } from '../ui/visual-system';
+import { CategoryScoreBar, MetricCard, ProgressBar, RadialScoreGauge, SeverityDistribution, SitePreviewSection, StatusBadge, SurfaceCard } from '../ui/visual-system';
 
 interface Props {
   auditId: string;
@@ -271,11 +271,8 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
                   <h2 className="mt-4 text-3xl font-bold md:text-4xl">Live website scan</h2>
                   <p className="mt-2 max-w-3xl break-all text-muted-foreground">{audit.normalizedUrl}</p>
                 </div>
-                <div className="text-left md:text-right">
-                  <div className="text-sm text-muted-foreground">Estimated site health</div>
-                  <div className={`text-5xl font-bold ${estimatedScore >= 80 ? 'text-green-600' : estimatedScore >= 55 ? 'text-yellow-600' : 'text-red-600'}`}>
-                    {estimatedScore}
-                  </div>
+                <div className="flex justify-start md:justify-end">
+                  <RadialScoreGauge value={estimatedScore} label="Estimated site health" detail="Updates from live findings" size="sm" />
                 </div>
               </div>
 
@@ -307,14 +304,18 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
             <h3 className="text-xl font-bold">Health categories</h3>
             <p className="text-sm text-muted-foreground">A quick breakdown while the audit engine checks your site.</p>
           </div>
-          <BarList items={categoryScores} />
+          <div className="grid gap-3 md:grid-cols-2">
+            {categoryScores.map((item) => (
+              <CategoryScoreBar key={item.label} label={item.label} value={item.value} tone={item.tone} />
+            ))}
+          </div>
         </SurfaceCard>
         <SurfaceCard className="p-5 md:p-6">
           <div className="mb-5">
             <h3 className="text-xl font-bold">Fix priority</h3>
             <p className="text-sm text-muted-foreground">Urgent and high-priority findings stay visible before the report completes.</p>
           </div>
-          <SeverityStack critical={audit.criticalCount} high={audit.highCount} medium={audit.mediumCount} low={audit.lowCount} />
+          <SeverityDistribution critical={audit.criticalCount} high={audit.highCount} medium={audit.mediumCount} low={audit.lowCount} />
         </SurfaceCard>
       </div>
 

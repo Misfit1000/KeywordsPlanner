@@ -11,13 +11,10 @@ import {
   Globe,
   Layers,
   Link2,
-  Lock,
   MapPin,
   Monitor,
   Search,
   ShieldCheck,
-  Smartphone,
-  Sparkles,
   Store,
   Upload,
   Users,
@@ -26,12 +23,14 @@ import {
 } from 'lucide-react';
 import { createAuditSubmitGuard } from '../lib/api/audit-submit-guard';
 import {
+  FeatureProofCard,
   FeatureSuiteCard,
   MegaMenuPanel,
   MetricCard,
   PricingCard,
+  ProductMockupPanel,
   SectionHeader,
-  SeverityStack,
+  SeverityDistribution,
   SitePreviewSection,
   StatusBadge,
   SurfaceCard,
@@ -47,10 +46,71 @@ interface Props {
 type IconType = React.ComponentType<{ className?: string }>;
 
 const trustBullets = [
-  'Resource-light live audits',
+  'Worker-backed live audits',
   'No paid SEO or AI API required',
   'Passive browser-safety checks only',
   'No raw HTML storage',
+];
+
+const credibilityBadges: Array<{ icon: IconType; title: string; description: string }> = [
+  { icon: Activity, title: 'Worker-backed audits', description: 'The Render audit engine handles crawling and checks outside Vercel request paths.' },
+  { icon: Zap, title: 'Supabase realtime progress', description: 'Live audit events keep users informed while the audit engine works.' },
+  { icon: CheckCircle2, title: 'Deterministic checks', description: 'Findings come from explainable website signals, not black-box AI guesses.' },
+  { icon: ShieldCheck, title: 'Passive safety review', description: 'Browser-safety checks stay non-invasive and public-signal based.' },
+  { icon: Upload, title: 'Import-ready SEO data', description: 'Ranking and backlink areas stay labeled as imported/provider-ready data.' },
+  { icon: BarChart3, title: 'No fake ranking data', description: 'No fake traffic, CPC, backlink, domain authority, or SERP-position claims.' },
+];
+
+const featureHighlights = [
+  {
+    icon: Search,
+    title: 'SEO Audit',
+    description: 'Find search visibility issues that affect how pages are understood and shown.',
+    checks: ['Title and meta description checks', 'Heading and image alt review', 'Google-style SERP preview'],
+    cta: <a href="#audit-checks" className="text-sm font-bold text-accent">See SEO checks</a>,
+  },
+  {
+    icon: Gauge,
+    title: 'Technical SEO',
+    description: 'Review crawlability, redirects, response signals, and access rules in plain language.',
+    checks: ['Status codes and redirects', 'Robots and sitemap signals', 'Page size and response timing'],
+    cta: <a href="#audit-checks" className="text-sm font-bold text-accent">See technical checks</a>,
+  },
+  {
+    icon: ShieldCheck,
+    title: 'Passive Security',
+    description: 'Check public browser-safety signals without scans that attack or exploit the site.',
+    checks: ['HTTPS and HSTS review', 'CSP and frame protection', 'Mixed-content warning signals'],
+    cta: <a href="#audit-checks" className="text-sm font-bold text-accent">See safety checks</a>,
+  },
+  {
+    icon: Briefcase,
+    title: 'Visual Reports',
+    description: 'Turn audit findings into executive summaries, previews, and top-fix lists.',
+    checks: ['Overall and category scores', 'Severity distribution', 'Desktop, mobile, and SERP previews'],
+    cta: <a href="#reports" className="text-sm font-bold text-accent">See report preview</a>,
+  },
+];
+
+const auditCheckGroups: Array<{ title: string; description: string; icon: IconType; checks: string[] }> = [
+  {
+    title: 'SEO checks',
+    description: 'Metadata and content signals that shape search snippets and page understanding.',
+    icon: Search,
+    checks: ['Title tag', 'Meta description', 'Preferred page URL', 'Headings', 'Image alt text', 'Internal links', 'Open Graph/social metadata', 'SERP snippet preview'],
+  },
+  {
+    title: 'Technical SEO checks',
+    description: 'Public technical signals that affect access, crawling, and page health.',
+    icon: Gauge,
+    checks: ['Status codes', 'Redirects', 'Robots/sitemap signals', 'Crawlability', 'Can Google index this page?', 'Page size', 'Response timing', 'Mobile viewport'],
+  },
+  {
+    title: 'Passive security checks',
+    description: 'Non-invasive browser-safety checks from public response signals.',
+    icon: ShieldCheck,
+    checks: ['HTTPS', 'HSTS', 'CSP', 'X-Frame-Options', 'X-Content-Type-Options', 'Referrer-Policy', 'Insecure form warning when detected', 'Mixed content warning when detected'],
+  },
 ];
 
 const suiteFeatures: Array<{
@@ -182,6 +242,27 @@ const freeTools: Array<{
     description: 'Look for sitemap signals and search engine access rules.',
     href: '#features',
   },
+  {
+    icon: FileText,
+    title: 'Keyword Notes Workspace',
+    description: 'Bring your own keyword data. SEOIntel does not invent search volume or CPC.',
+    href: '#resources',
+    label: 'Import-ready',
+  },
+  {
+    icon: BarChart3,
+    title: 'Ranking Data Import',
+    description: 'Provider export required. No fake Google ranking positions are shown.',
+    href: '#resources',
+    label: 'Provider required',
+  },
+  {
+    icon: Link2,
+    title: 'Backlink Data Import',
+    description: 'Import backlink exports later instead of pretending to own a backlink database.',
+    href: '#resources',
+    label: 'Provider required',
+  },
 ];
 
 const useCases = [
@@ -231,7 +312,7 @@ const planCards: Array<{
     title: 'Free Quick Audit',
     price: '$0',
     description: 'Best for checking one public site quickly.',
-    features: ['Lightweight website scan', 'Live audit progress', 'SEO and passive safety checks', 'One active free audit at a time'],
+    features: ['Quick 5-page scan', '3 daily / 30 monthly audits', 'SEO and passive safety checks', 'One active free audit at a time'],
     cta: 'Start free audit',
     href: '#start-audit',
     note: 'Designed to stay fast and resource-light.',
@@ -240,7 +321,7 @@ const planCards: Array<{
     title: 'Paid Full Audit',
     price: 'Paid',
     description: 'For owners and teams that need deeper reporting.',
-    features: ['Larger website scan limits', 'Priority processing when available', 'More detailed report sections', 'Export-friendly client summaries'],
+    features: ['Standard 25-page scan', '25 daily / 500 monthly audits', 'Higher queue priority', 'Export-friendly client summaries'],
     cta: 'Explore dashboard',
     featured: true,
     note: 'Uses the same worker-backed architecture with higher plan limits.',
@@ -249,7 +330,7 @@ const planCards: Array<{
     title: 'Agency / Admin',
     price: 'Scale',
     description: 'For managing many sites and monitoring the audit engine.',
-    features: ['Admin queue visibility', 'User and plan controls', 'Audit diagnostics', 'Deep-audit-ready workflow'],
+    features: ['Agency deep-ready scans when the worker supports them', 'Admin queue visibility', 'User and plan controls', 'Audit diagnostics'],
     cta: 'Review admin flow',
     note: 'Built around the current admin and plan behavior.',
   },
@@ -284,12 +365,16 @@ const resourcesColumns = [
 
 const faqs = [
   {
-    question: 'Is this a full SEO suite already?',
-    answer: 'The live website audit, visual previews, website health checks, and passive safety checks are the working core. Ranking and backlink sections are clearly framed as imported-data areas until real providers are added.',
+    question: 'Does SEOIntel use AI?',
+    answer: 'No. The audit engine uses deterministic checks and public website signals. The homepage does not claim AI scoring or AI-written SEO advice.',
   },
   {
     question: 'Does SEOIntel use paid SEO APIs or AI APIs?',
     answer: 'No. The current product focuses on deterministic checks, public website signals, and optional imported data. It does not depend on paid SEO APIs or AI APIs.',
+  },
+  {
+    question: 'Does SEOIntel show real Google rankings?',
+    answer: 'Not unless ranking data is imported from a real provider/export. SEOIntel does not fake SERP positions, traffic, domain authority, search volume, or CPC.',
   },
   {
     question: 'Does SEOIntel store raw HTML?',
@@ -302,6 +387,22 @@ const faqs = [
   {
     question: 'Why are some features labeled import-only or coming soon?',
     answer: 'That keeps the product honest. SEOIntel should show a strong suite direction without pretending to have paid ranking feeds, backlink databases, or competitor crawlers that have not been implemented.',
+  },
+  {
+    question: 'What does Free include?',
+    answer: 'Free users get lightweight quick audits, live progress, basic SEO checks, passive safety checks, and one active audit at a time.',
+  },
+  {
+    question: 'What does Paid Full Audit include?',
+    answer: 'Paid users unlock standard full audits with larger page limits, higher queue priority, richer report sections, and export-friendly summaries.',
+  },
+  {
+    question: 'Why is deep audit limited by worker capability?',
+    answer: 'Deep audits need always-on audit engine capacity. SEOIntel does not run long crawler loops inside Vercel API routes.',
+  },
+  {
+    question: 'Can I import ranking or backlink data?',
+    answer: 'Yes, the product direction is import-ready/provider-ready. Any imported data must come from a real export or provider, not generated placeholders.',
   },
 ];
 
@@ -328,7 +429,7 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
       <section id="product" className="section-shell relative overflow-hidden pb-16 pt-12 md:pb-24 md:pt-20">
         <div className="absolute inset-x-4 top-8 -z-10 h-80 rounded-[3rem] bg-gradient-to-br from-accent/12 via-emerald-500/10 to-transparent blur-3xl" />
 
-        <div className="grid items-center gap-10 lg:grid-cols-[1.02fr_0.98fr]">
+        <div className="grid items-start gap-10 lg:grid-cols-[1.02fr_0.98fr]">
           <div className="space-y-8">
             <nav className="flex flex-wrap gap-2 text-sm" aria-label="Homepage sections">
               <a href="#features" className="quiet-button px-3 py-1.5">Features</a>
@@ -340,10 +441,10 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
             <div className="space-y-5">
               <StatusBadge tone="accent">Live SEO suite for practical website checks</StatusBadge>
               <h1 className="max-w-4xl text-4xl font-bold leading-tight md:text-6xl">
-                Find SEO, website health, and browser-safety issues before they cost you leads.
+                Visual SEO, Technical SEO, and Passive Security Audits in One Dashboard
               </h1>
               <p className="max-w-2xl text-lg leading-8 text-muted-foreground md:text-xl">
-                SEOIntel combines resource-light live audits, visual previews, plain-English fix guidance, and honest imported-data areas for teams that need clarity without heavy services.
+                SEOIntel checks public website signals, crawlability, metadata, performance signals, Google-style appearance, and passive browser-safety headers without paid SEO APIs or AI APIs.
               </p>
             </div>
 
@@ -367,6 +468,9 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
                 </button>
               </div>
             </form>
+            <p className="text-sm font-medium text-muted-foreground">
+              Free quick audits are lightweight. Paid users unlock full audits.
+            </p>
 
             <div className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-2">
               {trustBullets.map((text) => (
@@ -375,16 +479,40 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
             </div>
 
             <div className="flex flex-wrap gap-3">
-              <button type="button" onClick={onExploreFeatures} className="quiet-button">
-                Open product dashboard
-              </button>
+              <a href="#features" className="quiet-button">View Features</a>
               <a href="#reports" className="quiet-button">
-                View report preview
+                See Report Preview
               </a>
+              <button type="button" onClick={onExploreFeatures} className="quiet-button">
+                Open Dashboard
+              </button>
             </div>
           </div>
 
-          <ProductSuitePreview />
+          <ProductMockupPanel label="Product preview - example data" />
+        </div>
+      </section>
+
+      <section className="section-shell pb-10">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+          {credibilityBadges.map((badge) => (
+            <CredibilityBadge key={badge.title} {...badge} />
+          ))}
+        </div>
+      </section>
+
+      <section className="border-y border-border bg-muted/30 py-16 md:py-20">
+        <div className="section-shell">
+          <SectionHeader
+            eyebrow="Core product"
+            title="Four clear reasons to run the audit."
+            description="The homepage leads with real SEOIntel capabilities instead of generic progress graphics or unsupported ranking promises."
+          />
+          <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+            {featureHighlights.map((feature) => (
+              <FeatureProofCard key={feature.title} {...feature} />
+            ))}
+          </div>
         </div>
       </section>
 
@@ -398,6 +526,19 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
         <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {suiteFeatures.map((feature) => (
             <FeatureSuiteCard key={feature.title} {...feature} />
+          ))}
+        </div>
+      </section>
+
+      <section id="audit-checks" className="section-shell py-16 md:py-20">
+        <SectionHeader
+          eyebrow="What the audit checks"
+          title="Specific checks people understand before they click."
+          description="SEOIntel keeps technical detail available, but the first layer uses plain terms and fix-oriented language."
+        />
+        <div className="mt-10 grid gap-5 lg:grid-cols-3">
+          {auditCheckGroups.map((group) => (
+            <AuditCheckGroup key={group.title} {...group} />
           ))}
         </div>
       </section>
@@ -442,7 +583,7 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
               <MetricCard label="Overall health" value="84" detail="Sample score display" icon={<Gauge className="h-6 w-6" />} tone="green" />
               <MetricCard label="Top fixes" value="12" detail="Sorted by fix priority" icon={<Wrench className="h-6 w-6" />} tone="yellow" />
             </div>
-            <SeverityStack critical={3} high={6} medium={12} low={8} />
+            <SeverityDistribution critical={3} high={6} medium={12} low={8} />
             <SurfaceCard className="p-5">
               <h3 className="text-lg font-bold">Plain-English report sections</h3>
               <div className="mt-4 grid gap-3">
@@ -562,101 +703,46 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
               Visual SEO, website health, and passive browser-safety audits with a resource-light architecture.
             </p>
+            <p className="mt-3 text-xs leading-5 text-muted-foreground">
+              Safety note: passive checks only. SEOIntel does not run exploit tests, store raw HTML, or invent ranking/backlink data.
+            </p>
           </div>
           <FooterLinks title="Product" links={[['Features', '#features'], ['Reports', '#reports'], ['Pricing', '#pricing']]} />
           <FooterLinks title="Free tools" links={[['Quick SEO Checker', '#start-audit'], ['Google Preview Tool', '#free-tools'], ['Browser Safety Checker', '#free-tools']]} />
-          <FooterLinks title="Resources" links={[['Use cases', '#use-cases'], ['Guides', '#resources'], ['FAQ', '#faq']]} />
+          <FooterLinks title="Resources" links={[['Use cases', '#use-cases'], ['Guides', '#resources'], ['FAQ', '#faq'], ['Audit safety', '#audit-checks']]} />
         </div>
       </footer>
     </main>
   );
 }
 
-function ProductSuitePreview() {
+function CredibilityBadge({ icon: Icon, title, description }: { icon: IconType; title: string; description: string }) {
   return (
-    <SurfaceCard className="overflow-hidden">
-      <div className="border-b border-border bg-muted/40 px-4 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="h-3 w-3 rounded-full bg-red-400" />
-            <span className="h-3 w-3 rounded-full bg-amber-400" />
-            <span className="h-3 w-3 rounded-full bg-emerald-400" />
-          </div>
-          <span className="rounded-full bg-background px-3 py-1 text-xs font-semibold text-muted-foreground">SEOIntel suite preview</span>
-        </div>
+    <SurfaceCard className="p-4">
+      <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-accent/10 text-accent">
+        <Icon className="h-5 w-5" />
       </div>
-      <div className="grid gap-4 p-5">
-        <div className="grid gap-3 sm:grid-cols-3">
-          <MiniScore icon={Gauge} label="Site score" value="84" tone="text-emerald-600" />
-          <MiniScore icon={Search} label="SEO fixes" value="12" tone="text-amber-600" />
-          <MiniScore icon={ShieldCheck} label="Safety" value="A-" tone="text-emerald-600" />
-        </div>
+      <h3 className="text-sm font-bold">{title}</h3>
+      <p className="mt-2 text-xs leading-5 text-muted-foreground">{description}</p>
+    </SurfaceCard>
+  );
+}
 
-        <div className="grid gap-4 lg:grid-cols-[1fr_0.78fr]">
-          <div className="rounded-2xl border border-border bg-background p-4">
-            <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-              <Monitor className="h-4 w-4 text-accent" /> Live audit workspace
-            </div>
-            <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-              <div className="mb-4 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent/10 text-accent">
-                    <Sparkles className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <div className="h-3 w-28 rounded bg-foreground/75" />
-                    <div className="mt-2 h-2 w-20 rounded bg-muted-foreground/30" />
-                  </div>
-                </div>
-                <div className="h-8 w-20 rounded-full bg-accent/20" />
-              </div>
-              <div className="grid gap-4 md:grid-cols-[1fr_0.8fr]">
-                <div>
-                  <div className="h-5 w-3/4 rounded bg-foreground/80" />
-                  <div className="mt-3 h-3 w-full rounded bg-muted-foreground/30" />
-                  <div className="mt-2 h-3 w-5/6 rounded bg-muted-foreground/30" />
-                  <div className="mt-5 h-9 w-32 rounded-xl bg-accent" />
-                </div>
-                <div className="rounded-xl bg-gradient-to-br from-accent/20 to-emerald-500/20 p-4">
-                  <Lock className="mb-8 h-5 w-5 text-accent" />
-                  <div className="h-3 w-24 rounded bg-foreground/50" />
-                  <div className="mt-2 h-2 w-16 rounded bg-muted-foreground/30" />
-                </div>
-              </div>
-            </div>
+function AuditCheckGroup({ icon: Icon, title, description, checks }: { icon: IconType; title: string; description: string; checks: string[] }) {
+  return (
+    <SurfaceCard className="p-6">
+      <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/10 text-accent">
+        <Icon className="h-6 w-6" />
+      </div>
+      <h3 className="text-2xl font-bold">{title}</h3>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+      <div className="mt-5 grid gap-2">
+        {checks.map((check) => (
+          <div key={check} className="flex items-center gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2 text-sm">
+            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+            <span>{check}</span>
           </div>
-
-          <div className="rounded-2xl border border-border bg-background p-4">
-            <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-              <Smartphone className="h-4 w-4 text-accent" /> Preview stack
-            </div>
-            <div className="space-y-3">
-              <div className="mx-auto w-36 rounded-[1.6rem] border-4 border-foreground/80 bg-card p-2">
-                <div className="mx-auto mb-2 h-1.5 w-10 rounded-full bg-muted-foreground/40" />
-                <div className="rounded-xl bg-muted p-3">
-                  <div className="mb-3 h-7 w-7 rounded-lg bg-accent/20" />
-                  <div className="h-3 w-full rounded bg-foreground/80" />
-                  <div className="mt-2 h-2 w-5/6 rounded bg-muted-foreground/30" />
-                  <div className="mt-3 h-7 rounded-lg bg-accent" />
-                </div>
-              </div>
-              <div className="rounded-xl border border-border bg-white p-3 text-slate-900 shadow-sm dark:bg-white">
-                <div className="text-xs text-slate-600">example.com</div>
-                <div className="mt-1 text-sm font-medium text-blue-700">Example page title preview</div>
-                <p className="mt-1 text-xs leading-5 text-slate-600">See how a page may appear before customers click.</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-3">
-          {['Website scan running', 'Top fixes sorted', 'Passive safety reviewed'].map((item) => (
-            <div key={item} className="rounded-2xl border border-border bg-background p-3 text-sm font-semibold text-muted-foreground">
-              <CheckCircle2 className="mb-2 h-4 w-4 text-emerald-600" />
-              {item}
-            </div>
-          ))}
-        </div>
+        ))}
       </div>
     </SurfaceCard>
   );
@@ -667,16 +753,6 @@ function TrustBullet({ text }: { text: string }) {
     <div className="flex items-center gap-2">
       <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
       <span>{text}</span>
-    </div>
-  );
-}
-
-function MiniScore({ icon: Icon, label, value, tone }: { icon: IconType; label: string; value: string; tone: string }) {
-  return (
-    <div className="rounded-2xl border border-border bg-card p-4">
-      <Icon className="mb-3 h-5 w-5 text-accent" />
-      <div className={`text-2xl font-bold ${tone}`}>{value}</div>
-      <div className="text-sm text-muted-foreground">{label}</div>
     </div>
   );
 }

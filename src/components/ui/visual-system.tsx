@@ -1,7 +1,19 @@
 import React from 'react';
-import { CheckCircle2, Globe, Monitor, Moon, Search, Smartphone, Sun, TrendingUp } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Globe, Monitor, Moon, Search, ShieldCheck, Smartphone, Sun, TrendingUp } from 'lucide-react';
 
 type VisualIcon = React.ComponentType<{ className?: string }>;
+type ScoreTone = 'accent' | 'green' | 'yellow' | 'red';
+type SeverityTone = 'critical' | 'high' | 'medium' | 'low' | 'info';
+
+type PreviewProps = {
+  url?: string | null;
+  title?: string | null;
+  description?: string | null;
+  hostname?: string | null;
+  canonicalUrl?: string | null;
+  faviconUrl?: string | null;
+  openGraphImage?: string | null;
+};
 
 export function SurfaceCard({
   children,
@@ -282,6 +294,116 @@ export function ProgressBar({
   );
 }
 
+function safeScore(value: number) {
+  return Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
+}
+
+function scoreTone(value: number): ScoreTone {
+  const safeValue = safeScore(value);
+  if (safeValue >= 80) return 'green';
+  if (safeValue >= 60) return 'accent';
+  if (safeValue >= 40) return 'yellow';
+  return 'red';
+}
+
+function scoreColor(tone: ScoreTone) {
+  const colors = {
+    accent: '#2563eb',
+    green: '#10b981',
+    yellow: '#f59e0b',
+    red: '#ef4444',
+  };
+  return colors[tone];
+}
+
+function scoreTextClass(tone: ScoreTone) {
+  const classes = {
+    accent: 'text-accent',
+    green: 'text-emerald-600 dark:text-emerald-300',
+    yellow: 'text-amber-600 dark:text-amber-300',
+    red: 'text-red-600 dark:text-red-300',
+  };
+  return classes[tone];
+}
+
+export function RadialScoreGauge({
+  value,
+  label = 'Overall score',
+  size = 'md',
+  tone,
+  detail,
+}: {
+  value: number;
+  label?: string;
+  size?: 'sm' | 'md' | 'lg';
+  tone?: ScoreTone;
+  detail?: string;
+}) {
+  const safeValue = safeScore(value);
+  const resolvedTone = tone || scoreTone(safeValue);
+  const radius = 48;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (safeValue / 100) * circumference;
+  const sizeClass = size === 'lg' ? 'h-48 w-48' : size === 'sm' ? 'h-28 w-28' : 'h-36 w-36';
+
+  return (
+    <div className="flex flex-col items-center text-center">
+      <div className={`relative ${sizeClass}`} role="img" aria-label={`${label}: ${Math.round(safeValue)} out of 100`}>
+        <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
+          <circle cx="60" cy="60" r={radius} fill="none" stroke="currentColor" strokeWidth="12" className="text-muted" />
+          <circle
+            cx="60"
+            cy="60"
+            r={radius}
+            fill="none"
+            stroke={scoreColor(resolvedTone)}
+            strokeLinecap="round"
+            strokeWidth="12"
+            style={{
+              strokeDasharray: circumference,
+              strokeDashoffset,
+              transition: 'stroke-dashoffset 700ms ease',
+            }}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <div className={`text-3xl font-bold ${scoreTextClass(resolvedTone)} ${size === 'lg' ? 'md:text-5xl' : ''}`}>{Math.round(safeValue)}</div>
+          <div className="text-xs font-semibold text-muted-foreground">/100</div>
+        </div>
+      </div>
+      <div className="mt-3 font-bold">{label}</div>
+      {detail && <div className="mt-1 max-w-44 text-xs leading-5 text-muted-foreground">{detail}</div>}
+    </div>
+  );
+}
+
+export function CategoryScoreBar({
+  label,
+  value,
+  detail,
+  tone,
+}: {
+  label: string;
+  value: number;
+  detail?: string;
+  tone?: ScoreTone;
+}) {
+  const safeValue = safeScore(value);
+  const resolvedTone = tone || scoreTone(safeValue);
+  return (
+    <div className="space-y-2 rounded-2xl border border-border bg-background/70 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-bold">{label}</div>
+          {detail && <div className="text-xs text-muted-foreground">{detail}</div>}
+        </div>
+        <span className={`text-sm font-bold ${scoreTextClass(resolvedTone)}`}>{Math.round(safeValue)}</span>
+      </div>
+      <ProgressBar value={safeValue} tone={resolvedTone} />
+    </div>
+  );
+}
+
 export function MetricCard({
   label,
   value,
@@ -367,6 +489,198 @@ export function SeverityStack({
   );
 }
 
+export function SeverityBadge({
+  severity,
+  children,
+}: {
+  severity: SeverityTone;
+  children?: React.ReactNode;
+}) {
+  const tones = {
+    critical: 'border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-300',
+    high: 'border-orange-500/20 bg-orange-500/10 text-orange-700 dark:text-orange-300',
+    medium: 'border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+    low: 'border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300',
+    info: 'border-border bg-muted text-muted-foreground',
+  };
+  const labels = {
+    critical: 'Fix now',
+    high: 'High priority',
+    medium: 'Review soon',
+    low: 'Nice to fix',
+    info: 'Info',
+  };
+  return <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-bold ${tones[severity]}`}>{children || labels[severity]}</span>;
+}
+
+export function SeverityDistribution({
+  critical,
+  high,
+  medium,
+  low,
+}: {
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+}) {
+  const total = Math.max(1, critical + high + medium + low);
+  const parts: Array<{ severity: SeverityTone; label: string; value: number; className: string }> = [
+    { severity: 'critical', label: 'Fix now', value: critical, className: 'bg-red-500' },
+    { severity: 'high', label: 'High', value: high, className: 'bg-orange-500' },
+    { severity: 'medium', label: 'Review', value: medium, className: 'bg-amber-500' },
+    { severity: 'low', label: 'Nice', value: low, className: 'bg-sky-500' },
+  ];
+  return (
+    <div className="space-y-4">
+      <div className="flex h-5 overflow-hidden rounded-full bg-muted shadow-inner" aria-label="Fix priority distribution">
+        {parts.map((part) => (
+          <div key={part.severity} className={`${part.className} min-w-1 transition-all duration-700`} style={{ width: `${(part.value / total) * 100}%` }} />
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {parts.map((part) => (
+          <div key={part.severity} className="rounded-2xl border border-border bg-background/70 p-3">
+            <div className="flex flex-col gap-2">
+              <SeverityBadge severity={part.severity}>{part.label}</SeverityBadge>
+              <span className="text-lg font-bold">{part.value}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function FeatureProofCard({
+  icon: Icon,
+  title,
+  description,
+  checks,
+  cta,
+}: {
+  icon: VisualIcon;
+  title: string;
+  description: string;
+  checks: string[];
+  cta?: React.ReactNode;
+}) {
+  return (
+    <SurfaceCard className="group flex h-full flex-col p-6">
+      <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/10 text-accent transition-colors group-hover:bg-accent group-hover:text-accent-foreground">
+        <Icon className="h-6 w-6" />
+      </div>
+      <h3 className="text-xl font-bold">{title}</h3>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+      <ul className="mt-5 space-y-2">
+        {checks.map((check) => (
+          <li key={check} className="flex items-start gap-2 text-sm">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+            <span>{check}</span>
+          </li>
+        ))}
+      </ul>
+      {cta && <div className="mt-auto pt-5">{cta}</div>}
+    </SurfaceCard>
+  );
+}
+
+export function ProductMockupPanel({
+  label = 'Product preview',
+  overallScore = 84,
+  seoScore = 86,
+  technicalScore = 78,
+  securityScore = 88,
+  severity = { critical: 3, high: 6, medium: 12, low: 8 },
+  issues = [
+    { title: 'Title tag is too generic', detail: 'Rewrite the page title around the primary service.', severity: 'high' as SeverityTone },
+    { title: 'Missing image descriptions', detail: 'Add useful alt text to key service images.', severity: 'medium' as SeverityTone },
+    { title: 'Browser protections incomplete', detail: 'Review CSP and frame protection settings.', severity: 'critical' as SeverityTone },
+  ],
+  url = 'https://example.com',
+  title = 'Example homepage audit preview',
+  description = 'Metadata-based visual preview generated from public page details. No raw HTML is stored.',
+}: {
+  label?: string;
+  overallScore?: number;
+  seoScore?: number;
+  technicalScore?: number;
+  securityScore?: number;
+  severity?: { critical: number; high: number; medium: number; low: number };
+  issues?: Array<{ title: string; detail?: string; severity: SeverityTone }>;
+  url?: string;
+  title?: string;
+  description?: string;
+}) {
+  return (
+    <SurfaceCard className="overflow-hidden">
+      <div className="border-b border-border bg-muted/40 px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="h-3 w-3 rounded-full bg-red-400" />
+            <span className="h-3 w-3 rounded-full bg-amber-400" />
+            <span className="h-3 w-3 rounded-full bg-emerald-400" />
+          </div>
+          <span className="rounded-full bg-background px-3 py-1 text-xs font-semibold text-muted-foreground">{label}</span>
+        </div>
+      </div>
+      <div className="grid gap-5 p-5">
+        <div className="grid gap-5 xl:grid-cols-[0.65fr_1fr]">
+          <div className="rounded-3xl border border-border bg-background/80 p-5">
+            <RadialScoreGauge value={overallScore} label="SEOIntel score" detail="Deterministic audit scoring" size="lg" />
+            <div className="mt-5 grid gap-3">
+              <CategoryScoreBar label="SEO" value={seoScore} detail="Metadata, headings, links" />
+              <CategoryScoreBar label="Technical SEO" value={technicalScore} detail="Status, redirects, access" />
+              <CategoryScoreBar label="Passive safety" value={securityScore} detail="HTTPS and browser protections" />
+            </div>
+          </div>
+
+          <div className="grid gap-4">
+            <div className="rounded-3xl border border-border bg-background/80 p-5">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-bold">Top fixes first</h3>
+                  <p className="text-sm text-muted-foreground">Example data for the marketing preview only.</p>
+                </div>
+                <AlertTriangle className="h-5 w-5 text-amber-500" />
+              </div>
+              <div className="space-y-3">
+                {issues.slice(0, 3).map((issue) => (
+                  <div key={issue.title} className="rounded-2xl border border-border bg-card p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="font-semibold">{issue.title}</div>
+                      <SeverityBadge severity={issue.severity} />
+                    </div>
+                    {issue.detail && <p className="mt-2 text-sm text-muted-foreground">{issue.detail}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-3xl border border-border bg-background/80 p-5">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-bold">Severity distribution</h3>
+                  <p className="text-sm text-muted-foreground">Fix priority stays visible throughout the report.</p>
+                </div>
+                <ShieldCheck className="h-5 w-5 text-emerald-600" />
+              </div>
+              <SeverityDistribution {...severity} />
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+          <RealisticDesktopPreviewCard url={url} title={title} description={description} />
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
+            <RealisticMobilePreviewCard url={url} title={title} description={description} />
+            <RealisticSerpPreviewCard url={url} title={title} description={description} />
+          </div>
+        </div>
+      </div>
+    </SurfaceCard>
+  );
+}
+
 export function SitePreviewCard({
   url,
   title,
@@ -424,17 +738,21 @@ function BrandInitialMark({ host, className = '' }: { host: string; className?: 
   );
 }
 
-export function DesktopSitePreviewCard({
+function PreviewLogo({ host, faviconUrl, className = '' }: { host: string; faviconUrl?: string | null; className?: string }) {
+  if (faviconUrl) {
+    return <img src={faviconUrl} alt="" className={`bg-white object-contain ${className}`} loading="lazy" />;
+  }
+  return <BrandInitialMark host={host} className={className} />;
+}
+
+export function RealisticDesktopPreviewCard({
   url,
   title,
   description,
   hostname,
-}: {
-  url?: string | null;
-  title?: string | null;
-  description?: string | null;
-  hostname?: string | null;
-}) {
+  faviconUrl,
+  openGraphImage,
+}: PreviewProps) {
   const host = previewHost(url, hostname);
   const displayUrl = previewUrl(url, host);
   const brand = host.replace(/^www\./, '');
@@ -451,12 +769,12 @@ export function DesktopSitePreviewCard({
           <span className="truncate">{displayUrl}</span>
         </div>
       </div>
-      <div className="bg-gradient-to-br from-accent/10 via-background to-emerald-500/10 p-5">
+      <div className="bg-gradient-to-br from-accent/10 via-background to-emerald-500/10 p-4 md:p-5">
         <div className="overflow-hidden rounded-2xl border border-border bg-background shadow-xl">
           <div className="border-b border-border bg-card/95 px-5 py-4">
             <div className="flex items-center justify-between gap-4">
               <div className="flex min-w-0 items-center gap-3">
-                <BrandInitialMark host={host} className="h-10 w-10 rounded-xl border border-border bg-background" />
+                <PreviewLogo host={host} faviconUrl={faviconUrl} className="h-10 w-10 rounded-xl border border-border bg-background" />
                 <div className="min-w-0">
                   <div className="truncate font-bold">{brand}</div>
                   <div className="truncate text-xs text-muted-foreground">Website preview</div>
@@ -469,13 +787,13 @@ export function DesktopSitePreviewCard({
               </div>
             </div>
           </div>
-          <div className="grid min-h-72 gap-5 p-6 md:grid-cols-[1.1fr_0.9fr]">
+          <div className="grid min-h-72 gap-5 p-5 md:grid-cols-[1.05fr_0.95fr] md:p-6">
             <div className="flex flex-col justify-center">
               <div className="mb-3 inline-flex w-fit rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-xs font-bold text-accent">Preview from scanned page data</div>
               <h3 className="line-clamp-3 text-3xl font-bold leading-tight">{pageTitle}</h3>
               <p className="mt-4 line-clamp-4 text-sm leading-6 text-muted-foreground">{desc}</p>
               <div className="mt-5 flex flex-wrap gap-2">
-                {['Search preview', 'Mobile page', 'Browser safety'].map((item) => (
+                {['SEO audit', 'Technical SEO', 'Browser safety'].map((item) => (
                   <span key={item} className="rounded-full border border-border bg-card px-3 py-1 text-xs font-semibold text-muted-foreground">{item}</span>
                 ))}
               </div>
@@ -485,15 +803,29 @@ export function DesktopSitePreviewCard({
               </div>
             </div>
             <div className="rounded-2xl border border-border bg-card p-4">
-              <div className="rounded-xl bg-gradient-to-br from-accent/20 via-sky-500/10 to-emerald-500/20 p-5">
-                <div className="mb-10 flex items-center justify-between">
-                  <BrandInitialMark host={host} className="h-12 w-12 rounded-2xl border border-white/50 bg-white text-lg shadow-sm" />
-                  <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-bold text-slate-700">Live preview</span>
-                </div>
-                <div className="rounded-2xl bg-white/90 p-4 text-slate-900 shadow-sm">
-                  <div className="text-xs font-bold uppercase tracking-wide text-blue-700">{brand}</div>
-                  <div className="mt-2 line-clamp-2 text-lg font-bold">{pageTitle}</div>
-                  <div className="mt-3 line-clamp-2 text-xs leading-5 text-slate-600">{desc}</div>
+              <div className="overflow-hidden rounded-xl border border-border bg-background">
+                {openGraphImage ? (
+                  <img src={openGraphImage} alt="" className="h-32 w-full object-cover" loading="lazy" />
+                ) : (
+                  <div className="bg-gradient-to-br from-accent/20 via-sky-500/10 to-emerald-500/20 p-5">
+                    <div className="mb-10 flex items-center justify-between">
+                      <PreviewLogo host={host} faviconUrl={faviconUrl} className="h-12 w-12 rounded-2xl border border-white/50 bg-white text-lg shadow-sm" />
+                      <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-bold text-slate-700">Metadata preview</span>
+                    </div>
+                    <div className="rounded-2xl bg-white/90 p-4 text-slate-900 shadow-sm">
+                      <div className="text-xs font-bold uppercase tracking-wide text-blue-700">{brand}</div>
+                      <div className="mt-2 line-clamp-2 text-lg font-bold">{pageTitle}</div>
+                      <div className="mt-3 line-clamp-2 text-xs leading-5 text-slate-600">{desc}</div>
+                    </div>
+                  </div>
+                )}
+                <div className="grid gap-2 p-4">
+                  {['Services and proof points', 'Primary CTA visible', 'Report-ready summary'].map((item) => (
+                    <div key={item} className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold text-muted-foreground">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                      {item}
+                    </div>
+                  ))}
                 </div>
               </div>
               <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
@@ -512,17 +844,17 @@ export function DesktopSitePreviewCard({
   );
 }
 
-export function MobileSitePreviewCard({
+export function DesktopSitePreviewCard(props: PreviewProps) {
+  return <RealisticDesktopPreviewCard {...props} />;
+}
+
+export function RealisticMobilePreviewCard({
   url,
   title,
   description,
   hostname,
-}: {
-  url?: string | null;
-  title?: string | null;
-  description?: string | null;
-  hostname?: string | null;
-}) {
+  faviconUrl,
+}: PreviewProps) {
   const host = previewHost(url, hostname);
   const brand = host.replace(/^www\./, '');
   const pageTitle = title || `${brand} homepage`;
@@ -533,7 +865,7 @@ export function MobileSitePreviewCard({
         <div className="overflow-hidden rounded-[1.35rem] bg-background">
           <div className="relative flex items-center justify-between border-b border-border bg-card px-3 py-3">
             <div className="absolute left-1/2 top-2 h-1.5 w-14 -translate-x-1/2 rounded-full bg-slate-900/80" />
-            <BrandInitialMark host={host} className="mt-2 h-8 w-8 rounded-xl border border-border bg-background text-sm" />
+            <PreviewLogo host={host} faviconUrl={faviconUrl} className="mt-2 h-8 w-8 rounded-xl border border-border bg-background text-sm" />
             <div className="mt-2 truncate text-xs font-bold">{brand}</div>
             <div className="mt-2 h-8 w-8 rounded-xl border border-border bg-muted" />
           </div>
@@ -547,7 +879,7 @@ export function MobileSitePreviewCard({
               <button type="button" className="mt-4 w-full rounded-xl bg-accent px-3 py-2 text-xs font-bold text-accent-foreground">View report</button>
             </div>
             <div className="grid gap-2">
-              {['Search preview ready', 'Mobile layout checked', 'Top fixes sorted'].map((item) => (
+              {['Viewport checked', 'Tap target context', 'Mobile snippet ready'].map((item) => (
                 <div key={item} className="rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold text-muted-foreground">{item}</div>
               ))}
             </div>
@@ -558,19 +890,20 @@ export function MobileSitePreviewCard({
   );
 }
 
-export function SerpPreviewCard({
+export function MobileSitePreviewCard(props: PreviewProps) {
+  return <RealisticMobilePreviewCard {...props} />;
+}
+
+export function RealisticSerpPreviewCard({
   url,
   title,
   description,
   canonicalUrl,
-}: {
-  url?: string | null;
-  title?: string | null;
-  description?: string | null;
-  canonicalUrl?: string | null;
-}) {
+  hostname,
+  faviconUrl,
+}: PreviewProps) {
   const displayUrl = canonicalUrl || previewUrl(url);
-  const host = previewHost(displayUrl);
+  const host = previewHost(displayUrl, hostname);
   const serpTitle = title || `${host.replace(/^www\./, '')} - SEO preview`;
   const serpDescription = description || 'Search result preview appears as soon as the page title and description are available from the scan.';
   const titleGood = serpTitle.length >= 30 && serpTitle.length <= 60;
@@ -582,9 +915,13 @@ export function SerpPreviewCard({
         <h3 className="text-lg font-bold">Google-style preview</h3>
       </div>
       <div className="rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 shadow-sm dark:bg-white">
+        <div className="mb-4 flex items-center gap-2 text-xs text-slate-500">
+          <span className="text-lg font-bold text-blue-600">G</span>
+          <span className="font-medium">Search result preview</span>
+        </div>
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100">
-            <BrandInitialMark host={host} className="h-5 w-5 rounded text-xs" />
+            <PreviewLogo host={host} faviconUrl={faviconUrl} className="h-5 w-5 rounded text-xs" />
           </div>
           <div className="min-w-0">
             <div className="text-sm text-slate-900">{host.replace(/^www\./, '')}</div>
@@ -606,19 +943,19 @@ export function SerpPreviewCard({
   );
 }
 
+export function SerpPreviewCard(props: PreviewProps) {
+  return <RealisticSerpPreviewCard {...props} />;
+}
+
 export function SitePreviewSection({
   url,
   title,
   description,
   hostname,
   canonicalUrl,
-}: {
-  url?: string | null;
-  title?: string | null;
-  description?: string | null;
-  hostname?: string | null;
-  canonicalUrl?: string | null;
-}) {
+  faviconUrl,
+  openGraphImage,
+}: PreviewProps) {
   return (
     <section className="space-y-4">
       <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
@@ -633,10 +970,10 @@ export function SitePreviewSection({
         </div>
       </div>
       <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
-        <DesktopSitePreviewCard url={url} title={title} description={description} hostname={hostname} />
+        <RealisticDesktopPreviewCard url={url} title={title} description={description} hostname={hostname} faviconUrl={faviconUrl} openGraphImage={openGraphImage} />
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-1">
-          <MobileSitePreviewCard url={url} title={title} description={description} hostname={hostname} />
-          <SerpPreviewCard url={url} title={title} description={description} canonicalUrl={canonicalUrl} />
+          <RealisticMobilePreviewCard url={url} title={title} description={description} hostname={hostname} faviconUrl={faviconUrl} openGraphImage={openGraphImage} />
+          <RealisticSerpPreviewCard url={url} title={title} description={description} hostname={hostname} canonicalUrl={canonicalUrl} faviconUrl={faviconUrl} openGraphImage={openGraphImage} />
         </div>
       </div>
     </section>
