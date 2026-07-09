@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Activity, AlertTriangle, CheckCircle2, Clock, FileDown, Loader2, Radio, ShieldAlert, StopCircle, Wifi, WifiOff } from 'lucide-react';
+import { Activity, AlertTriangle, CheckCircle2, Clock, Clipboard, FileDown, Filter, Loader2, RefreshCw, Radio, Share2, ShieldAlert, StopCircle, Wifi, WifiOff } from 'lucide-react';
 import type { ResourceAuditLiveData } from '../../lib/audit/resource-types';
 import type { LiveAuditConnectionState } from '../../lib/audit/live-supabase-client';
 import { getAuditModeLabel } from '../../lib/audit/audit-config';
@@ -7,10 +7,30 @@ import { isAuditQueuedTooLong } from '../../lib/audit/queued-worker-warning';
 import { API_ROUTES } from '../../lib/api/routes';
 import { safeJsonFetch } from '../../lib/http/safe-json';
 import { CategoryScoreBar, MetricCard, ProgressBar, RadialScoreGauge, SeverityDistribution, SitePreviewSection, StatusBadge, SurfaceCard } from '../ui/visual-system';
+import {
+  buildHistoryEntry,
+  buildIssueInsight,
+  checklistCompletion,
+  compareAuditIssues,
+  crawlDepthDistribution,
+  findPreviousAudit,
+  issueBucket,
+  issueSignature,
+  pageHealthBuckets,
+  readAuditHistory,
+  readChecklist,
+  scoreTrendForUrl,
+  upsertAuditHistory,
+  writeChecklist,
+  type AuditHistoryEntry,
+  type ChecklistStatus,
+  type IssueBucket,
+} from '../../lib/audit/client-insights';
 
 interface Props {
   auditId: string;
   onComplete?: () => void;
+  onRerun?: (url: string) => void | Promise<void>;
 }
 
 function formatBytes(bytes: number) {
@@ -85,7 +105,7 @@ function formatLastUpdate(lastUpdateAt: number | undefined, now: number) {
   return `updated ${Math.floor(seconds / 60)}m ago`;
 }
 
-export function LiveAuditProgress({ auditId, onComplete }: Props) {
+export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
   const [data, setData] = useState<ResourceAuditLiveData>({ audit: null, latestEvents: [], latestPages: [], latestIssues: [] });
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
@@ -96,6 +116,8 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
   });
   const [now, setNow] = useState(Date.now());
   const [isCancelling, setIsCancelling] = useState(false);
+  const [checklist, setChecklist] = useState<Record<string, ChecklistStatus>>({});
+  const [shareMessage, setShareMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let isActive = true;
@@ -139,6 +161,16 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
     const interval = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    setChecklist(readChecklist(auditId));
+  }, [auditId]);
+
+  useEffect(() => {
+    if (data.audit) {
+      upsertAuditHistory(data);
+    }
+  }, [data]);
 
   const audit = data.audit;
   const latestEvent = data.latestEvents[data.latestEvents.length - 1];
@@ -203,6 +235,29 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
     }
   };
 
+  const setChecklistStatus = (signature: string, status: ChecklistStatus) => {
+    const next = { ...checklist, [signature]: status };
+    setChecklist(next);
+    writeChecklist(auditId, next);
+  };
+
+  const copyReportLink = async () => {
+    try {
+      const url = `${window.location.origin}/audit/live/${auditId}`;
+      await navigator.clipboard.writeText(url);
+      setShareMessage('Report link copied.');
+    } catch {
+      setShareMessage('Copy failed. Use the browser address bar link.');
+    } finally {
+      window.setTimeout(() => setShareMessage(null), 2500);
+    }
+  };
+
+  const rerunAudit = () => {
+    const url = audit?.normalizedUrl || data.audit?.normalizedUrl;
+    if (url && onRerun) onRerun(url);
+  };
+
   if (error) {
     return (
       <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-500 rounded-xl flex items-center gap-2">
@@ -253,6 +308,14 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
       : audit.status === 'queued'
         ? 'warning'
         : 'accent';
+  const historyEntry = buildHistoryEntry(data);
+  const history = readAuditHistory();
+  const previousAudit = findPreviousAudit(historyEntry, history);
+  const comparison = compareAuditIssues(data.latestIssues, previousAudit);
+  const checklistSummary = checklistCompletion(data.latestIssues, checklist);
+  const scoreTrend = scoreTrendForUrl(audit.normalizedUrl, history);
+  const crawlDepth = crawlDepthDistribution(data.latestPages);
+  const pageBuckets = pageHealthBuckets(data.latestPages);
 
   return (
     <div className="w-full space-y-6 animate-rise">
@@ -296,6 +359,24 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
         title={firstPage?.title || `${audit.hostname} audit preview`}
         description={firstPage?.metaDescription || humanizeAuditText(latestEvent?.message) || 'Preview updates from scanned page details without storing raw HTML.'}
         canonicalUrl={audit.finalUrl || audit.normalizedUrl}
+      />
+
+      <AuditWorkflowPanel
+        auditId={auditId}
+        auditUrl={audit.normalizedUrl}
+        issues={data.latestIssues}
+        pages={data.latestPages}
+        checklist={checklist}
+        checklistSummary={checklistSummary}
+        comparison={comparison}
+        previousAudit={previousAudit}
+        scoreTrend={scoreTrend}
+        crawlDepth={crawlDepth}
+        pageBuckets={pageBuckets}
+        shareMessage={shareMessage}
+        onChecklistStatus={setChecklistStatus}
+        onCopyReportLink={copyReportLink}
+        onRerun={onRerun ? rerunAudit : undefined}
       />
 
       <div className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
@@ -455,29 +536,7 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
         </div>
       </section>
 
-      <div className="grid lg:grid-cols-2 gap-6">
-        <section className="bg-card border border-border rounded-xl overflow-hidden">
-          <div className="p-4 border-b border-border">
-            <h3 className="font-semibold">Fixes found</h3>
-          </div>
-          <div className="divide-y divide-border max-h-[520px] overflow-y-auto">
-            {data.latestIssues.length === 0 ? (
-              <div className="p-6 text-center text-muted-foreground">Fixes appear here as soon as they are detected.</div>
-            ) : data.latestIssues.map((issue) => (
-              <article key={issue.id} className="p-4 space-y-2">
-                <div className="flex items-start justify-between gap-3">
-                  <h4 className="font-semibold">{issue.title}</h4>
-                  <span className={`text-xs px-2 py-1 rounded-md border capitalize ${severityClass(issue.severity)}`}>{priorityLabel(issue.severity)}</span>
-                </div>
-                <p className="text-sm text-muted-foreground">{issue.description}</p>
-                <p className="text-xs break-all"><span className="text-muted-foreground">URL:</span> {issue.affectedUrl}</p>
-                {issue.evidence && <p className="text-xs bg-muted/50 border border-border rounded p-2">{humanizeAuditText(issue.evidence)}</p>}
-                <p className="text-sm"><span className="font-medium">How to fix:</span> {humanizeAuditText(issue.recommendation)}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-
+      <div className="grid gap-6">
         <section className="bg-card border border-border rounded-xl overflow-hidden">
           <div className="p-4 border-b border-border">
             <h3 className="font-semibold">Activity timeline</h3>
@@ -579,6 +638,224 @@ function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; 
       <div>
         <div className="text-sm text-muted-foreground">{label}</div>
         <div className="font-semibold capitalize">{value}</div>
+      </div>
+    </div>
+  );
+}
+
+function AuditWorkflowPanel({
+  auditId,
+  auditUrl,
+  issues,
+  pages,
+  checklist,
+  checklistSummary,
+  comparison,
+  previousAudit,
+  scoreTrend,
+  crawlDepth,
+  pageBuckets,
+  shareMessage,
+  onChecklistStatus,
+  onCopyReportLink,
+  onRerun,
+}: {
+  auditId: string;
+  auditUrl: string;
+  issues: ResourceAuditLiveData['latestIssues'];
+  pages: ResourceAuditLiveData['latestPages'];
+  checklist: Record<string, ChecklistStatus>;
+  checklistSummary: { actionable: number; fixed: number; ignored: number; percent: number };
+  comparison: ReturnType<typeof compareAuditIssues>;
+  previousAudit: AuditHistoryEntry | null;
+  scoreTrend: AuditHistoryEntry[];
+  crawlDepth: Array<{ label: string; value: number }>;
+  pageBuckets: Array<{ label: string; value: number }>;
+  shareMessage: string | null;
+  onChecklistStatus: (signature: string, status: ChecklistStatus) => void;
+  onCopyReportLink: () => void;
+  onRerun?: () => void;
+}) {
+  const [bucketFilter, setBucketFilter] = useState<IssueBucket>('all');
+  const [priorityFilter, setPriorityFilter] = useState<'all' | 'critical' | 'high' | 'medium' | 'low'>('all');
+  const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
+  const filteredIssues = issues
+    .filter((issue) => bucketFilter === 'all' || issueBucket(issue) === bucketFilter)
+    .filter((issue) => priorityFilter === 'all' || issue.severity === priorityFilter)
+    .sort((a, b) => priorityOrder[a.severity] - priorityOrder[b.severity])
+    .slice(0, 12);
+  const latestScore = scoreTrend[scoreTrend.length - 1]?.score ?? null;
+  const maxDepthCount = Math.max(1, ...crawlDepth.map((item) => item.value), ...pageBuckets.map((item) => item.value));
+
+  return (
+    <SurfaceCard className="p-5 md:p-6">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div>
+          <div className="suite-chip mb-3 text-accent">Top fixes first</div>
+          <h2 className="text-2xl font-bold md:text-3xl">Fix workflow for this audit</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+            Review the most important findings, mark fix progress, compare against the last completed audit for this URL, and share a client-ready report link.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={onCopyReportLink} className="quiet-button">
+            <Share2 className="h-4 w-4" /> Share report
+          </button>
+          {onRerun && (
+            <button type="button" onClick={onRerun} className="trust-button">
+              <RefreshCw className="h-4 w-4" /> Rerun audit
+            </button>
+          )}
+        </div>
+      </div>
+
+      {shareMessage && (
+        <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+          <Clipboard className="mr-2 inline h-4 w-4" />
+          {shareMessage}
+        </div>
+      )}
+
+      <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Checklist progress" value={`${checklistSummary.percent}%`} detail={`${checklistSummary.fixed} fixed, ${checklistSummary.ignored} ignored`} icon={<CheckCircle2 className="h-6 w-6" />} tone="green" />
+        <MetricCard label="New issues" value={comparison.newIssues.length} detail={previousAudit ? 'Compared with previous audit' : 'No previous audit yet'} icon={<AlertTriangle className="h-6 w-6" />} tone={comparison.newIssues.length ? 'yellow' : 'green'} />
+        <MetricCard label="Fixed since last audit" value={comparison.fixedCount} detail={previousAudit ? `Previous score ${previousAudit.score}` : 'Comparison starts after rerun'} icon={<Activity className="h-6 w-6" />} tone="accent" />
+        <MetricCard label="Score change" value={comparison.scoreDelta === null ? '-' : `${comparison.scoreDelta > 0 ? '+' : ''}${comparison.scoreDelta}`} detail={latestScore === null ? auditId : `Current score ${latestScore}`} icon={<Radio className="h-6 w-6" />} tone={comparison.scoreDelta && comparison.scoreDelta < 0 ? 'red' : 'green'} />
+      </div>
+
+      <div className="mt-6 grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+        <div className="space-y-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-2 font-bold">
+              <Filter className="h-4 w-4 text-accent" />
+              Filter fixes
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(['all', 'seo', 'technical', 'security'] as IssueBucket[]).map((filter) => (
+                <button
+                  key={filter}
+                  type="button"
+                  onClick={() => setBucketFilter(filter)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-bold capitalize ${bucketFilter === filter ? 'border-accent bg-accent text-accent-foreground' : 'border-border bg-card text-muted-foreground hover:bg-muted'}`}
+                >
+                  {filter === 'seo' ? 'SEO' : filter}
+                </button>
+              ))}
+              {(['all', 'critical', 'high', 'medium', 'low'] as const).map((filter) => (
+                <button
+                  key={filter}
+                  type="button"
+                  onClick={() => setPriorityFilter(filter)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-bold capitalize ${priorityFilter === filter ? 'border-accent bg-accent text-accent-foreground' : 'border-border bg-card text-muted-foreground hover:bg-muted'}`}
+                >
+                  {filter === 'all' ? 'All priorities' : priorityLabel(filter)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {filteredIssues.length === 0 ? (
+            <div className="rounded-2xl border border-border bg-muted/30 p-6 text-center text-muted-foreground">
+              No fixes match the selected filters.
+            </div>
+          ) : (
+            <div className="grid gap-3">
+              {filteredIssues.map((issue) => {
+                const signature = issueSignature(issue);
+                const status = checklist[signature] || 'not_started';
+                const insight = buildIssueInsight(issue);
+                return (
+                  <article key={issue.id} className="rounded-2xl border border-border bg-background/70 p-4 shadow-sm">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <div className="mb-2 flex flex-wrap gap-2">
+                          <span className={`text-xs px-2 py-1 rounded-md border capitalize ${severityClass(issue.severity)}`}>{priorityLabel(issue.severity)}</span>
+                          <StatusBadge tone="accent">{issueBucket(issue) === 'seo' ? 'SEO' : issueBucket(issue)}</StatusBadge>
+                          <StatusBadge tone={status === 'fixed' ? 'success' : status === 'ignored' ? 'warning' : status === 'in_progress' ? 'accent' : 'neutral'}>
+                            {status.replace(/_/g, ' ')}
+                          </StatusBadge>
+                        </div>
+                        <h3 className="text-lg font-bold">{issue.title}</h3>
+                        <p className="mt-1 break-all text-xs text-muted-foreground">{issue.affectedUrl}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {(['not_started', 'in_progress', 'fixed', 'ignored'] as ChecklistStatus[]).map((nextStatus) => (
+                          <button
+                            key={nextStatus}
+                            type="button"
+                            onClick={() => onChecklistStatus(signature, nextStatus)}
+                            className={`rounded-full border px-3 py-1.5 text-xs font-bold ${status === nextStatus ? 'border-accent bg-accent text-accent-foreground' : 'border-border bg-card text-muted-foreground hover:bg-muted'}`}
+                          >
+                            {nextStatus.replace(/_/g, ' ')}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <PlainEnglishBlock title="What happened" text={humanizeAuditText(insight.whatHappened)} />
+                      <PlainEnglishBlock title="Why it matters" text={insight.whyItMatters} />
+                      <PlainEnglishBlock title="How to fix it" text={humanizeAuditText(insight.howToFix)} />
+                      <PlainEnglishBlock title="Technical details" text={humanizeAuditText(insight.technicalDetails)} />
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-4">
+          <InsightChart title="Score trend" emptyText="Rerun this audit to build a trend." items={scoreTrend.map((entry) => ({ label: new Date(entry.updatedAt).toLocaleDateString(), value: entry.score }))} maxValue={100} />
+          <InsightChart title="Crawl depth" emptyText="Pages appear as the audit engine scans." items={crawlDepth} maxValue={maxDepthCount} />
+          <InsightChart title="Page health map" emptyText="Page health appears after scans finish." items={pageBuckets} maxValue={maxDepthCount} />
+          <div className="rounded-2xl border border-border bg-muted/30 p-4 text-sm leading-6 text-muted-foreground">
+            <div className="font-bold text-foreground">Project grouping</div>
+            <p className="mt-1">
+              This audit is grouped by URL now. The stored audit model already supports project IDs, so the next backend pass can attach these reports to saved projects without changing the worker flow.
+            </p>
+            <p className="mt-2 break-all text-xs">Current URL: {auditUrl}</p>
+          </div>
+        </div>
+      </div>
+    </SurfaceCard>
+  );
+}
+
+function PlainEnglishBlock({ title, text }: { title: string; text: string }) {
+  return (
+    <div className="rounded-2xl border border-border bg-card/70 p-3">
+      <div className="text-xs font-black uppercase tracking-[0.12em] text-muted-foreground">{title}</div>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">{text || 'No detail available yet.'}</p>
+    </div>
+  );
+}
+
+function InsightChart({
+  title,
+  items,
+  emptyText,
+  maxValue,
+}: {
+  title: string;
+  items: Array<{ label: string; value: number }>;
+  emptyText: string;
+  maxValue: number;
+}) {
+  return (
+    <div className="rounded-2xl border border-border bg-background/70 p-4">
+      <h3 className="font-bold">{title}</h3>
+      <div className="mt-4 grid gap-3">
+        {items.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{emptyText}</p>
+        ) : items.map((item) => (
+          <div key={`${title}-${item.label}`} className="grid grid-cols-[92px_1fr_44px] items-center gap-3 text-sm">
+            <div className="truncate text-xs font-semibold text-muted-foreground">{item.label}</div>
+            <div className="h-2.5 overflow-hidden rounded-full bg-muted">
+              <div className="h-full rounded-full bg-gradient-to-r from-accent to-emerald-500" style={{ width: `${Math.max(4, Math.min(100, (item.value / Math.max(1, maxValue)) * 100))}%` }} />
+            </div>
+            <div className="text-right text-xs font-black">{item.value}</div>
+          </div>
+        ))}
       </div>
     </div>
   );

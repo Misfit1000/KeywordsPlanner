@@ -1,6 +1,22 @@
 import React, { useEffect, useState, useRef } from "react";
-import { Upload, Database, CheckCircle2, AlertTriangle, FileSpreadsheet } from "lucide-react";
+import { Database, CheckCircle2, AlertTriangle, FileSpreadsheet, Link2, MousePointerClick, Search } from "lucide-react";
 import Papa from 'papaparse';
+
+function pick(row: Record<string, any>, names: string[]) {
+  const entries = Object.entries(row || {});
+  for (const name of names) {
+    const found = entries.find(([key]) => key.trim().toLowerCase() === name);
+    if (found && found[1] !== undefined && found[1] !== null && String(found[1]).trim() !== '') return String(found[1]).trim();
+  }
+  return '';
+}
+
+function sumRows(rows: any[], names: string[]) {
+  return rows.reduce((sum, row) => {
+    const value = Number(pick(row, names).replace(/[%,$]/g, ''));
+    return sum + (Number.isFinite(value) ? value : 0);
+  }, 0);
+}
 
 export default function Imports() {
   const [keywordData, setKeywordData] = useState<any[]>([]);
@@ -42,6 +58,18 @@ export default function Imports() {
       }
     });
   };
+
+  const gscClicks = sumRows(gscData, ['clicks']);
+  const gscImpressions = sumRows(gscData, ['impressions']);
+  const backlinkDomains = new Set(backlinkData.map((row) => {
+    try {
+      const url = pick(row, ['source url', 'source', 'referring page', 'from', 'url']);
+      return url ? new URL(url).hostname : '';
+    } catch {
+      return pick(row, ['domain', 'referring domain']);
+    }
+  }).filter(Boolean)).size;
+  const backlinkTargets = new Set(backlinkData.map((row) => pick(row, ['target url', 'target', 'to', 'landing page'])).filter(Boolean)).size;
 
   return (
     <div className="space-y-8 animate-rise">
@@ -118,6 +146,35 @@ export default function Imports() {
       </div>
 
       {(keywordData.length > 0 || backlinkData.length > 0 || gscData.length > 0) && (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="trust-card p-5">
+            <MousePointerClick className="mb-3 h-6 w-6 text-accent" />
+            <div className="text-sm text-muted-foreground">Imported clicks</div>
+            <div className="text-3xl font-black">{gscClicks || '-'}</div>
+            <div className="mt-1 text-xs text-muted-foreground">{gscImpressions || 0} impressions</div>
+          </div>
+          <div className="trust-card p-5">
+            <Search className="mb-3 h-6 w-6 text-accent" />
+            <div className="text-sm text-muted-foreground">Keyword rows</div>
+            <div className="text-3xl font-black">{keywordData.length || '-'}</div>
+            <div className="mt-1 text-xs text-muted-foreground">Planner, rank, or custom CSV</div>
+          </div>
+          <div className="trust-card p-5">
+            <Link2 className="mb-3 h-6 w-6 text-accent" />
+            <div className="text-sm text-muted-foreground">Backlink rows</div>
+            <div className="text-3xl font-black">{backlinkData.length || '-'}</div>
+            <div className="mt-1 text-xs text-muted-foreground">{backlinkDomains || 0} source domains</div>
+          </div>
+          <div className="trust-card p-5">
+            <Database className="mb-3 h-6 w-6 text-accent" />
+            <div className="text-sm text-muted-foreground">Linked pages</div>
+            <div className="text-3xl font-black">{backlinkTargets || '-'}</div>
+            <div className="mt-1 text-xs text-muted-foreground">From imported backlink CSV</div>
+          </div>
+        </div>
+      )}
+
+      {(keywordData.length > 0 || backlinkData.length > 0 || gscData.length > 0) && (
         <div className="trust-card mt-6 overflow-x-auto p-6">
           <h3 className="font-bold mb-4 font-display">Data Preview</h3>
 
@@ -162,6 +219,32 @@ export default function Imports() {
                       <td className="p-3">
                         {row.difficulty ? <span className="px-2 py-1 bg-muted rounded-md text-xs">{row.difficulty}</span> : '-'}
                       </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {backlinkData.length > 0 && (
+            <div className="mb-2">
+              <h4 className="text-sm font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Imported Backlink Data</h4>
+              <table className="w-full text-left text-sm">
+                <thead className="bg-muted/50 text-muted-foreground">
+                  <tr>
+                    <th className="p-3 font-medium">Source</th>
+                    <th className="p-3 font-medium">Target</th>
+                    <th className="p-3 font-medium">Anchor</th>
+                    <th className="p-3 font-medium">Type</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {backlinkData.slice(0, 8).map((row, i) => (
+                    <tr key={i} className="hover:bg-muted/20">
+                      <td className="p-3 max-w-[260px] truncate">{pick(row, ['source url', 'source', 'referring page', 'from', 'url', 'domain', 'referring domain']) || '-'}</td>
+                      <td className="p-3 max-w-[260px] truncate">{pick(row, ['target url', 'target', 'to', 'landing page']) || '-'}</td>
+                      <td className="p-3 max-w-[180px] truncate">{pick(row, ['anchor', 'anchor text', 'link text']) || '-'}</td>
+                      <td className="p-3">{pick(row, ['type', 'rel', 'follow']) || '-'}</td>
                     </tr>
                   ))}
                 </tbody>

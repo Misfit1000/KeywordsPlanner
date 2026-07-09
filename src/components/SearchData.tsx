@@ -44,6 +44,26 @@ export default function SearchData() {
     const queries = new Set(rows.map((row) => pick(row, ['query', 'keyword', 'search term'])).filter(Boolean));
     return { clicks, impressions, avgPosition, queries: queries.size };
   }, [rows]);
+  const ctrOpportunities = useMemo(() => {
+    return rows
+      .map((row) => {
+        const clicks = numberPick(row, ['clicks']);
+        const impressions = numberPick(row, ['impressions']);
+        const ctrRaw = pick(row, ['ctr', 'click through rate']);
+        const ctr = ctrRaw ? Number(ctrRaw.replace('%', '')) : (impressions ? (clicks / impressions) * 100 : 0);
+        return {
+          query: pick(row, ['query', 'keyword', 'search term']) || '-',
+          page: pick(row, ['page', 'url', 'landing page']) || '-',
+          clicks,
+          impressions,
+          ctr,
+          position: pick(row, ['position', 'avg position', 'average position']) || '-',
+        };
+      })
+      .filter((row) => row.impressions >= 100 && row.ctr < 2.5)
+      .sort((a, b) => b.impressions - a.impressions)
+      .slice(0, 8);
+  }, [rows]);
 
   return (
     <div className="space-y-8 animate-rise">
@@ -77,43 +97,79 @@ export default function SearchData() {
           </div>
         </SurfaceCard>
       ) : (
-        <SurfaceCard className="overflow-hidden">
-          <div className="border-b border-border bg-card px-5 py-4">
-            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <>
+          <SurfaceCard className="p-6">
+            <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
               <div>
-                <h3 className="text-xl font-bold">Imported performance rows</h3>
-                <p className="mt-1 text-sm text-muted-foreground">Showing the first 100 rows from your local import.</p>
+                <h3 className="text-xl font-bold">High-impression, low-click opportunities</h3>
+                <p className="mt-1 text-sm text-muted-foreground">Rows with impressions but weak CTR. Use these for title, description, and search preview fixes.</p>
               </div>
               <StatusBadge tone="success">Real imported data</StatusBadge>
             </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="suite-table min-w-[760px]">
-              <thead>
-                <tr>
-                  <th>Query</th>
-                  <th>Page</th>
-                  <th>Clicks</th>
-                  <th>Impressions</th>
-                  <th>CTR</th>
-                  <th>Position</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.slice(0, 100).map((row, index) => (
-                  <tr key={index}>
-                    <td className="font-semibold">{pick(row, ['query', 'keyword', 'search term']) || '-'}</td>
-                    <td className="max-w-[320px] truncate text-muted-foreground">{pick(row, ['page', 'url', 'landing page']) || '-'}</td>
-                    <td>{pick(row, ['clicks']) || '-'}</td>
-                    <td>{pick(row, ['impressions']) || '-'}</td>
-                    <td>{pick(row, ['ctr', 'click through rate']) || '-'}</td>
-                    <td className="font-bold">{pick(row, ['position', 'avg position', 'average position']) || '-'}</td>
-                  </tr>
+            {ctrOpportunities.length === 0 ? (
+              <div className="rounded-2xl border border-border bg-muted/30 p-5 text-sm text-muted-foreground">
+                No imported rows match the current opportunity rule. Import rows with clicks, impressions, CTR, and position for deeper analysis.
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                {ctrOpportunities.map((row, index) => (
+                  <div key={`${row.query}-${index}`} className="rounded-2xl border border-border bg-background/70 p-4">
+                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <h4 className="font-bold">{row.query}</h4>
+                        <p className="mt-1 max-w-3xl truncate text-sm text-muted-foreground">{row.page}</p>
+                      </div>
+                      <StatusBadge tone="warning">{row.ctr.toFixed(1)}% CTR</StatusBadge>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-sm md:grid-cols-3">
+                      <div className="rounded-xl bg-muted/40 p-3"><span className="text-muted-foreground">Impressions</span><div className="font-black">{row.impressions}</div></div>
+                      <div className="rounded-xl bg-muted/40 p-3"><span className="text-muted-foreground">Clicks</span><div className="font-black">{row.clicks}</div></div>
+                      <div className="rounded-xl bg-muted/40 p-3"><span className="text-muted-foreground">Position</span><div className="font-black">{row.position}</div></div>
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </SurfaceCard>
+              </div>
+            )}
+          </SurfaceCard>
+
+          <SurfaceCard className="overflow-hidden">
+            <div className="border-b border-border bg-card px-5 py-4">
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h3 className="text-xl font-bold">Imported performance rows</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">Showing the first 100 rows from your local import.</p>
+                </div>
+                <StatusBadge tone="success">Real imported data</StatusBadge>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="suite-table min-w-[760px]">
+                <thead>
+                  <tr>
+                    <th>Query</th>
+                    <th>Page</th>
+                    <th>Clicks</th>
+                    <th>Impressions</th>
+                    <th>CTR</th>
+                    <th>Position</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.slice(0, 100).map((row, index) => (
+                    <tr key={index}>
+                      <td className="font-semibold">{pick(row, ['query', 'keyword', 'search term']) || '-'}</td>
+                      <td className="max-w-[320px] truncate text-muted-foreground">{pick(row, ['page', 'url', 'landing page']) || '-'}</td>
+                      <td>{pick(row, ['clicks']) || '-'}</td>
+                      <td>{pick(row, ['impressions']) || '-'}</td>
+                      <td>{pick(row, ['ctr', 'click through rate']) || '-'}</td>
+                      <td className="font-bold">{pick(row, ['position', 'avg position', 'average position']) || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </SurfaceCard>
+        </>
       )}
 
       <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm leading-6 text-amber-800 dark:text-amber-200">

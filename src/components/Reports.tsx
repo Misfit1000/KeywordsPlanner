@@ -1,9 +1,19 @@
-import React, { useState } from "react";
-import { PieChart, Download, Loader2, FileJson, FileSpreadsheet, Printer, ShieldCheck, AlertTriangle, Search, Lock } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { PieChart, Download, Loader2, FileJson, FileSpreadsheet, Printer, ShieldCheck, AlertTriangle, Search, Lock, Clipboard, History, Share2 } from "lucide-react";
 import { BarList, CategoryScoreBar, MetricCard, RadialScoreGauge, SectionHeader, SeverityDistribution, SitePreviewSection, StatusBadge, SurfaceCard } from './ui/visual-system';
+import { readAuditHistory, type AuditHistoryEntry } from '../lib/audit/client-insights';
 
 export default function Reports() {
   const [loading, setLoading] = useState<string | null>(null);
+  const [history, setHistory] = useState<AuditHistoryEntry[]>([]);
+  const [shareMessage, setShareMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setHistory(readAuditHistory());
+  }, []);
+
+  const latest = history[0] || null;
+  const groupedSites = useMemo(() => new Set(history.map((entry) => entry.normalizedUrl)).size, [history]);
 
   const handleExportJson = () => {
     setLoading('json');
@@ -60,6 +70,22 @@ export default function Reports() {
     window.print();
   }
 
+  const copyLatestReportLink = async () => {
+    if (!latest) {
+      setShareMessage('Run an audit first to create a report link.');
+      window.setTimeout(() => setShareMessage(null), 2500);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/audit/live/${latest.auditId}`);
+      setShareMessage('Latest report link copied.');
+    } catch {
+      setShareMessage('Copy failed. Open the latest audit and copy the browser URL.');
+    } finally {
+      window.setTimeout(() => setShareMessage(null), 2500);
+    }
+  };
+
   return (
     <div className="w-full space-y-8 animate-rise">
       <SectionHeader
@@ -72,8 +98,60 @@ export default function Reports() {
         <MetricCard label="Overall score" value="84" detail="Latest report sample" icon={<PieChart className="h-6 w-6" />} tone="green" />
         <MetricCard label="Urgent fixes" value="3" detail="Fix these first" icon={<AlertTriangle className="h-6 w-6" />} tone="red" />
         <MetricCard label="Browser safety" value="A-" detail="Non-invasive checks" icon={<ShieldCheck className="h-6 w-6" />} tone="green" />
-        <MetricCard label="Export formats" value="3" detail="JSON, CSV, PDF" icon={<Download className="h-6 w-6" />} tone="accent" />
+        <MetricCard label="Saved audits" value={history.length || "-"} detail={`${groupedSites || 0} tracked site${groupedSites === 1 ? '' : 's'}`} icon={<History className="h-6 w-6" />} tone="accent" />
       </div>
+
+      <SurfaceCard className="p-6">
+        <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
+          <div>
+            <div className="suite-chip mb-3 text-accent">Agency delivery</div>
+            <h2 className="text-2xl font-bold">Audit history and shareable reports</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Completed live audits are saved in this browser so agencies can revisit report links, compare site progress, and prepare client exports without storing fake SEO data.
+            </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <button onClick={copyLatestReportLink} className="trust-button">
+                <Share2 className="h-4 w-4" /> Copy latest report link
+              </button>
+              <button onClick={handlePrint} className="quiet-button">
+                <Printer className="h-4 w-4" /> Print client report
+              </button>
+            </div>
+            {shareMessage && (
+              <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+                <Clipboard className="mr-2 inline h-4 w-4" />
+                {shareMessage}
+              </div>
+            )}
+          </div>
+          <div className="overflow-hidden rounded-2xl border border-border">
+            <table className="suite-table">
+              <thead>
+                <tr>
+                  <th>Site</th>
+                  <th>Score</th>
+                  <th>Open fixes</th>
+                  <th>Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="text-center text-muted-foreground">Run a live audit to build report history.</td>
+                  </tr>
+                ) : history.slice(0, 6).map((entry) => (
+                  <tr key={entry.auditId}>
+                    <td className="max-w-[340px] truncate font-semibold">{entry.normalizedUrl}</td>
+                    <td className="font-black text-accent">{entry.score}</td>
+                    <td>{entry.issuesFound}</td>
+                    <td className="text-muted-foreground">{new Date(entry.updatedAt).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </SurfaceCard>
 
       <div className="grid gap-6 xl:grid-cols-2">
         <SurfaceCard className="p-6">

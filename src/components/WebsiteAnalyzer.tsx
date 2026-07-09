@@ -4,7 +4,7 @@ import { createAuditSubmitGuard } from '../lib/api/audit-submit-guard';
 import { safeJsonFetch } from '../lib/http/safe-json';
 import React, { useEffect, useRef, useState } from 'react';
 import { LiveAuditProgress } from './audit/LiveAuditProgress';
-import { Globe, Loader2, FileText, AlertTriangle, CheckCircle2, Layers } from 'lucide-react';
+import { Globe, Loader2, FileText, AlertTriangle, CheckCircle2, Layers, Search, Link2, ShieldCheck, Route } from 'lucide-react';
 import { ParsedPageData } from '../lib/seo/html-parser';
 import { AuditResult } from '../lib/audit/types';
 import { useAuth } from '../contexts/AuthContext';
@@ -28,6 +28,13 @@ export default function WebsiteAnalyzer() {
   const plan = user?.plan || 'free';
   const canUseStandard = plan === 'paid' || plan === 'agency' || plan === 'admin';
   const canUseDeep = plan === 'agency' || plan === 'admin';
+  const freeMiniTools = [
+    { title: 'Title and description checker', text: 'Review title, meta description, and Google-style preview quality.', icon: Search },
+    { title: 'SERP preview checker', text: 'See if the page snippet is clear before users click.', icon: FileText },
+    { title: 'Redirect and status checker', text: 'Check final URL, status code, response timing, and redirect health.', icon: Route },
+    { title: 'Sitemap and search access checker', text: 'Review sitemap and search engine access signals.', icon: Link2 },
+    { title: 'Passive browser safety checker', text: 'Check HTTPS and public browser protection signals safely.', icon: ShieldCheck },
+  ];
 
   useEffect(() => {
     if (mode === 'standard' && !canUseStandard) setMode('quick');
@@ -75,7 +82,10 @@ export default function WebsiteAnalyzer() {
         </div>
         <LiveAuditProgress 
           auditId={auditId} 
-           
+          onRerun={(nextUrl) => {
+            setUrl(nextUrl);
+            setAuditId(null);
+          }}
           onComplete={async () => {
              try {
                 const dataResp = await safeJsonFetch<any>(API_ROUTES.auditResult(auditId));
@@ -141,6 +151,27 @@ export default function WebsiteAnalyzer() {
             Deep scans may take longer and require more audit engine capacity.
           </div>
         )}
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        {freeMiniTools.map((tool) => {
+          const Icon = tool.icon;
+          return (
+            <button
+              key={tool.title}
+              type="button"
+              onClick={() => setMode('quick')}
+              className="trust-card p-5 text-left"
+            >
+              <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-accent/10 text-accent">
+                <Icon className="h-5 w-5" />
+              </div>
+              <h3 className="font-bold">{tool.title}</h3>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">{tool.text}</p>
+              <span className="mt-4 inline-flex text-sm font-bold text-accent">Use quick audit</span>
+            </button>
+          );
+        })}
       </div>
 
       {error && (

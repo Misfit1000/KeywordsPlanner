@@ -351,7 +351,7 @@ export default function App() {
         </header>
         <main className="w-full p-4 md:p-8">
           <Suspense fallback={<div className="h-64 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-accent" /></div>}>
-            <LiveAuditProgress auditId={liveAuditId} />
+            <LiveAuditProgress auditId={liveAuditId} onRerun={(url) => startLiveAudit(url, 'quick')} />
           </Suspense>
         </main>
       </div>
