@@ -6,6 +6,7 @@ import { getAuditModeLabel } from '../../lib/audit/audit-config';
 import { isAuditQueuedTooLong } from '../../lib/audit/queued-worker-warning';
 import { API_ROUTES } from '../../lib/api/routes';
 import { safeJsonFetch } from '../../lib/http/safe-json';
+import { formatAuditElapsed, isTerminalAuditStatus } from '../../lib/audit/audit-time';
 import { CategoryScoreBar, MetricCard, ProgressBar, RadialScoreGauge, SeverityDistribution, SitePreviewSection, StatusBadge, SurfaceCard } from '../ui/visual-system';
 import {
   buildHistoryEntry,
@@ -38,13 +39,6 @@ function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function elapsed(createdAt?: string) {
-  if (!createdAt) return '0s';
-  const seconds = Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
 function severityClass(severity: string) {
@@ -118,6 +112,8 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
   const [isCancelling, setIsCancelling] = useState(false);
   const [checklist, setChecklist] = useState<Record<string, ChecklistStatus>>({});
   const [shareMessage, setShareMessage] = useState<string | null>(null);
+  const audit = data.audit;
+  const shouldRunClock = !audit || !isTerminalAuditStatus(audit.status);
 
   useEffect(() => {
     let isActive = true;
@@ -158,9 +154,10 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
   }, [auditId, onComplete]);
 
   useEffect(() => {
+    if (!shouldRunClock) return;
     const interval = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(interval);
-  }, []);
+  }, [shouldRunClock]);
 
   useEffect(() => {
     setChecklist(readChecklist(auditId));
@@ -172,7 +169,6 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
     }
   }, [data]);
 
-  const audit = data.audit;
   const latestEvent = data.latestEvents[data.latestEvents.length - 1];
   const currentWork = useMemo(() => {
     if (!audit) {
@@ -316,6 +312,7 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
   const scoreTrend = scoreTrendForUrl(audit.normalizedUrl, history);
   const crawlDepth = crawlDepthDistribution(data.latestPages);
   const pageBuckets = pageHealthBuckets(data.latestPages);
+  const elapsedTime = formatAuditElapsed(audit, now);
 
   return (
     <div className="w-full space-y-6 animate-rise">
@@ -346,7 +343,7 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
                 <MetricCard label="Pages scanned" value={`${audit.pagesCrawled}/${audit.pageLimit}`} icon={<Clock className="h-5 w-5" />} />
                 <MetricCard label="Fixes found" value={audit.issuesFound} icon={<AlertTriangle className="h-5 w-5" />} tone={audit.criticalCount ? 'red' : 'yellow'} />
                 <MetricCard label="Urgent / high" value={`${audit.criticalCount}/${audit.highCount}`} icon={<ShieldAlert className="h-5 w-5" />} tone={audit.criticalCount ? 'red' : 'yellow'} />
-                <MetricCard label="Time elapsed" value={elapsed(audit.createdAt)} icon={<Activity className="h-5 w-5" />} tone="blue" />
+                <MetricCard label="Time elapsed" value={elapsedTime} icon={<Activity className="h-5 w-5" />} tone="blue" />
               </div>
             </div>
           </div>
@@ -479,7 +476,7 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
           <Info label="Check running" value={humanizeAuditText(audit.currentCheck) || statusLabel(audit.status)} />
           <Info label="Pages" value={`${audit.pagesCrawled} / ${audit.pageLimit}`} />
           <Info label="Fixes found" value={String(audit.issuesFound)} />
-          <Info label="Elapsed" value={elapsed(audit.createdAt)} />
+          <Info label="Elapsed" value={elapsedTime} />
           <Info label="Browser safety" value="Non-invasive checks only" />
         </div>
       </div>

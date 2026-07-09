@@ -47,9 +47,10 @@ interface SidebarProps {
   onClose: () => void;
   activeTab: TabType;
   setActiveTab: (tab: TabType) => void;
+  onOpenHelp?: () => void;
 }
 
-export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab }: SidebarProps) {
+export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOpenHelp }: SidebarProps) {
   const { user } = useAuth();
 
   const filteredGroups = navGroups
@@ -64,11 +65,11 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab }: Si
       {isOpen && <div onClick={onClose} className="fixed inset-0 z-40 bg-background/70 backdrop-blur-sm lg:hidden" />}
 
       {isOpen && (
-        <aside className="fixed left-0 top-[4.5rem] z-50 flex h-[calc(100vh-4.5rem)] w-[18rem] flex-col overflow-hidden border-r border-border bg-card/92 shadow-2xl shadow-slate-950/10 backdrop-blur-xl lg:sticky dark:shadow-black/30">
+        <aside className="fixed left-0 top-[4.5rem] z-50 flex h-[calc(100vh-4.5rem)] w-[18rem] flex-col overflow-hidden border-r border-border bg-card/92 shadow-lg shadow-slate-950/10 backdrop-blur-xl lg:sticky dark:shadow-black/30">
           <div className="border-b border-border p-5">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-black">SEO suite</div>
+                <div className="text-sm font-bold">SEO suite</div>
                 <div className="text-xs text-muted-foreground">Audit, data, reports</div>
               </div>
               <button onClick={onClose} className="rounded-xl p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden" aria-label="Close navigation">
@@ -80,7 +81,7 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab }: Si
           <nav className="flex-1 space-y-5 overflow-y-auto p-4" aria-label="Main navigation">
             {filteredGroups.map((group) => (
               <div key={group.title}>
-                <div className="mb-2 px-2 text-[0.68rem] font-black uppercase tracking-[0.16em] text-muted-foreground">{group.title}</div>
+                <div className="mb-2 px-2 text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground">{group.title}</div>
                 <div className="space-y-1">
                   {group.items.map((item) => {
                     const isActive = activeTab === item.id;
@@ -124,7 +125,14 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab }: Si
                 <span className="block text-xs text-muted-foreground">Account and preferences</span>
               </span>
             </button>
-            <button type="button" className="mt-1 flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+            <button
+              type="button"
+              onClick={() => {
+                onOpenHelp?.();
+                if (window.innerWidth < 1024) onClose();
+              }}
+              className="mt-1 flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
               <HelpCircle className="h-5 w-5 text-accent" />
               <span>
                 <span className="block text-sm font-bold">Help</span>

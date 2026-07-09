@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { Search, LogOut, User, Menu, Mail, Loader2, TrendingUp } from 'lucide-react';
-import LandingPage from './components/LandingPage';
+import LandingPage, { type LandingDestination } from './components/LandingPage';
 import { useAuth } from './contexts/AuthContext';
 import { useTheme } from './contexts/ThemeContext';
 import { API_ROUTES } from './lib/api/routes';
@@ -307,6 +307,29 @@ export default function App() {
     }
   };
 
+  const openHomeSection = (sectionId: string) => {
+    setLiveAuditId(null);
+    setIsSearching(false);
+    window.history.pushState(null, '', '/');
+    window.setTimeout(() => {
+      document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+  };
+
+  const openAppTab = (tab: TabType) => {
+    setActiveTab(tab);
+    setIsSearching(true);
+    window.history.pushState(null, '', '/');
+  };
+
+  const handleLandingNavigate = (destination: LandingDestination) => {
+    if (destination === 'start-audit') {
+      openHomeSection('start-audit');
+      return;
+    }
+    openAppTab(destination);
+  };
+
   if (unverifiedEmail) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -524,9 +547,9 @@ export default function App() {
                   }
                 }}
                 onExploreFeatures={() => {
-                  setActiveTab('dashboard');
-                  setIsSearching(true);
+                  openAppTab('dashboard');
                 }}
+                onNavigate={handleLandingNavigate}
               />
               {startAuditError && (
                 <div className="mx-auto mb-6 w-[min(92vw,720px)] rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-500">
@@ -628,6 +651,7 @@ export default function App() {
                     onClose={() => setIsSidebarOpen(false)}
                     activeTab={activeTab}
                     setActiveTab={setActiveTab}
+                    onOpenHelp={() => openHomeSection('faq')}
                   />
                 </Suspense>
                 <main className="w-full flex-1">

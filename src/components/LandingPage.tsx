@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -42,9 +42,21 @@ import {
 interface Props {
   onStartAudit: (url: string) => Promise<void> | void;
   onExploreFeatures: () => void;
+  onNavigate: (destination: LandingDestination) => void;
 }
 
 type IconType = React.ComponentType<{ className?: string }>;
+export type LandingDestination =
+  | 'dashboard'
+  | 'website-analyzer'
+  | 'seo-audit'
+  | 'security-audit'
+  | 'reports'
+  | 'imports'
+  | 'rank-tracker'
+  | 'search-data'
+  | 'keyword-research'
+  | 'start-audit';
 
 const trustBullets = [
   'Worker-backed live audits',
@@ -62,9 +74,9 @@ const credibilityBadges: Array<{ icon: IconType; title: string; description: str
 ];
 
 const platformStats = [
-  { label: 'Audits run', value: '1,284', note: 'Demo platform counter', icon: Activity },
-  { label: 'Pages checked', value: '9,760', note: 'Demo platform counter', icon: Globe },
-  { label: 'Issue types detected', value: '40+', note: 'Deterministic check coverage', icon: AlertTriangle },
+  { label: 'Audits run', value: 1284, suffix: '', note: 'Demo platform counter', icon: Activity },
+  { label: 'Pages checked', value: 9760, suffix: '', note: 'Demo platform counter', icon: Globe },
+  { label: 'Issue types detected', value: 40, suffix: '+', note: 'Deterministic check coverage', icon: AlertTriangle },
 ];
 
 const featureHighlights = [
@@ -73,28 +85,32 @@ const featureHighlights = [
     title: 'SEO Audit',
     description: 'Find search visibility issues that affect how pages are understood and shown.',
     checks: ['Title and meta description checks', 'Heading and image alt review', 'Google-style SERP preview'],
-    cta: <a href="#audit-checks" className="text-sm font-bold text-accent">See SEO checks</a>,
+    cta: 'Open SEO audit',
+    action: 'seo-audit' as LandingDestination,
   },
   {
     icon: Gauge,
     title: 'Technical SEO',
     description: 'Review crawlability, redirects, response signals, and access rules in plain language.',
     checks: ['Status codes and redirects', 'Robots and sitemap signals', 'Page size and response timing'],
-    cta: <a href="#audit-checks" className="text-sm font-bold text-accent">See technical checks</a>,
+    cta: 'Open website scan',
+    action: 'website-analyzer' as LandingDestination,
   },
   {
     icon: ShieldCheck,
     title: 'Passive Security',
     description: 'Check public browser-safety signals without scans that attack or exploit the site.',
     checks: ['HTTPS and HSTS review', 'CSP and frame protection', 'Mixed-content warning signals'],
-    cta: <a href="#audit-checks" className="text-sm font-bold text-accent">See safety checks</a>,
+    cta: 'Open safety check',
+    action: 'security-audit' as LandingDestination,
   },
   {
     icon: Briefcase,
     title: 'Visual Reports',
     description: 'Turn audit findings into executive summaries, previews, and top-fix lists.',
     checks: ['Overall and category scores', 'Severity distribution', 'Desktop, mobile, and SERP previews'],
-    cta: <a href="#reports" className="text-sm font-bold text-accent">See report preview</a>,
+    cta: 'Open reports',
+    action: 'reports' as LandingDestination,
   },
 ];
 
@@ -126,6 +142,8 @@ const suiteFeatures: Array<{
   description: string;
   status: string;
   points: string[];
+  cta: string;
+  action: LandingDestination;
   muted?: boolean;
 }> = [
   {
@@ -135,6 +153,8 @@ const suiteFeatures: Array<{
     description: 'Run a live website scan that checks public pages and turns findings into clear next steps.',
     status: 'Live',
     points: ['Titles and descriptions', 'Headings and page structure', 'Internal links and image descriptions'],
+    cta: 'Run website audit',
+    action: 'website-analyzer',
   },
   {
     icon: Monitor,
@@ -143,6 +163,8 @@ const suiteFeatures: Array<{
     description: 'See desktop, mobile, and search result previews near the executive summary.',
     status: 'Live',
     points: ['SERP snippet preview', 'Mobile preview concept', 'Desktop report context'],
+    cta: 'Open reports',
+    action: 'reports',
   },
   {
     icon: Gauge,
@@ -151,6 +173,8 @@ const suiteFeatures: Array<{
     description: 'Find redirects, slow responses, oversized pages, status codes, and confusing page signals.',
     status: 'Live',
     points: ['Status code review', 'Redirect and URL health', 'Resource and page-size signals'],
+    cta: 'Open website scan',
+    action: 'website-analyzer',
   },
   {
     icon: ShieldCheck,
@@ -159,6 +183,8 @@ const suiteFeatures: Array<{
     description: 'Review public HTTPS and browser protection settings without probing or attacking the site.',
     status: 'Live',
     points: ['HTTPS checks', 'Browser security protections', 'Non-invasive only'],
+    cta: 'Check browser safety',
+    action: 'security-audit',
   },
   {
     icon: FileText,
@@ -167,6 +193,8 @@ const suiteFeatures: Array<{
     description: 'Use deterministic content checks and add your own keyword notes where external data is needed.',
     status: 'Import-ready',
     points: ['Content structure checks', 'Manual keyword notes', 'No search-volume claims'],
+    cta: 'Open keyword tools',
+    action: 'keyword-research',
   },
   {
     icon: Upload,
@@ -175,6 +203,8 @@ const suiteFeatures: Array<{
     description: 'Plan ranking views around CSV or provider exports instead of pretending SEOIntel has paid ranking feeds.',
     status: 'Import-only',
     points: ['CSV-friendly direction', 'Separated from audit results', 'No paid provider lock-in'],
+    cta: 'Open imports',
+    action: 'rank-tracker',
     muted: true,
   },
   {
@@ -184,6 +214,8 @@ const suiteFeatures: Array<{
     description: 'Backlink areas are framed for imported data until a real provider is intentionally added later.',
     status: 'Import-only',
     points: ['External data stays labeled', 'No fake backlink counts', 'Report-ready structure'],
+    cta: 'Open imports',
+    action: 'imports',
     muted: true,
   },
   {
@@ -193,6 +225,8 @@ const suiteFeatures: Array<{
     description: 'Competitor analysis remains a roadmap area until background worker support is available.',
     status: 'Coming soon',
     points: ['No serverless crawl loops', 'Worker-ready direction', 'Clear expectation setting'],
+    cta: 'Open dashboard',
+    action: 'dashboard',
     muted: true,
   },
   {
@@ -202,6 +236,8 @@ const suiteFeatures: Array<{
     description: 'Create client-friendly audit summaries with top fixes first and technical details second.',
     status: 'Live',
     points: ['Executive summary', 'Fix priority cards', 'Printable report layout'],
+    cta: 'Open reports',
+    action: 'reports',
   },
 ];
 
@@ -209,15 +245,17 @@ const freeTools: Array<{
   icon: IconType;
   title: string;
   description: string;
-  href: string;
   label?: string;
+  cta?: string;
+  action: LandingDestination;
   group: 'On-page SEO' | 'Technical SEO' | 'Passive Security' | 'Import-ready data';
 }> = [
   {
     icon: Zap,
     title: 'Quick SEO Checker',
     description: 'Start a resource-light website scan and get a live fix list.',
-    href: '#start-audit',
+    action: 'start-audit',
+    cta: 'Start quick audit',
     label: 'Live',
     group: 'On-page SEO',
   },
@@ -225,7 +263,8 @@ const freeTools: Array<{
     icon: Search,
     title: 'Title and Description Checker',
     description: 'Review page titles, meta descriptions, and search preview length.',
-    href: '#features',
+    action: 'website-analyzer',
+    cta: 'Open website scan',
     label: 'Live',
     group: 'On-page SEO',
   },
@@ -233,7 +272,8 @@ const freeTools: Array<{
     icon: Monitor,
     title: 'Google Preview Tool',
     description: 'Preview how a page title, URL, and description can look in search.',
-    href: '#reports',
+    action: 'reports',
+    cta: 'Open report preview',
     label: 'Live',
     group: 'On-page SEO',
   },
@@ -241,7 +281,8 @@ const freeTools: Array<{
     icon: Gauge,
     title: 'Technical SEO Checker',
     description: 'Review status codes, redirects, access rules, response timing, and page-size signals.',
-    href: '#audit-checks',
+    action: 'website-analyzer',
+    cta: 'Open technical scan',
     label: 'Live',
     group: 'Technical SEO',
   },
@@ -249,7 +290,8 @@ const freeTools: Array<{
     icon: Activity,
     title: 'Redirect and URL Health Checker',
     description: 'Check status codes, redirects, and normalized URLs in plain language.',
-    href: '#audit-checks',
+    action: 'website-analyzer',
+    cta: 'Open URL checker',
     label: 'Live',
     group: 'Technical SEO',
   },
@@ -257,7 +299,8 @@ const freeTools: Array<{
     icon: Globe,
     title: 'Sitemap and Search Access Checker',
     description: 'Look for sitemap signals and search engine access rules.',
-    href: '#audit-checks',
+    action: 'website-analyzer',
+    cta: 'Open scan tools',
     label: 'Live',
     group: 'Technical SEO',
   },
@@ -265,7 +308,8 @@ const freeTools: Array<{
     icon: ShieldCheck,
     title: 'Passive Security Checker',
     description: 'Review HTTPS and public browser protection settings safely.',
-    href: '#audit-checks',
+    action: 'security-audit',
+    cta: 'Open safety checker',
     label: 'Live',
     group: 'Passive Security',
   },
@@ -273,7 +317,8 @@ const freeTools: Array<{
     icon: FileText,
     title: 'Keyword Notes Workspace',
     description: 'Bring your own keyword data. SEOIntel does not invent search volume or CPC.',
-    href: '#resources',
+    action: 'keyword-research',
+    cta: 'Open keyword tools',
     label: 'Import-ready',
     group: 'Import-ready data',
   },
@@ -281,7 +326,8 @@ const freeTools: Array<{
     icon: BarChart3,
     title: 'Ranking Data Import',
     description: 'Provider export required. No fake Google ranking positions are shown.',
-    href: '#resources',
+    action: 'rank-tracker',
+    cta: 'Open ranking imports',
     label: 'Provider required',
     group: 'Import-ready data',
   },
@@ -289,7 +335,8 @@ const freeTools: Array<{
     icon: Link2,
     title: 'Backlink Data Import',
     description: 'Import backlink exports later instead of pretending to own a backlink database.',
-    href: '#resources',
+    action: 'imports',
+    cta: 'Open data imports',
     label: 'Provider required',
     group: 'Import-ready data',
   },
@@ -334,7 +381,7 @@ const planCards: Array<{
   description: string;
   features: string[];
   cta: string;
-  href?: string;
+  action: LandingDestination;
   featured?: boolean;
   note: string;
 }> = [
@@ -344,7 +391,7 @@ const planCards: Array<{
     description: 'Best for checking one public site quickly.',
     features: ['Quick 5-page scan', '3 daily / 30 monthly audits', 'SEO and passive safety checks', 'One active free audit at a time'],
     cta: 'Start free audit',
-    href: '#start-audit',
+    action: 'start-audit',
     note: 'Designed to stay fast and resource-light.',
   },
   {
@@ -353,6 +400,7 @@ const planCards: Array<{
     description: 'For owners and teams that need deeper reporting.',
     features: ['Standard 25-page scan', '25 daily / 500 monthly audits', 'Higher queue priority', 'Export-friendly client summaries'],
     cta: 'Explore dashboard',
+    action: 'dashboard',
     featured: true,
     note: 'Uses the same worker-backed architecture with higher plan limits.',
   },
@@ -361,7 +409,8 @@ const planCards: Array<{
     price: 'Scale',
     description: 'For managing many sites and monitoring the audit engine.',
     features: ['Agency deep-ready scans when the worker supports them', 'Admin queue visibility', 'User and plan controls', 'Audit diagnostics'],
-    cta: 'Review admin flow',
+    cta: 'Open reports',
+    action: 'reports',
     note: 'Built around the current admin and plan behavior.',
   },
 ];
@@ -436,7 +485,7 @@ const faqs = [
   },
 ];
 
-export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) {
+export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigate }: Props) {
   const [url, setUrl] = useState('');
   const [starting, setStarting] = useState(false);
   const auditStartGuardRef = useRef(createAuditSubmitGuard());
@@ -532,7 +581,7 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
       </section>
 
       <section className="section-shell pb-16">
-        <div className="grid gap-4 rounded-[2rem] border border-border bg-card/80 p-4 shadow-2xl shadow-slate-950/5 md:grid-cols-3">
+        <div className="grid gap-4 rounded-[2rem] border border-border bg-card/80 p-4 shadow-md shadow-slate-950/5 md:grid-cols-3">
           {platformStats.map((stat) => (
             <StatBlock key={stat.label} {...stat} />
           ))}
@@ -548,7 +597,18 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
           />
           <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
             {featureHighlights.map((feature) => (
-              <FeatureProofCard key={feature.title} {...feature} />
+              <FeatureProofCard
+                key={feature.title}
+                icon={feature.icon}
+                title={feature.title}
+                description={feature.description}
+                checks={feature.checks}
+                cta={
+                  <button type="button" onClick={() => onNavigate(feature.action)} className="text-sm font-bold text-accent hover:underline">
+                    {feature.cta}
+                  </button>
+                }
+              />
             ))}
           </div>
         </div>
@@ -563,7 +623,21 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
         />
         <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {suiteFeatures.map((feature) => (
-            <FeatureSuiteCard key={feature.title} {...feature} />
+            <FeatureSuiteCard
+              key={feature.title}
+              icon={feature.icon}
+              eyebrow={feature.eyebrow}
+              title={feature.title}
+              description={feature.description}
+              status={feature.status}
+              points={feature.points}
+              muted={feature.muted}
+              cta={
+                <button type="button" onClick={() => onNavigate(feature.action)} className="quiet-button w-full justify-center">
+                  {feature.cta}
+                </button>
+              }
+            />
           ))}
         </div>
       </section>
@@ -590,7 +664,7 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
           />
           <div className="mt-10 grid gap-6 xl:grid-cols-2">
             {(['On-page SEO', 'Technical SEO', 'Passive Security', 'Import-ready data'] as const).map((group) => (
-              <ToolGroup key={group} title={group} tools={freeTools.filter((tool) => tool.group === group)} />
+              <ToolGroup key={group} title={group} tools={freeTools.filter((tool) => tool.group === group)} onNavigate={onNavigate} />
             ))}
           </div>
         </div>
@@ -620,14 +694,14 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
               SEOIntel now leads with score context, top fixes, page previews, and clear ranking-data status. Technical detail is still available, but the first view is built for fast decisions on desktop and mobile.
             </p>
           </div>
-          <ReportShowcase />
+          <ReportShowcase onNavigate={onNavigate} />
         </div>
       </section>
 
       <section id="pricing" className="border-y border-border bg-muted/30 py-16 md:py-20">
         <div className="section-shell">
           <div className="mb-10 text-center">
-            <div className="text-sm font-bold uppercase tracking-[0.18em] text-accent">Pricing</div>
+            <div className="text-sm font-bold uppercase tracking-wider text-accent">Pricing</div>
             <h2 className="mt-3 text-3xl font-bold md:text-4xl">Start free, then unlock deeper audits when you need them.</h2>
             <p className="mx-auto mt-3 max-w-2xl text-muted-foreground">
               The plan language matches the current free, paid, and admin behavior while keeping resource usage under control.
@@ -644,15 +718,9 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
                 featured={plan.featured}
                 note={plan.note}
                 cta={
-                  plan.href ? (
-                    <a href={plan.href} className="trust-button w-full justify-center">
-                      {plan.cta}
-                    </a>
-                  ) : (
-                    <button type="button" onClick={onExploreFeatures} className="trust-button w-full justify-center">
-                      {plan.cta}
-                    </button>
-                  )
+                  <button type="button" onClick={() => onNavigate(plan.action)} className="trust-button w-full justify-center">
+                    {plan.cta}
+                  </button>
                 }
               />
             ))}
@@ -664,7 +732,7 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
       <section id="resources" className="section-shell py-16 md:py-20">
         <div className="grid gap-8 lg:grid-cols-[0.72fr_1.28fr]">
           <div>
-            <div className="text-sm font-bold uppercase tracking-[0.18em] text-accent">Resources</div>
+            <div className="text-sm font-bold uppercase tracking-wider text-accent">Resources</div>
             <h2 className="mt-3 text-3xl font-bold md:text-4xl">Make the product feel complete without making unsupported promises.</h2>
             <p className="mt-3 text-muted-foreground">
               Resource links are organized like a real SEO suite, but each item points to actual audit features, free checks, or honest setup guidance.
@@ -705,7 +773,7 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
       <section id="faq" className="section-shell pb-20">
         <div className="grid gap-8 lg:grid-cols-[0.8fr_1.2fr]">
           <div>
-            <div className="text-sm font-bold uppercase tracking-[0.18em] text-accent">FAQ</div>
+            <div className="text-sm font-bold uppercase tracking-wider text-accent">FAQ</div>
             <h2 className="mt-3 text-3xl font-bold md:text-4xl">Clear expectations before someone starts.</h2>
           </div>
           <div className="space-y-3">
@@ -748,23 +816,47 @@ function CredibilityBadge({ icon: Icon, title, description }: { icon: IconType; 
   );
 }
 
-function StatBlock({ icon: Icon, label, value, note }: { icon: IconType; label: string; value: string; note: string }) {
+function useCountUp(target: number, durationMs = 900) {
+  const [value, setValue] = useState(0);
+
+  useEffect(() => {
+    let frame = 0;
+    const startedAt = performance.now();
+
+    const tick = (time: number) => {
+      const progress = Math.min(1, (time - startedAt) / durationMs);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setValue(Math.round(target * eased));
+      if (progress < 1) frame = window.requestAnimationFrame(tick);
+    };
+
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [durationMs, target]);
+
+  return value;
+}
+
+function StatBlock({ icon: Icon, label, value, suffix, note }: { icon: IconType; label: string; value: number; suffix: string; note: string }) {
+  const animatedValue = useCountUp(value);
+  const displayValue = `${new Intl.NumberFormat('en-US').format(animatedValue)}${suffix}`;
+
   return (
-    <div className="group rounded-[1.5rem] border border-border bg-background/80 p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
+    <div className="group rounded-[1.5rem] border border-border bg-background/80 p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/10 text-accent transition-colors group-hover:bg-accent group-hover:text-accent-foreground">
           <Icon className="h-6 w-6" />
         </div>
         <StatusBadge tone="accent">Preview</StatusBadge>
       </div>
-      <div className="text-4xl font-bold tracking-tight">{value}</div>
+      <div className="text-4xl font-bold tracking-tight">{displayValue}</div>
       <div className="mt-1 font-semibold">{label}</div>
       <p className="mt-2 text-xs leading-5 text-muted-foreground">{note}</p>
     </div>
   );
 }
 
-function ToolGroup({ title, tools }: { title: string; tools: typeof freeTools }) {
+function ToolGroup({ title, tools, onNavigate }: { title: string; tools: typeof freeTools; onNavigate: (destination: LandingDestination) => void }) {
   return (
     <SurfaceCard className="p-5">
       <div className="mb-5 flex items-center justify-between gap-3">
@@ -773,22 +865,36 @@ function ToolGroup({ title, tools }: { title: string; tools: typeof freeTools })
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         {tools.map((tool) => (
-          <ToolCard key={tool.title} {...tool} />
+          <ToolCard
+            key={tool.title}
+            icon={tool.icon}
+            title={tool.title}
+            description={tool.description}
+            label={tool.label}
+            cta={tool.cta}
+            onClick={() => onNavigate(tool.action)}
+          />
         ))}
       </div>
     </SurfaceCard>
   );
 }
 
-function ReportShowcase() {
+function ReportShowcase({ onNavigate }: { onNavigate: (destination: LandingDestination) => void }) {
+  const [activeView, setActiveView] = useState<'summary' | 'previews' | 'imports'>('summary');
   const issueRows = [
     { title: 'Missing or weak page title', detail: 'The page title is short or unclear for search snippets.', severity: 'high' as const },
     { title: 'Meta description needs a rewrite', detail: 'The Google-style preview may not explain the page clearly.', severity: 'medium' as const },
     { title: 'Browser protection headers incomplete', detail: 'Passive checks found missing browser-safety protections.', severity: 'medium' as const },
   ];
+  const viewCopy = {
+    summary: 'Top fixes and score cards stay first so report readers know what to do next.',
+    previews: 'Desktop, mobile, and Google-style previews give visual context before the technical detail.',
+    imports: 'Ranking tables stay empty until real GSC, Bing, CSV, or provider rows are imported.',
+  };
 
   return (
-    <div className="mt-10 w-full min-w-0 overflow-hidden rounded-[2rem] border border-border bg-card shadow-2xl shadow-slate-950/10 dark:shadow-black/40">
+      <div className="mt-10 w-full min-w-0 overflow-hidden rounded-[2rem] border border-border bg-card shadow-lg shadow-slate-950/10 dark:shadow-black/40">
       <div className="border-b border-border bg-background/80 px-4 py-3 sm:px-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex min-w-0 items-center gap-3">
@@ -801,6 +907,32 @@ function ReportShowcase() {
             <StatusBadge tone="success">Realtime audit</StatusBadge>
             <StatusBadge tone="accent">Visual report</StatusBadge>
             <StatusBadge tone="warning">Ranking import ready</StatusBadge>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="inline-flex w-full rounded-2xl border border-border bg-card p-1 text-sm font-semibold sm:w-auto">
+            {[
+              ['summary', 'Summary'],
+              ['previews', 'Previews'],
+              ['imports', 'Imports'],
+            ].map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setActiveView(id as typeof activeView)}
+                className={`flex-1 rounded-xl px-3 py-2 transition-colors sm:flex-none ${
+                  activeView === id ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <p className="text-sm text-muted-foreground">{viewCopy[activeView]}</p>
+            <button type="button" onClick={() => onNavigate(activeView === 'imports' ? 'imports' : 'reports')} className="quiet-button justify-center">
+              {activeView === 'imports' ? 'Open imports' : 'Open reports'}
+            </button>
           </div>
         </div>
       </div>
@@ -858,7 +990,7 @@ function ReportShowcase() {
 
 function HomepageDesktopPreview() {
   return (
-    <div className="w-full min-w-0 overflow-hidden rounded-[1.5rem] border border-border bg-background shadow-xl shadow-slate-950/5">
+    <div className="w-full min-w-0 overflow-hidden rounded-[1.5rem] border border-border bg-background shadow-md shadow-slate-950/5">
       <div className="flex items-center gap-2 border-b border-border bg-muted/50 px-4 py-3">
         <Monitor className="h-4 w-4 text-accent" />
         <span className="text-sm font-bold">Desktop page preview</span>
@@ -867,9 +999,9 @@ function HomepageDesktopPreview() {
         <div className="rounded-2xl border border-slate-200 bg-white shadow-lg shadow-slate-900/10 dark:border-slate-700 dark:bg-slate-900">
           <div className="flex items-center justify-between border-b border-slate-200 px-3 py-3 sm:px-5 sm:py-4 dark:border-slate-700">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-sm font-black text-white">E</div>
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white">E</div>
               <div>
-                <div className="font-black">Example Brand</div>
+                <div className="font-bold">Example Brand</div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">Local service website</div>
               </div>
             </div>
@@ -881,8 +1013,8 @@ function HomepageDesktopPreview() {
           </div>
           <div className="grid gap-4 p-3 sm:gap-5 sm:p-5 md:grid-cols-[1.15fr_0.85fr]">
             <div className="min-w-0">
-              <div className="mb-3 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200">Metadata preview</div>
-              <h3 className="text-2xl font-black leading-tight sm:text-3xl">Clear service page headline with trust proof</h3>
+              <div className="mb-3 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200">Metadata preview</div>
+              <h3 className="text-2xl font-bold leading-tight sm:text-3xl">Clear service page headline with trust proof</h3>
               <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">This visual preview gives report readers page context before they review SEO and safety fixes.</p>
               <div className="mt-5 flex flex-wrap gap-2">
                 {['Primary CTA visible', 'Heading found', 'Internal links'].map((item) => (
@@ -906,7 +1038,7 @@ function HomepageDesktopPreview() {
 
 function HomepageMobilePreview() {
   return (
-    <div className="w-full min-w-0 rounded-[1.5rem] border border-border bg-background p-4 shadow-xl shadow-slate-950/5">
+    <div className="w-full min-w-0 rounded-[1.5rem] border border-border bg-background p-4 shadow-md shadow-slate-950/5">
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Globe className="h-4 w-4 text-accent" />
@@ -914,12 +1046,12 @@ function HomepageMobilePreview() {
         </div>
         <StatusBadge tone="success">Responsive</StatusBadge>
       </div>
-      <div className="mx-auto max-w-[260px] rounded-[2rem] border-8 border-slate-950 bg-slate-950 p-2 shadow-2xl">
+      <div className="mx-auto max-w-[260px] rounded-[2rem] border-8 border-slate-950 bg-slate-950 p-2 shadow-lg">
         <div className="overflow-hidden rounded-[1.4rem] bg-white text-slate-950">
           <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
             <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-lg bg-blue-600 text-center text-sm font-black leading-8 text-white">E</div>
-              <span className="text-sm font-black">Example</span>
+              <div className="h-8 w-8 rounded-lg bg-blue-600 text-center text-sm font-bold leading-8 text-white">E</div>
+              <span className="text-sm font-bold">Example</span>
             </div>
             <div className="grid gap-1">
               <span className="h-0.5 w-5 rounded bg-slate-600" />
@@ -929,9 +1061,9 @@ function HomepageMobilePreview() {
           </div>
           <div className="p-4">
             <div className="h-28 rounded-2xl bg-gradient-to-br from-blue-100 to-emerald-100" />
-            <h3 className="mt-4 text-xl font-black leading-tight">Example Brand Services</h3>
+            <h3 className="mt-4 text-xl font-bold leading-tight">Example Brand Services</h3>
             <p className="mt-2 text-xs leading-5 text-slate-600">Tap targets, visible CTA, and readable mobile copy are checked from public signals.</p>
-            <button type="button" className="mt-4 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-black text-white">View report</button>
+            <div className="mt-4 w-full rounded-xl bg-blue-600 px-4 py-3 text-center text-sm font-bold text-white">Sample CTA area</div>
           </div>
         </div>
       </div>
@@ -948,7 +1080,7 @@ function HomepageSerpPreview() {
       </div>
       <div className="min-w-0 rounded-2xl border border-border bg-white p-4 text-slate-950 sm:p-5">
         <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-sm font-black text-blue-700">E</div>
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-sm font-bold text-blue-700">E</div>
           <div className="min-w-0">
             <div className="truncate text-sm text-slate-800">Example Brand</div>
             <div className="truncate text-xs text-slate-500">https://example.com/services</div>

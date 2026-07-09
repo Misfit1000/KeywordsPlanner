@@ -245,7 +245,7 @@ export function MegaMenuPanel({
   }>;
 }) {
   return (
-    <div className="grid gap-4 rounded-3xl border border-border bg-card/95 p-5 shadow-2xl shadow-slate-950/10 backdrop-blur-xl md:grid-cols-2 lg:grid-cols-3">
+    <div className="grid gap-4 rounded-3xl border border-border bg-card/95 p-5 shadow-lg shadow-slate-950/10 backdrop-blur-xl md:grid-cols-2 lg:grid-cols-3">
       {columns.map((column) => (
         <div key={column.title}>
           <div className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-accent">{column.title}</div>
@@ -430,7 +430,7 @@ export function MetricCard({
       <div className="flex items-center justify-between gap-4">
         <div>
           <div className="text-sm font-medium text-muted-foreground">{label}</div>
-          <div className="mt-1 text-3xl font-black tracking-tight">{value}</div>
+          <div className="mt-1 text-3xl font-bold tracking-tight">{value}</div>
           {detail && <div className="mt-1 text-xs text-muted-foreground">{detail}</div>}
         </div>
         {icon && <div className={`rounded-2xl p-3 ${tones[tone]} shadow-sm transition-transform duration-300 group-hover:scale-105`}>{icon}</div>}
@@ -618,7 +618,7 @@ export function ProductMockupPanel({
   const pageTitle = title || `${brand} homepage`;
   const desc = description || 'Metadata-based visual preview generated from public page details. No raw HTML is stored.';
   return (
-    <SurfaceCard className="overflow-hidden border-accent/20 shadow-2xl shadow-blue-950/10">
+    <SurfaceCard className="overflow-hidden border-accent/20 shadow-lg shadow-blue-950/10">
       <div className="border-b border-border bg-card/95 px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -941,7 +941,7 @@ export function RealisticMobilePreviewCard({
   const desc = description || 'Live page preview from scan data.';
   return (
     <SurfaceCard className="p-5">
-      <div className="mx-auto w-full max-w-[250px] rounded-[2rem] border-[10px] border-slate-950 bg-slate-950 p-1 shadow-2xl dark:border-slate-900 dark:bg-slate-900">
+      <div className="mx-auto w-full max-w-[250px] rounded-[2rem] border-[10px] border-slate-950 bg-slate-950 p-1 shadow-lg dark:border-slate-900 dark:bg-slate-900">
         <div className="overflow-hidden rounded-[1.35rem] bg-background">
           <div className="relative flex items-center justify-between border-b border-border bg-card px-3 py-3">
             <div className="absolute left-1/2 top-2 h-1.5 w-14 -translate-x-1/2 rounded-full bg-slate-900/80" />
@@ -956,7 +956,7 @@ export function RealisticMobilePreviewCard({
               </div>
               <h3 className="line-clamp-3 text-xl font-bold leading-tight">{pageTitle}</h3>
               <p className="mt-2 line-clamp-4 text-xs leading-5 text-muted-foreground">{desc}</p>
-              <button type="button" className="mt-4 w-full rounded-xl bg-accent px-3 py-2 text-xs font-bold text-accent-foreground">View report</button>
+              <div className="mt-4 w-full rounded-xl bg-accent px-3 py-2 text-center text-xs font-bold text-accent-foreground">Sample CTA area</div>
             </div>
             <div className="grid gap-2">
               {['Viewport checked', 'Tap target context', 'Mobile snippet ready'].map((item) => (
@@ -1040,7 +1040,7 @@ export function SitePreviewSection({
     <section className="space-y-4">
       <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
-          <div className="text-xs font-bold uppercase tracking-[0.18em] text-accent">Website preview</div>
+          <div className="text-xs font-bold uppercase tracking-wider text-accent">Website preview</div>
           <h2 className="text-2xl font-bold">Desktop, mobile, and Google-style previews</h2>
           <p className="mt-1 text-sm text-muted-foreground">Generated from public page details and scan results. No raw HTML is stored.</p>
         </div>
