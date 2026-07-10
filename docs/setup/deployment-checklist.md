@@ -59,4 +59,5 @@ git diff --check
 7. Confirm issue feed updates.
 8. Confirm final report appears.
 9. Confirm JSON/pages CSV/issues CSV exports work.
-10. Confirm cancel works for a queued audit.
+10. Confirm a completed Paid, Agency, or Admin audit downloads a valid PDF and a Free audit receives the expected upgrade message.
+11. Confirm cancel works for a queued audit.

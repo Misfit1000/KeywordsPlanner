@@ -7,6 +7,7 @@ import { isAuditQueuedTooLong } from '../../lib/audit/queued-worker-warning';
 import { API_ROUTES } from '../../lib/api/routes';
 import { safeJsonFetch } from '../../lib/http/safe-json';
 import { formatAuditElapsed, isTerminalAuditStatus } from '../../lib/audit/audit-time';
+import { downloadAuditExport } from '../../lib/http/download';
 import { AuditStageTimeline, CategoryScoreBar, MetricBarChart, MetricCard, ProgressBar, RadialScoreGauge, SeverityDistribution, SitePreviewSection, SparklineChart, StatusBadge, SurfaceCard } from '../ui/visual-system';
 import {
   buildHistoryEntry,
@@ -112,6 +113,8 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
   const [isCancelling, setIsCancelling] = useState(false);
   const [checklist, setChecklist] = useState<Record<string, ChecklistStatus>>({});
   const [shareMessage, setShareMessage] = useState<string | null>(null);
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const audit = data.audit;
   const shouldRunClock = !audit || !isTerminalAuditStatus(audit.status);
 
@@ -252,6 +255,20 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
   const rerunAudit = () => {
     const url = audit?.normalizedUrl || data.audit?.normalizedUrl;
     if (url && onRerun) onRerun(url);
+  };
+
+  const downloadPdf = async () => {
+    setIsDownloadingPdf(true);
+    setExportMessage(null);
+    try {
+      await downloadAuditExport(auditId, 'pdf');
+      setExportMessage('PDF report downloaded.');
+    } catch (downloadError) {
+      setExportMessage(downloadError instanceof Error ? downloadError.message : 'PDF download failed.');
+    } finally {
+      setIsDownloadingPdf(false);
+      window.setTimeout(() => setExportMessage(null), 4000);
+    }
   };
 
   if (error) {
@@ -433,6 +450,17 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
                 <FileDown className="w-4 h-4" /> JSON
               </a>
             )}
+            {audit.status === 'completed' && audit.processingTier !== 'free' && (
+              <button type="button" onClick={downloadPdf} disabled={isDownloadingPdf} className="trust-button px-3 py-2 text-sm">
+                {isDownloadingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+                {isDownloadingPdf ? 'Building PDF...' : 'Download PDF'}
+              </button>
+            )}
+            {audit.status === 'completed' && audit.processingTier === 'free' && (
+              <button type="button" disabled className="quiet-button px-3 py-2 text-sm" title="PDF reports are available with Full audits.">
+                <FileDown className="h-4 w-4" /> PDF in Full
+              </button>
+            )}
             {audit.status === 'queued' || audit.status === 'running' ? (
               <button
                 type="button"
@@ -446,6 +474,12 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
             ) : null}
           </div>
         </div>
+
+        {exportMessage && (
+          <div className={`mt-4 rounded-lg border p-3 text-sm font-medium ${exportMessage.includes('downloaded') ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700' : 'border-red-500/20 bg-red-500/10 text-red-700'}`}>
+            {exportMessage}
+          </div>
+        )}
 
         <div className="mt-5 h-3 bg-muted rounded-full overflow-hidden">
           <div className="h-full bg-accent transition-all duration-500" style={{ width: `${progress}%` }} />

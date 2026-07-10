@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { PieChart, Download, Loader2, FileJson, FileSpreadsheet, Printer, ShieldCheck, AlertTriangle, Search, Lock, Clipboard, History, Share2 } from "lucide-react";
 import { BarList, CategoryScoreBar, MetricCard, RadialScoreGauge, SectionHeader, SeverityDistribution, SitePreviewSection, StatusBadge, SurfaceCard } from './ui/visual-system';
 import { readAuditHistory, type AuditHistoryEntry } from '../lib/audit/client-insights';
+import { downloadAuditExport } from '../lib/http/download';
 
 export default function Reports() {
   const [loading, setLoading] = useState<string | null>(null);
@@ -15,56 +16,76 @@ export default function Reports() {
   const latest = history[0] || null;
   const groupedSites = useMemo(() => new Set(history.map((entry) => entry.normalizedUrl)).size, [history]);
 
-  const handleExportJson = () => {
-    setLoading('json');
-    setTimeout(() => {
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({
-        report: "SEOIntel Full Audit Export",
-        date: new Date().toISOString()
-      }, null, 2));
-      const a = document.createElement('a');
-      a.href = dataStr;
-      a.download = "seo-audit-full.json";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setLoading(null);
-    }, 800);
+  const showMessage = (message: string) => {
+    setShareMessage(message);
+    window.setTimeout(() => setShareMessage(null), 4000);
   };
 
-  const handleExportCsv = (type: string) => {
+  const handleExportJson = async () => {
+    if (!latest) return showMessage('Run an audit first to export report data.');
+    setLoading('json');
+    try {
+      await downloadAuditExport(latest.auditId, 'json');
+      showMessage('JSON report downloaded.');
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : 'JSON export failed.');
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const handleExportCsv = async (type: string) => {
     setLoading(`csv-${type}`);
-    setTimeout(() => {
+    try {
+      if ((type === 'issues' || type === 'pages') && latest) {
+        await downloadAuditExport(latest.auditId, type === 'issues' ? 'issues.csv' : 'pages.csv');
+        showMessage(`${type === 'issues' ? 'Fixes' : 'Pages'} CSV downloaded.`);
+        return;
+      }
+      if ((type === 'issues' || type === 'pages') && !latest) {
+        showMessage('Run an audit first to export report rows.');
+        return;
+      }
       let csvContent = "No data available";
-            if (type === 'search') {
-                const gsc = localStorage.getItem('seo_gsc_data');
-                if (gsc) {
-                    const parsed = JSON.parse(gsc);
-                    if (parsed.length) {
-                        csvContent = Object.keys(parsed[0]).join(',') + '\n' + parsed.map(r => Object.values(r).join(',')).join('\n');
-                    }
-                }
-            } else if (type === 'keywords') {
-                const kw = localStorage.getItem('seo_keyword_data');
-                if (kw) {
-                    const parsed = JSON.parse(kw);
-                    if (parsed.length) {
-                        csvContent = Object.keys(parsed[0]).join(',') + '\n' + parsed.map(r => Object.values(r).join(',')).join('\n');
-                    }
-                }
-            } else {
-                csvContent = "URL,Title,Fix,Priority\nhttps://example.com,Home,Missing main heading,High\n"; // Placeholder for other audits
-            }
-            const csvStr = "data:text/csv;charset=utf-8," + encodeURIComponent(csvContent);
+      if (type === 'search') {
+        const gsc = localStorage.getItem('seo_gsc_data');
+        if (gsc) {
+          const parsed = JSON.parse(gsc);
+          if (parsed.length) csvContent = Object.keys(parsed[0]).join(',') + '\n' + parsed.map((row: Record<string, unknown>) => Object.values(row).join(',')).join('\n');
+        }
+      } else if (type === 'keywords') {
+        const keywords = localStorage.getItem('seo_keyword_data');
+        if (keywords) {
+          const parsed = JSON.parse(keywords);
+          if (parsed.length) csvContent = Object.keys(parsed[0]).join(',') + '\n' + parsed.map((row: Record<string, unknown>) => Object.values(row).join(',')).join('\n');
+        }
+      }
+      const csvStr = "data:text/csv;charset=utf-8," + encodeURIComponent(csvContent);
       const a = document.createElement('a');
       a.href = csvStr;
       a.download = `seointel-${type}-export.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : 'CSV export failed.');
+    } finally {
       setLoading(null);
-    }, 800);
+    }
   }
+
+  const handleDownloadPdf = async (auditId?: string) => {
+    if (!auditId) return showMessage('Run an audit first to create a PDF report.');
+    setLoading(`pdf-${auditId}`);
+    try {
+      await downloadAuditExport(auditId, 'pdf');
+      showMessage('PDF report downloaded.');
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : 'PDF download failed.');
+    } finally {
+      setLoading(null);
+    }
+  };
 
   const handlePrint = () => {
     window.print();
@@ -116,6 +137,10 @@ export default function Reports() {
               <button onClick={handlePrint} className="quiet-button">
                 <Printer className="h-4 w-4" /> Print client report
               </button>
+              <button onClick={() => handleDownloadPdf(latest?.auditId)} disabled={!!loading || !latest} className="trust-button">
+                {loading?.startsWith('pdf-') ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                Download latest PDF
+              </button>
             </div>
             {shareMessage && (
               <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
@@ -132,12 +157,13 @@ export default function Reports() {
                   <th>Score</th>
                   <th>Open fixes</th>
                   <th>Updated</th>
+                  <th>Report</th>
                 </tr>
               </thead>
               <tbody>
                 {history.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="text-center text-muted-foreground">Run a live audit to build report history.</td>
+                    <td colSpan={5} className="text-center text-muted-foreground">Run a live audit to build report history.</td>
                   </tr>
                 ) : history.slice(0, 6).map((entry) => (
                   <tr key={entry.auditId}>
@@ -145,6 +171,11 @@ export default function Reports() {
                     <td className="font-black text-accent">{entry.score}</td>
                     <td>{entry.issuesFound}</td>
                     <td className="text-muted-foreground">{new Date(entry.updatedAt).toLocaleDateString()}</td>
+                    <td>
+                      <button type="button" onClick={() => handleDownloadPdf(entry.auditId)} disabled={!!loading || entry.status !== 'completed'} className="rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold hover:bg-muted disabled:opacity-50">
+                        {loading === `pdf-${entry.auditId}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'PDF'}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -272,9 +303,12 @@ export default function Reports() {
           </div>
           <h2 className="text-xl font-bold font-display">Printable client report</h2>
           <p className="text-sm text-muted-foreground">Create a clean print-ready report with summary scores, top fixes, and next steps.</p>
-          <button onClick={handlePrint} className="mt-auto px-4 py-2 bg-muted hover:bg-muted/80 font-semibold rounded-lg inline-flex items-center gap-2 transition-colors">
-            <Printer className="w-4 h-4" />
-            Print / Save as PDF
+          <button onClick={() => handleDownloadPdf(latest?.auditId)} disabled={!!loading || !latest} className="trust-button mt-auto">
+            {loading?.startsWith('pdf-') ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            Download structured PDF
+          </button>
+          <button onClick={handlePrint} className="quiet-button">
+            <Printer className="w-4 h-4" /> Print fallback
           </button>
         </SurfaceCard>
 

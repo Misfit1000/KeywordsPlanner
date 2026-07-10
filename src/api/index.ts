@@ -17,6 +17,8 @@ import {
   getPlanLimits,
 } from '../lib/billing/entitlements';
 import type { ResourceAuditDocument } from '../lib/audit/resource-types';
+import { getAuditProfileForDocument } from '../lib/audit/audit-profiles';
+import { renderAuditPdf } from '../lib/report/pdf';
 
 const DUPLICATE_AUDIT_WINDOW_MS = 10 * 60 * 1000;
 
@@ -76,6 +78,14 @@ async function getRequester(req: any) {
   if (!authUser) return { userId: null, profile: null };
   const profile = await ensureUserProfileFromAuthUser(authUser);
   return { userId: authUser.id, profile };
+}
+
+async function canAccessAudit(req: any, audit: ResourceAuditDocument) {
+  const requester = await getRequester(req);
+  if (requester.profile?.role === 'admin') return true;
+  if (audit.userId) return requester.userId === audit.userId;
+  if (audit.guestKeyHash) return guestIdentityForRequest(req).guestKeyHash === audit.guestKeyHash;
+  return false;
 }
 
 function sendEntitlementError(res: any, error: unknown) {
@@ -298,6 +308,26 @@ apiRouter.get('/audit/export/:id/:format', asyncJsonRoute(async (req, res) => {
   const { id, format } = req.params;
   const liveData = await auditRepository.getLiveData(id);
   if (!liveData.audit) return res.status(404).json({ success: false, error: 'Audit not found' });
+
+  if (format === 'pdf') {
+    if (!(await canAccessAudit(req, liveData.audit))) {
+      return res.status(404).json({ success: false, error: 'Audit not found' });
+    }
+    if (liveData.audit.status !== 'completed') {
+      return res.status(409).json({ success: false, error: 'PDF export is available after the audit completes.' });
+    }
+    const profile = getAuditProfileForDocument(liveData.audit);
+    if (!profile.pdfEnabled) {
+      return res.status(403).json({ success: false, error: 'PDF reports require a Full, Agency, or Admin audit.', upgradeRequired: true });
+    }
+    const pdf = await renderAuditPdf(liveData);
+    const safeHost = liveData.audit.hostname.replace(/[^a-z0-9.-]+/gi, '-').replace(/^-+|-+$/g, '') || 'website';
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="seointel-${safeHost}-audit.pdf"`);
+    res.setHeader('Content-Length', String(pdf.length));
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.status(200).send(pdf);
+  }
 
   if (format === 'json') {
     return res.json({ success: true, data: liveData.finalReport || liveData });

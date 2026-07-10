@@ -64,7 +64,7 @@ The live page shows the submitted input, normalized URL, final URL, hostname, mo
 
 ## Reports And Exports
 
-JSON, pages CSV, and issues CSV exports read from stored Supabase report/page/issue data. Exports never rerun an audit.
+JSON, pages CSV, issues CSV, and entitled PDF exports read from stored Supabase report/page/issue data. PDF generation is a lightweight Vercel API operation and never reruns or renders the audited website. Free audits keep JSON/CSV access; Full, Agency, and Admin audits can download the structured PDF report.
 
 ## Cleanup
 

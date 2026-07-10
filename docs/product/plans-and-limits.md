@@ -15,7 +15,7 @@
 - Up to 25 pages.
 - Higher queue priority than Free.
 - Full standard SEO categories: technical SEO, crawlability, indexability, schema, image SEO, links, sitemap/robots, performance basics, and passive security.
-- PDF/report and white-label flags are enabled in plan limits for future report UI.
+- Structured PDF reports are enabled. They contain stored audit scores, charts, top fixes, page summaries, metadata previews, and audit activity without rerunning the audit.
 
 ## Agency Deep Audit
 
