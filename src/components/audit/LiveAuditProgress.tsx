@@ -7,7 +7,7 @@ import { isAuditQueuedTooLong } from '../../lib/audit/queued-worker-warning';
 import { API_ROUTES } from '../../lib/api/routes';
 import { safeJsonFetch } from '../../lib/http/safe-json';
 import { formatAuditElapsed, isTerminalAuditStatus } from '../../lib/audit/audit-time';
-import { CategoryScoreBar, MetricCard, ProgressBar, RadialScoreGauge, SeverityDistribution, SitePreviewSection, StatusBadge, SurfaceCard } from '../ui/visual-system';
+import { AuditStageTimeline, CategoryScoreBar, MetricBarChart, MetricCard, ProgressBar, RadialScoreGauge, SeverityDistribution, SitePreviewSection, SparklineChart, StatusBadge, SurfaceCard } from '../ui/visual-system';
 import {
   buildHistoryEntry,
   buildIssueInsight,
@@ -288,14 +288,25 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
   const progress = Math.max(0, Math.min(100, audit.progress || 0));
   const firstPage = data.latestPages.find((page) => page.title || page.metaDescription) || data.latestPages[0];
   const estimatedScore = Math.max(0, Math.min(100, 100 - audit.criticalCount * 12 - audit.highCount * 7 - audit.mediumCount * 3 - audit.lowCount));
+  const reportScores = (data.finalReport?.scores || {}) as Record<string, unknown>;
+  const scoreValue = (key: string, fallback: number) => {
+    const value = Number(reportScores[key]);
+    return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : fallback;
+  };
+  const overallScore = scoreValue('overall', estimatedScore);
   const categoryScores = [
-    { label: 'SEO', value: Math.max(35, estimatedScore - audit.mediumCount), tone: estimatedScore > 70 ? 'green' as const : 'yellow' as const },
-    { label: 'Website health', value: Math.max(25, 92 - audit.highCount * 8), tone: 'accent' as const },
-    { label: 'Speed signals', value: Math.max(20, 88 - data.latestPages.length * 2), tone: 'yellow' as const },
-    { label: 'Browser safety', value: Math.max(20, 96 - audit.criticalCount * 15 - audit.highCount * 5), tone: audit.criticalCount ? 'red' as const : 'green' as const },
-    { label: 'Google access', value: Math.min(100, Math.round((audit.pagesCrawled / Math.max(1, audit.pageLimit)) * 100)), tone: 'accent' as const },
-    { label: 'Mobile experience', value: Math.max(40, 84 - audit.lowCount * 2), tone: 'green' as const },
-    { label: 'Social previews', value: Math.max(35, 80 - audit.mediumCount * 4), tone: 'accent' as const },
+    { label: 'SEO', value: scoreValue('seo', Math.max(35, estimatedScore - audit.mediumCount)), tone: overallScore > 70 ? 'green' as const : 'yellow' as const },
+    { label: 'Technical SEO', value: scoreValue('technical', Math.max(25, 92 - audit.highCount * 8)), tone: 'accent' as const },
+    { label: 'Speed signals', value: scoreValue('performance', Math.max(20, 88 - data.latestPages.length * 2)), tone: 'yellow' as const },
+    { label: 'Browser safety', value: scoreValue('security', Math.max(20, 96 - audit.criticalCount * 15 - audit.highCount * 5)), tone: audit.criticalCount ? 'red' as const : 'green' as const },
+    { label: 'Google access', value: scoreValue('crawlability', Math.min(100, Math.round((audit.pagesCrawled / Math.max(1, audit.pageLimit)) * 100))), tone: 'accent' as const },
+  ];
+  const progressSeries = [
+    0,
+    ...data.latestEvents
+      .map((event) => Number(event.progress))
+      .filter((value) => Number.isFinite(value)),
+    progress,
   ];
   const statusTone = audit.status === 'completed'
     ? 'success'
@@ -328,16 +339,27 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
                     <StatusBadge tone="accent">{tierLabel(audit.processingTier)}</StatusBadge>
                     <ConnectionBadge connection={connection} now={now} />
                   </div>
-                  <h2 className="mt-4 text-3xl font-bold md:text-4xl">Live website scan</h2>
+                  <h1 className="mt-4 text-3xl font-bold md:text-4xl">Audit workspace</h1>
                   <p className="mt-2 max-w-3xl break-all text-muted-foreground">{audit.normalizedUrl}</p>
                 </div>
                 <div className="flex justify-start md:justify-end">
-                  <RadialScoreGauge value={estimatedScore} label="Estimated site health" detail="Updates from live findings" size="sm" />
+                  <RadialScoreGauge value={overallScore} label={data.finalReport ? 'Site health' : 'Estimated health'} detail={data.finalReport ? 'Final report score' : 'Updates from live findings'} size="sm" />
                 </div>
               </div>
 
               <ProgressBar label={humanizeAuditText(audit.currentPhase) || statusLabel(audit.status)} value={progress} tone={audit.status === 'failed' ? 'red' : 'accent'} />
               <CurrentWorkCard currentWork={currentWork} connection={connection} now={now} />
+
+              <div className="grid gap-4 xl:grid-cols-[1.4fr_0.8fr_0.8fr]">
+                <AuditStageTimeline progress={progress} status={audit.status} />
+                <SparklineChart values={progressSeries} label="Progress over time" valueLabel={`${Math.round(progress)}%`} />
+                <MetricBarChart items={[
+                  { label: 'Fix now', value: audit.criticalCount, color: 'bg-red-500' },
+                  { label: 'High', value: audit.highCount, color: 'bg-orange-500' },
+                  { label: 'Review', value: audit.mediumCount, color: 'bg-amber-500' },
+                  { label: 'Low', value: audit.lowCount, color: 'bg-sky-500' },
+                ]} />
+              </div>
 
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <MetricCard label="Pages scanned" value={`${audit.pagesCrawled}/${audit.pageLimit}`} icon={<Clock className="h-5 w-5" />} />
@@ -356,6 +378,7 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
         title={firstPage?.title || `${audit.hostname} audit preview`}
         description={firstPage?.metaDescription || humanizeAuditText(latestEvent?.message) || 'Preview updates from scanned page details without storing raw HTML.'}
         canonicalUrl={audit.finalUrl || audit.normalizedUrl}
+        livePreview
       />
 
       <AuditWorkflowPanel

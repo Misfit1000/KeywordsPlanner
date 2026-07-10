@@ -85,7 +85,7 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
               value={url}
               onChange={e => setUrl(e.target.value)}
               placeholder="Enter a website URL (e.g. https://example.com)"
-              className="w-full bg-muted/50 border border-border rounded-xl py-3 pl-10 pr-4 outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all"
+              className="suite-input py-3 pl-10 pr-4"
             />
           </div>
           <div className="flex flex-col gap-1">

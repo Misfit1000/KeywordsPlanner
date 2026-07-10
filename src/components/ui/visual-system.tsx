@@ -1,5 +1,6 @@
 import React from 'react';
-import { AlertTriangle, CheckCircle2, Globe, Monitor, Moon, Search, ShieldCheck, Smartphone, Sun, TrendingUp } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { AlertTriangle, CheckCircle2, ExternalLink, Eye, Globe, Loader2, Monitor, Moon, Search, ShieldCheck, Smartphone, Sun, TrendingUp } from 'lucide-react';
 
 type VisualIcon = React.ComponentType<{ className?: string }>;
 type ScoreTone = 'accent' | 'green' | 'yellow' | 'red';
@@ -13,6 +14,7 @@ type PreviewProps = {
   canonicalUrl?: string | null;
   faviconUrl?: string | null;
   openGraphImage?: string | null;
+  livePreview?: boolean;
 };
 
 export function SurfaceCard({
@@ -290,6 +292,128 @@ export function ProgressBar({
       <div className="h-2.5 overflow-hidden rounded-full bg-muted shadow-inner">
         <div className={`h-full rounded-full ${colors[tone]} shadow-sm transition-all duration-700 ease-out`} style={{ width: `${safeValue}%` }} />
       </div>
+    </div>
+  );
+}
+
+export function AuditStageTimeline({
+  progress,
+  status,
+}: {
+  progress: number;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+}) {
+  const stages = [
+    { label: 'Prepare', threshold: 5 },
+    { label: 'Discover', threshold: 20 },
+    { label: 'Scan pages', threshold: 55 },
+    { label: 'SEO checks', threshold: 75 },
+    { label: 'Safety checks', threshold: 90 },
+    { label: 'Report', threshold: 100 },
+  ];
+  const safeProgress = Math.max(0, Math.min(100, progress || 0));
+
+  return (
+    <div className="rounded-xl border border-border bg-background/75 p-4" aria-label="Audit stage timeline">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold">Audit stages</div>
+          <div className="text-xs text-muted-foreground">Progress follows completed audit work.</div>
+        </div>
+        <span className="font-mono text-sm font-bold text-accent">{Math.round(safeProgress)}%</span>
+      </div>
+      <div className="relative grid grid-cols-3 gap-y-5 sm:grid-cols-6">
+        <div className="absolute left-[8%] right-[8%] top-3 hidden h-0.5 bg-border sm:block" />
+        {stages.map((stage, index) => {
+          const previousThreshold = index === 0 ? 0 : stages[index - 1].threshold;
+          const isDone = status === 'completed' || safeProgress >= stage.threshold;
+          const isActive = !isDone && status === 'running' && safeProgress >= previousThreshold;
+          const isStopped = status === 'failed' || status === 'cancelled';
+          return (
+            <div key={stage.label} className="relative z-10 flex flex-col items-center text-center">
+              <span
+                className={`flex h-6 w-6 items-center justify-center rounded-full border text-[10px] font-bold transition-all duration-500 ${
+                  isDone
+                    ? 'border-emerald-500 bg-emerald-500 text-white'
+                    : isActive
+                      ? 'animate-soft-pulse border-accent bg-accent text-white'
+                      : isStopped
+                        ? 'border-red-400 bg-red-500/10 text-red-600'
+                        : 'border-border bg-card text-muted-foreground'
+                }`}
+              >
+                {isDone ? <CheckCircle2 className="h-3.5 w-3.5" /> : index + 1}
+              </span>
+              <span className={`mt-2 text-[11px] font-semibold ${isActive ? 'text-accent' : 'text-muted-foreground'}`}>{stage.label}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export function SparklineChart({
+  values,
+  label,
+  valueLabel,
+}: {
+  values: number[];
+  label: string;
+  valueLabel?: string;
+}) {
+  const normalized = values.length > 1 ? values : [0, values[0] || 0];
+  const max = Math.max(1, ...normalized);
+  const points = normalized.map((value, index) => {
+    const x = (index / Math.max(1, normalized.length - 1)) * 100;
+    const y = 42 - (Math.max(0, value) / max) * 34;
+    return `${x},${y}`;
+  }).join(' ');
+
+  return (
+    <div className="rounded-xl border border-border bg-background/75 p-4">
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold">{label}</div>
+          <div className="text-xs text-muted-foreground">Based on live audit events</div>
+        </div>
+        {valueLabel && <div className="font-mono text-sm font-bold text-accent">{valueLabel}</div>}
+      </div>
+      <svg viewBox="0 0 100 46" role="img" aria-label={label} className="mt-3 h-24 w-full overflow-visible">
+        <defs>
+          <linearGradient id="auditSparkFill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="currentColor" stopOpacity="0.24" />
+            <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={`M ${points.replace(/ /g, ' L ')} L 100,46 L 0,46 Z`} fill="url(#auditSparkFill)" className="text-accent" />
+        <polyline points={points} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-accent" vectorEffect="non-scaling-stroke" />
+      </svg>
+    </div>
+  );
+}
+
+export function MetricBarChart({
+  items,
+}: {
+  items: Array<{ label: string; value: number; color: string }>;
+}) {
+  const max = Math.max(1, ...items.map((item) => item.value));
+  return (
+    <div className="space-y-3 rounded-xl border border-border bg-background/75 p-4">
+      <div>
+        <div className="text-sm font-semibold">Findings by priority</div>
+        <div className="text-xs text-muted-foreground">Counts update as checks complete.</div>
+      </div>
+      {items.map((item) => (
+        <div key={item.label} className="grid grid-cols-[76px_1fr_30px] items-center gap-3 text-xs">
+          <span className="font-medium text-muted-foreground">{item.label}</span>
+          <span className="h-2.5 overflow-hidden rounded-full bg-muted">
+            <span className={`block h-full rounded-full transition-all duration-700 ${item.color}`} style={{ width: `${(item.value / max) * 100}%` }} />
+          </span>
+          <span className="text-right font-mono font-bold">{item.value}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -1027,6 +1151,103 @@ export function SerpPreviewCard(props: PreviewProps) {
   return <RealisticSerpPreviewCard {...props} />;
 }
 
+export function HybridSitePreview(props: PreviewProps) {
+  const [view, setView] = useState<'live' | 'metadata'>('live');
+  const [viewport, setViewport] = useState<'desktop' | 'mobile'>('desktop');
+  const [frameState, setFrameState] = useState<'loading' | 'live' | 'blocked'>('loading');
+  const frameUrl = previewUrl(props.url, props.hostname);
+  const isSafeFrameUrl = /^https?:\/\//i.test(frameUrl);
+
+  useEffect(() => {
+    setFrameState('loading');
+    if (!isSafeFrameUrl || view !== 'live') return;
+    const timeout = window.setTimeout(() => setFrameState((current) => current === 'loading' ? 'blocked' : current), 8000);
+    return () => window.clearTimeout(timeout);
+  }, [frameUrl, isSafeFrameUrl, view, viewport]);
+
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <div className="text-xs font-bold uppercase tracking-wider text-accent">Audited page view</div>
+          <h2 className="mt-1 text-2xl font-bold">See the page the audit engine is checking</h2>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">Live view uses the public URL in an isolated frame. No page HTML is copied or stored.</p>
+        </div>
+        <div className="flex flex-wrap gap-2 no-print">
+          <div className="inline-flex rounded-lg border border-border bg-card p-1">
+            <button type="button" onClick={() => setView('live')} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${view === 'live' ? 'bg-accent text-white' : 'text-muted-foreground hover:bg-muted'}`}>
+              <Eye className="mr-1 inline h-3.5 w-3.5" /> Live page
+            </button>
+            <button type="button" onClick={() => setView('metadata')} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${view === 'metadata' ? 'bg-accent text-white' : 'text-muted-foreground hover:bg-muted'}`}>
+              Metadata preview
+            </button>
+          </div>
+          {view === 'live' && (
+            <div className="inline-flex rounded-lg border border-border bg-card p-1">
+              <button type="button" onClick={() => setViewport('desktop')} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${viewport === 'desktop' ? 'bg-muted text-foreground' : 'text-muted-foreground'}`}><Monitor className="mr-1 inline h-3.5 w-3.5" /> Desktop</button>
+              <button type="button" onClick={() => setViewport('mobile')} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${viewport === 'mobile' ? 'bg-muted text-foreground' : 'text-muted-foreground'}`}><Smartphone className="mr-1 inline h-3.5 w-3.5" /> Mobile</button>
+            </div>
+          )}
+          <a href={frameUrl} target="_blank" rel="noreferrer noopener" className="quiet-button px-3 py-2 text-xs">
+            Open actual site <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        </div>
+      </div>
+
+      {view === 'live' ? (
+        <SurfaceCard className="overflow-hidden bg-slate-100 p-3 dark:bg-slate-950/60 sm:p-5">
+          <div className={`mx-auto overflow-hidden border border-border bg-white shadow-md transition-[width] duration-500 ${viewport === 'mobile' ? 'w-full max-w-[390px] rounded-[1.6rem] border-[8px] border-slate-900' : 'w-full rounded-xl'}`}>
+            <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-slate-600">
+              <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
+              <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+              <span className="ml-2 min-w-0 flex-1 truncate rounded-md border border-slate-200 bg-white px-3 py-1 text-xs">{frameUrl}</span>
+            </div>
+            <div className={`relative bg-white ${viewport === 'mobile' ? 'h-[680px]' : 'h-[620px]'}`}>
+              {frameState === 'loading' && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-white text-slate-600">
+                  <div className="text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-blue-600" /><div className="mt-2 text-sm font-semibold">Loading the public page...</div></div>
+                </div>
+              )}
+              {isSafeFrameUrl && frameState !== 'blocked' ? (
+                <iframe
+                  key={`${frameUrl}-${viewport}`}
+                  src={frameUrl}
+                  title={`${props.hostname || frameUrl} ${viewport} live preview`}
+                  className="h-full w-full bg-white"
+                  sandbox="allow-forms allow-popups allow-popups-to-escape-sandbox allow-scripts"
+                  referrerPolicy="no-referrer"
+                  loading="lazy"
+                  onLoad={() => setFrameState('live')}
+                  onError={() => setFrameState('blocked')}
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center p-6 text-center text-slate-700">
+                  <div className="max-w-md">
+                    <ShieldCheck className="mx-auto h-9 w-9 text-blue-600" />
+                    <h3 className="mt-3 text-lg font-bold text-slate-900">Embedded view is unavailable</h3>
+                    <p className="mt-2 text-sm leading-6">This site may block embedded previews. Use the metadata preview below or open the actual site in a new tab.</p>
+                    <button type="button" onClick={() => setView('metadata')} className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white">Show metadata preview</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          <p className="mt-3 text-center text-xs text-muted-foreground">Some websites prevent iframe previews using browser security settings. That does not affect the audit itself.</p>
+        </SurfaceCard>
+      ) : (
+        <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
+          <RealisticDesktopPreviewCard {...props} />
+          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-1">
+            <RealisticMobilePreviewCard {...props} />
+            <RealisticSerpPreviewCard {...props} />
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function SitePreviewSection({
   url,
   title,
@@ -1035,7 +1256,12 @@ export function SitePreviewSection({
   canonicalUrl,
   faviconUrl,
   openGraphImage,
+  livePreview,
 }: PreviewProps) {
+  if (livePreview) {
+    return <HybridSitePreview url={url} title={title} description={description} hostname={hostname} canonicalUrl={canonicalUrl} faviconUrl={faviconUrl} openGraphImage={openGraphImage} />;
+  }
+
   return (
     <section className="space-y-4">
       <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">

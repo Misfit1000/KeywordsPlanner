@@ -16,9 +16,9 @@ const navGroups: Array<{
   {
     title: 'Audits',
     items: [
-      { icon: Activity, label: 'SEO Audit', description: 'Titles, links, Google access', id: 'seo-audit' },
-      { icon: ShieldCheck, label: 'Browser Safety', description: 'Passive protection checks', id: 'security-audit' },
-      { icon: Globe, label: 'Website Scan', description: 'Public page scan tools', id: 'website-analyzer' },
+      { icon: Activity, label: 'SEO checks', description: 'Titles, links, Google access', id: 'seo-audit' },
+      { icon: ShieldCheck, label: 'Browser safety', description: 'Passive protection checks', id: 'security-audit' },
+      { icon: Globe, label: 'Website health', description: 'Pages, speed, redirects', id: 'website-analyzer' },
     ],
   },
   {

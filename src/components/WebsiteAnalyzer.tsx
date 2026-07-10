@@ -109,8 +109,8 @@ export default function WebsiteAnalyzer() {
   return (
     <div className="w-full space-y-6 animate-rise">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight mb-2">Website scan</h1>
-        <p className="text-muted-foreground">Scan a website for page titles, descriptions, content signals, internal links, and Google access issues.</p>
+        <h1 className="text-3xl font-bold tracking-tight mb-2">Website health scan</h1>
+        <p className="text-muted-foreground">Review pages, redirects, speed signals, search access, and the fixes that matter most.</p>
       </div>
 
       <div className="trust-card p-5 md:p-6">
@@ -122,7 +122,7 @@ export default function WebsiteAnalyzer() {
               value={url}
               onChange={e => setUrl(e.target.value)}
               placeholder="Enter a website URL (e.g. https://example.com)"
-              className="w-full bg-muted/50 border border-border rounded-xl py-3 pl-10 pr-4 outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all"
+              className="suite-input py-3 pl-10 pr-4"
             />
           </div>
           <div className="flex flex-col gap-1">

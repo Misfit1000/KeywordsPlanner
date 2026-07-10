@@ -61,7 +61,7 @@ export default function SecurityAudit() {
           placeholder="https://example.com"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          className="flex-1 bg-muted/50 border border-border rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-accent"
+          className="suite-input flex-1"
         />
         <button 
           type="submit" 

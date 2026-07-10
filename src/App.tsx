@@ -372,7 +372,7 @@ export default function App() {
           </button>
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
         </header>
-        <main className="w-full p-4 md:p-8">
+        <main className="mx-auto w-full max-w-[1600px] p-3 sm:p-5 md:p-8">
           <Suspense fallback={<div className="h-64 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-accent" /></div>}>
             <LiveAuditProgress auditId={liveAuditId} onRerun={(url) => startLiveAudit(url, 'quick')} />
           </Suspense>
@@ -447,12 +447,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans overflow-x-hidden selection:bg-accent/30 transition-colors duration-300">
-      {/* Background Glow */}
-      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-accent/10 blur-[120px] rounded-full dark:bg-accent/15" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-500/10 blur-[120px] rounded-full dark:bg-blue-500/15" />
-      </div>
-
       {isCommandPaletteOpen && (
         <Suspense fallback={null}>
           <CommandPalette

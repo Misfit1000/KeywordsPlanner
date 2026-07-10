@@ -17,15 +17,15 @@
 
 @layer base {
   :root {
-    --background: #f4f8fc;
-    --foreground: #0d2238;
+    --background: #f6f8fb;
+    --foreground: #10243a;
     --card: #ffffff;
-    --card-foreground: #0d2238;
-    --border: #d8e6f3;
-    --accent: #1769ff;
+    --card-foreground: #10243a;
+    --border: #d7e0ea;
+    --accent: #1764e8;
     --accent-foreground: #ffffff;
-    --muted: #eaf2fa;
-    --muted-foreground: #58708b;
+    --muted: #edf2f7;
+    --muted-foreground: #5e7185;
   }
 
   .dark {
@@ -42,11 +42,6 @@
 
   body {
     @apply bg-background text-foreground transition-colors duration-300 font-sans antialiased selection:bg-accent/20 selection:text-accent;
-    background-image:
-      radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 12%, transparent) 0, transparent 34rem),
-      radial-gradient(circle at 70% 0%, color-mix(in srgb, #10b981 9%, transparent) 0, transparent 28rem),
-      linear-gradient(180deg, color-mix(in srgb, #ffffff 55%, transparent), transparent 38rem);
-    background-attachment: fixed;
   }
 
   button,
@@ -89,15 +84,15 @@
   }
 
   .trust-card {
-    @apply rounded-[1.35rem] border border-border bg-card/95 shadow-[0_18px_60px_-44px_rgba(15,23,42,0.85)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_30px_90px_-54px_rgba(15,23,42,0.95)] dark:bg-card/92 dark:shadow-black/30;
+    @apply rounded-xl border border-border bg-card shadow-[0_12px_34px_-28px_rgba(15,23,42,0.7)] transition-[border-color,box-shadow,transform] duration-200 hover:border-accent/25 hover:shadow-[0_16px_42px_-30px_rgba(15,23,42,0.75)] dark:bg-card dark:shadow-black/25;
   }
 
   .trust-button {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 font-semibold text-accent-foreground shadow-lg shadow-blue-600/20 transition-all hover:-translate-y-0.5 hover:bg-accent/90 hover:shadow-blue-600/30 disabled:pointer-events-none disabled:opacity-55;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 font-semibold text-accent-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:bg-accent/90 hover:shadow-md disabled:pointer-events-none disabled:opacity-55;
   }
 
   .quiet-button {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 font-semibold text-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:bg-muted hover:shadow-md disabled:pointer-events-none disabled:opacity-55;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5 font-semibold text-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:border-accent/25 hover:bg-muted disabled:pointer-events-none disabled:opacity-55;
   }
 
   .section-shell {
@@ -109,15 +104,15 @@
   }
 
   .suite-panel {
-    @apply rounded-[1.5rem] border border-border bg-card/92 shadow-[0_18px_60px_-44px_rgba(15,23,42,0.85)] backdrop-blur-xl dark:bg-card/88 dark:shadow-black/30;
+    @apply rounded-xl border border-border bg-card shadow-[0_12px_34px_-28px_rgba(15,23,42,0.7)] dark:bg-card dark:shadow-black/25;
   }
 
   .suite-panel-soft {
-    @apply rounded-[1.5rem] border border-border bg-muted/45 shadow-sm;
+    @apply rounded-xl border border-border bg-muted/45 shadow-sm;
   }
 
   .suite-input {
-    @apply w-full rounded-2xl border border-border bg-background/80 px-4 py-3 text-sm font-medium text-foreground shadow-inner shadow-slate-950/5 transition-all placeholder:text-muted-foreground focus:border-accent focus:bg-card focus:ring-2 focus:ring-accent/20;
+    @apply w-full rounded-lg border border-border bg-background/80 px-4 py-3 text-sm font-medium text-foreground shadow-inner shadow-slate-950/5 transition-all placeholder:text-muted-foreground focus:border-accent focus:bg-card focus:ring-2 focus:ring-accent/20;
   }
 
   .suite-chip {
@@ -146,6 +141,50 @@
 
   .suite-table tbody tr {
     @apply transition-colors hover:bg-muted/30;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #10243a !important;
+  }
+
+  header,
+  aside,
+  button,
+  .no-print {
+    display: none !important;
+  }
+
+  .trust-card,
+  .suite-panel,
+  section,
+  table,
+  tr {
+    break-inside: avoid;
+    box-shadow: none !important;
+  }
+
+  a {
+    color: inherit !important;
+    text-decoration: none !important;
   }
 }
 
