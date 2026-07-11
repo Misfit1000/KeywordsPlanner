@@ -1,4 +1,5 @@
 import { API_ROUTES } from '../api/routes';
+import { getAuditAccessHeaders } from '../api/auth-headers';
 import { getSupabaseBrowserClient } from '../supabase/client';
 import { safeJsonFetch } from '../http/safe-json';
 import { AUDIT_LIMITS } from './audit-config';
@@ -154,7 +155,7 @@ function pollAuditLiveData(
 
   const poll = async () => {
     try {
-      const response = await safeJsonFetch<any>(API_ROUTES.auditStatus(auditId));
+      const response = await safeJsonFetch<any>(API_ROUTES.auditStatus(auditId), { headers: await getAuditAccessHeaders() });
       if (!cancelled && response.success) {
         callback(response.data.data || response.data);
         onConnectionChange?.({
@@ -250,11 +251,15 @@ export function subscribeToAuditLiveData(
     fallbackUnsubscribe = pollAuditLiveData(auditId, callback, onError, onConnectionChange, message);
   };
 
-  safeJsonFetch<any>(API_ROUTES.auditStatus(auditId))
+  getAuditAccessHeaders()
+    .then((headers) => safeJsonFetch<any>(API_ROUTES.auditStatus(auditId), { headers }))
     .then((response) => {
       if (!closed && response.success) {
         liveData = response.data.data || response.data;
         emitLiveData();
+        if (!liveData.audit?.userId) {
+          startPollingFallback('Guest audit updates use secure HTTP polling. Sign in to use owner-scoped Realtime updates.');
+        }
       } else if (!closed && !response.success) {
         onError?.(new Error((response as any).error || 'Failed to load audit status snapshot.'));
       }

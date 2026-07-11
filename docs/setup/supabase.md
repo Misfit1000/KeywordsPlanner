@@ -5,7 +5,7 @@
 1. Create a Supabase project.
 2. Copy the project URL and anon key for the frontend.
 3. Copy the service role key for the API and worker only.
-4. Apply the migration in `supabase/migrations/001_resource_light_audit.sql`.
+4. Apply every SQL file in `supabase/migrations/` in numeric order. Existing projects must also apply `006_private_audit_read_policies.sql`.
 
 ## Frontend Environment
 
@@ -31,7 +31,7 @@ The service role key can bypass RLS and must never be committed or exposed to th
 
 ## Migration
 
-Run the migration through the Supabase dashboard SQL editor, the Supabase CLI, or your deployment pipeline.
+Run the migrations through the Supabase dashboard SQL editor, the Supabase CLI, or your deployment pipeline. Do not skip later numbered migrations on an existing project.
 
 The migration creates:
 
@@ -47,7 +47,8 @@ It also enables RLS, adds Realtime publication entries, and creates indexes for 
 
 - Vercel API routes create/cancel/read/export audit jobs.
 - The separate Node worker claims queued jobs and writes progress/results using `SUPABASE_SERVICE_ROLE_KEY`.
-- The browser uses `VITE_SUPABASE_ANON_KEY` for auth and Realtime subscriptions.
+- Authenticated owners use `VITE_SUPABASE_ANON_KEY` for owner-scoped Realtime subscriptions.
+- Guest audits use the same live interface with identity-protected API polling. Anonymous clients cannot select every guest audit row directly.
 - Long crawls never run inside Vercel request handling.
 - After deploying a Vercel preview and the worker, run a Quick Audit with `example.com` to verify queued status, live updates, final report, exports, and cancellation.
 

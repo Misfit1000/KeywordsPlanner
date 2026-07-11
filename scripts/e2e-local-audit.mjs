@@ -25,7 +25,10 @@ const express = expressModule.default;
 function makeRequest(baseUrl, path, method = 'GET', body) {
   return fetch(`${baseUrl}${path}`, {
     method,
-    headers: body ? { 'content-type': 'application/json' } : undefined,
+    headers: {
+      'x-seointel-guest-id': 'local-e2e-owner',
+      ...(body ? { 'content-type': 'application/json' } : {}),
+    },
     body: body ? JSON.stringify(body) : undefined,
   }).then(async (response) => ({
     status: response.status,

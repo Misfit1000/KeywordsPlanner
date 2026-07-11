@@ -51,12 +51,33 @@ try {
 
   const validAudit = await makeRequest(baseUrl, '/api/tools/audit/start', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-seointel-guest-id': 'hardening-owner' },
     body: JSON.stringify({ url: 'example.com', mode: 'quick' }),
   });
   assert.equal(validAudit.status, 200);
   assert.ok(validAudit.headers.get('content-type')?.includes('application/json'));
   assert.equal(JSON.parse(validAudit.text).success, true);
+  const auditId = JSON.parse(validAudit.text).data.auditId;
+
+  const ownerStatus = await makeRequest(baseUrl, `/api/tools/audit/status/${auditId}`, {
+    headers: { 'x-seointel-guest-id': 'hardening-owner' },
+  });
+  assert.equal(ownerStatus.status, 200);
+
+  for (const path of [
+    `/api/tools/audit/status/${auditId}`,
+    `/api/tools/audit/result/${auditId}`,
+    `/api/tools/audit/export/${auditId}/json`,
+  ]) {
+    const denied = await makeRequest(baseUrl, path, { headers: { 'x-seointel-guest-id': 'different-guest' } });
+    assert.equal(denied.status, 404, `${path} should hide audits from other guests`);
+  }
+
+  const deniedCancel = await makeRequest(baseUrl, `/api/tools/audit/cancel/${auditId}`, {
+    method: 'POST',
+    headers: { 'x-seointel-guest-id': 'different-guest' },
+  });
+  assert.equal(deniedCancel.status, 404);
 
   console.log('API hardening smoke test passed.');
 } finally {

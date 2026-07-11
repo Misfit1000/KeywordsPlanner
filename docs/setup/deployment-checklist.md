@@ -41,7 +41,7 @@ git diff --check
 
 ## Supabase
 
-- Apply `supabase/migrations/001_resource_light_audit.sql`.
+- Apply every file in `supabase/migrations/` in numeric order, including `006_private_audit_read_policies.sql` for existing projects.
 - Confirm Supabase Realtime is enabled for audit tables.
 - Confirm the live audit page shows `WebSocket live` after opening an audit.
 - Confirm RLS is enabled on audit tables.

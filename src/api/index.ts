@@ -281,6 +281,7 @@ apiRouter.get('/audit/status/:id', asyncJsonRoute(async (req, res) => {
   try {
     const liveData = await auditRepository.getLiveData(req.params.id);
     if (!liveData.audit) return res.status(404).json({ success: false, error: 'Audit not found' });
+    if (!(await canAccessAudit(req, liveData.audit))) return res.status(404).json({ success: false, error: 'Audit not found' });
     res.json({ success: true, data: liveData });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message || 'Internal Server Error' });
@@ -290,6 +291,7 @@ apiRouter.get('/audit/status/:id', asyncJsonRoute(async (req, res) => {
 apiRouter.post('/audit/cancel/:id', asyncJsonRoute(async (req, res) => {
   const audit = await auditRepository.getAudit(req.params.id);
   if (!audit) return res.status(404).json({ success: false, error: 'Audit not found' });
+  if (!(await canAccessAudit(req, audit))) return res.status(404).json({ success: false, error: 'Audit not found' });
   await auditRepository.cancelAudit(req.params.id);
   res.json({ success: true, data: { auditId: req.params.id, status: 'cancelled' } });
 }));
@@ -298,6 +300,7 @@ apiRouter.get('/audit/result/:id', asyncJsonRoute(async (req, res) => {
   try {
     const liveData = await auditRepository.getLiveData(req.params.id);
     if (!liveData.audit) return res.status(404).json({ success: false, error: 'Audit not found' });
+    if (!(await canAccessAudit(req, liveData.audit))) return res.status(404).json({ success: false, error: 'Audit not found' });
     res.json({ success: true, data: liveData });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message || 'Internal Server Error' });
@@ -308,11 +311,9 @@ apiRouter.get('/audit/export/:id/:format', asyncJsonRoute(async (req, res) => {
   const { id, format } = req.params;
   const liveData = await auditRepository.getLiveData(id);
   if (!liveData.audit) return res.status(404).json({ success: false, error: 'Audit not found' });
+  if (!(await canAccessAudit(req, liveData.audit))) return res.status(404).json({ success: false, error: 'Audit not found' });
 
   if (format === 'pdf') {
-    if (!(await canAccessAudit(req, liveData.audit))) {
-      return res.status(404).json({ success: false, error: 'Audit not found' });
-    }
     if (liveData.audit.status !== 'completed') {
       return res.status(409).json({ success: false, error: 'PDF export is available after the audit completes.' });
     }

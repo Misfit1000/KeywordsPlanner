@@ -2,14 +2,14 @@ import http from 'http';
 import assert from 'assert';
 import { execFileSync, spawn } from 'child_process';
 
-function makeRequest(path, method = 'GET', body = null) {
+function makeRequest(path, method = 'GET', body = null, headers = {}) {
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'localhost',
       port: 3000,
       path: path,
       method: method,
-      headers: {}
+      headers: { ...headers }
     };
 
     if (body) {
@@ -80,7 +80,8 @@ async function run() {
     console.log("✓ Invalid route returned JSON 404");
 
     // 2. audit start handler returns valid JSON
-    const startRes = await makeRequest('/api/tools/audit/start', 'POST', { url: 'https://example.com', maxPages: 1 });
+    const guestHeaders = { 'x-seointel-guest-id': 'api-json-smoke-owner' };
+    const startRes = await makeRequest('/api/tools/audit/start', 'POST', { url: 'https://example.com', maxPages: 1 }, guestHeaders);
     assert.ok(startRes.headers['content-type'].includes('application/json'), 'Should return JSON');
     const startData = JSON.parse(startRes.data);
     assert.strictEqual(startData.success, true);
@@ -88,14 +89,14 @@ async function run() {
     const auditId = startData.data.auditId;
 
     // 3. audit status handler returns valid JSON
-    const statusRes = await makeRequest(`/api/tools/audit/status/${auditId}`);
+    const statusRes = await makeRequest(`/api/tools/audit/status/${auditId}`, 'GET', null, guestHeaders);
     assert.ok(statusRes.headers['content-type'].includes('application/json'), 'Should return JSON');
     const statusData = JSON.parse(statusRes.data);
     assert.strictEqual(statusData.success, true);
     console.log("✓ Audit status returned valid JSON");
 
     // 4. audit result handler returns valid JSON
-    const resultRes = await makeRequest(`/api/tools/audit/result/${auditId}`);
+    const resultRes = await makeRequest(`/api/tools/audit/result/${auditId}`, 'GET', null, guestHeaders);
     assert.ok(resultRes.headers['content-type'].includes('application/json'), 'Should return JSON');
     const resultData = JSON.parse(resultRes.data);
     assert.ok(resultData.success === true || resultData.success === false);

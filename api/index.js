@@ -2229,11 +2229,83 @@ var init_audit_profiles = __esm({
   }
 });
 
+// src/lib/audit/report-insights.ts
+function scoreToGrade(score) {
+  if (score == null || !Number.isFinite(score)) return null;
+  if (score >= 90) return "A";
+  if (score >= 80) return "B";
+  if (score >= 70) return "C";
+  if (score >= 60) return "D";
+  if (score >= 50) return "E";
+  return "F";
+}
+function classifyReportSection(issue) {
+  const text = `${issue.category} ${issue.title} ${issue.description}`.toLowerCase();
+  if (/security|https|tls|certificate|header|cookie|csp|hsts|cors|mixed content|x-frame|referrer-policy|permissions-policy/.test(text)) return "security";
+  if (/internal link|broken link|orphan|anchor text|crawl depth/.test(text)) return "internal-links";
+  if (/performance|response time|slow|page size|payload|compression|cache|resource|latency/.test(text)) return "performance";
+  if (/mobile|viewport|tap target|responsive|usability/.test(text)) return "mobile";
+  if (/schema|structured data|json-ld|open graph|twitter card|social preview/.test(text)) return "structured-data";
+  if (/robots|sitemap|index|canonical|preferred page url|crawlable|crawlability|noindex/.test(text)) return "crawlability";
+  if (/status code|redirect|http error|doctype|charset|content-type|server error/.test(text)) return "technical";
+  return "on-page";
+}
+function groupKey(issue) {
+  return `${classifyReportSection(issue)}|${issue.category}|${issue.title}`.trim().toLowerCase();
+}
+function groupRecommendations(issues) {
+  const groups = /* @__PURE__ */ new Map();
+  issues.forEach((issue) => {
+    const key = groupKey(issue);
+    const current = groups.get(key);
+    const affectedUrl = String(issue.affectedUrl || "").trim();
+    const evidence = String(issue.evidence || "").trim();
+    if (!current) {
+      groups.set(key, {
+        id: key.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
+        title: issue.title,
+        category: issue.category,
+        severity: issue.severity,
+        description: issue.description,
+        recommendation: issue.recommendation,
+        evidence: evidence ? [evidence] : [],
+        affectedUrls: affectedUrl ? [affectedUrl] : [],
+        affectedCount: affectedUrl ? 1 : 0,
+        section: classifyReportSection(issue)
+      });
+      return;
+    }
+    if (SEVERITY_WEIGHT[issue.severity] > SEVERITY_WEIGHT[current.severity]) current.severity = issue.severity;
+    if (affectedUrl && !current.affectedUrls.includes(affectedUrl)) current.affectedUrls.push(affectedUrl);
+    if (evidence && !current.evidence.includes(evidence)) current.evidence.push(evidence);
+    current.affectedCount = current.affectedUrls.length;
+  });
+  return Array.from(groups.values()).sort((left, right) => {
+    const priority = SEVERITY_WEIGHT[right.severity] - SEVERITY_WEIGHT[left.severity];
+    if (priority) return priority;
+    const reach = right.affectedCount - left.affectedCount;
+    return reach || left.title.localeCompare(right.title);
+  });
+}
+var SEVERITY_WEIGHT;
+var init_report_insights = __esm({
+  "src/lib/audit/report-insights.ts"() {
+    SEVERITY_WEIGHT = {
+      critical: 5,
+      high: 4,
+      medium: 3,
+      low: 2,
+      info: 1
+    };
+  }
+});
+
 // src/lib/report/pdf.ts
 import PDFDocument from "pdfkit";
-function numberScore(value, fallback) {
+function optionalScore(value) {
+  if (value == null || value === "") return null;
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : fallback;
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : null;
 }
 function estimatedScore(data) {
   const audit = data.audit;
@@ -2263,7 +2335,7 @@ async function renderAuditPdf(data) {
       info: {
         Title: `SEOIntel audit report - ${audit.hostname}`,
         Author: "SEOIntel",
-        Subject: "SEO, website health, and passive browser safety audit"
+        Subject: "SEO, website health, and Passive Security Review"
       }
     });
     const chunks = [];
@@ -2297,8 +2369,10 @@ async function renderAuditPdf(data) {
       const y = doc.y;
       doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(9).text(label, margin, y, { width: 126, lineBreak: false });
       doc.fillColor(COLORS.panel).roundedRect(margin + 132, y + 1, contentWidth - 166, 10, 5).fill();
-      doc.fillColor(color).roundedRect(margin + 132, y + 1, Math.max(2, (contentWidth - 166) * (value / 100)), 10, 5).fill();
-      doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(9).text(String(Math.round(value)), doc.page.width - margin - 28, y, { width: 28, align: "right", lineBreak: false });
+      if (value != null) {
+        doc.fillColor(color).roundedRect(margin + 132, y + 1, Math.max(2, (contentWidth - 166) * (value / 100)), 10, 5).fill();
+      }
+      doc.fillColor(value == null ? COLORS.muted : COLORS.ink).font(value == null ? "Helvetica" : "Helvetica-Bold").fontSize(value == null ? 7 : 9).text(value == null ? "N/M" : String(Math.round(value)), doc.page.width - margin - 30, y, { width: 30, align: "right", lineBreak: false });
       doc.y = y + 24;
     };
     const drawMetric = (x, y, width, label, value, color) => {
@@ -2376,21 +2450,23 @@ async function renderAuditPdf(data) {
     doc.moveDown(0.55).fillColor(COLORS.muted).font("Helvetica").fontSize(8.5).text(`Audit type: ${audit.processingTier}  |  Status: ${audit.status}  |  Pages checked: ${audit.pagesCrawled}/${audit.pageLimit}  |  Generated: ${(/* @__PURE__ */ new Date()).toLocaleString()}`, margin, doc.y, { width: contentWidth });
     doc.moveDown(1);
     const scores = data.finalReport?.scores || {};
-    const overall = numberScore(scores.overall, estimatedScore(data));
+    const finalOverall = optionalScore(scores.overall);
+    const overall = finalOverall ?? estimatedScore(data);
+    const overallGrade = scoreToGrade(overall) || "N/M";
     const metricGap = 10;
     const metricWidth = (contentWidth - metricGap * 3) / 4;
     const metricY = doc.y;
-    drawMetric(margin, metricY, metricWidth, "Site health", String(Math.round(overall)), overall >= 80 ? COLORS.green : overall >= 60 ? COLORS.blue : COLORS.amber);
+    drawMetric(margin, metricY, metricWidth, finalOverall == null ? "Estimated grade" : "Overall grade", `${overallGrade}  ${Math.round(overall)}`, overall >= 80 ? COLORS.green : overall >= 60 ? COLORS.blue : COLORS.amber);
     drawMetric(margin + (metricWidth + metricGap), metricY, metricWidth, "Pages checked", String(audit.pagesCrawled), COLORS.blue);
     drawMetric(margin + (metricWidth + metricGap) * 2, metricY, metricWidth, "Open fixes", String(audit.issuesFound), COLORS.amber);
     drawMetric(margin + (metricWidth + metricGap) * 3, metricY, metricWidth, "Fix now", String(audit.criticalCount), audit.criticalCount ? COLORS.red : COLORS.green);
     doc.y = metricY + 76;
-    sectionTitle("Executive summary", data.finalReport?.summary || `SEOIntel checked ${audit.pagesCrawled} page(s) and found ${audit.issuesFound} issue(s).`);
-    drawScoreBar("SEO", numberScore(scores.seo, overall), COLORS.blue);
-    drawScoreBar("Technical SEO", numberScore(scores.technical, overall), COLORS.blue);
-    drawScoreBar("Performance signals", numberScore(scores.performance, overall), COLORS.amber);
-    drawScoreBar("Google access", numberScore(scores.crawlability, overall), COLORS.green);
-    drawScoreBar("Browser safety", numberScore(scores.security, overall), COLORS.green);
+    sectionTitle("Executive summary", `${data.finalReport?.summary || `SEOIntel checked ${audit.pagesCrawled} page(s) and found ${audit.issuesFound} issue(s).`} Grade ranges: A 90-100, B 80-89, C 70-79, D 60-69, E 50-59, F below 50. N/M means not measured.`);
+    drawScoreBar("On-page SEO", optionalScore(scores.seo), COLORS.blue);
+    drawScoreBar("Technical SEO", optionalScore(scores.technical), COLORS.blue);
+    drawScoreBar("Performance", optionalScore(scores.performance), COLORS.amber);
+    drawScoreBar("Crawlability", optionalScore(scores.crawlability), COLORS.green);
+    drawScoreBar("Passive security", optionalScore(scores.security), COLORS.green);
     sectionTitle("Fix priority", "Use this distribution to decide what to handle first.");
     const severities = [
       { label: "Fix now", value: audit.criticalCount, color: COLORS.red },
@@ -2408,11 +2484,26 @@ async function renderAuditPdf(data) {
       doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(8).text(String(item.value), doc.page.width - margin - 25, y, { width: 25, align: "right", lineBreak: false });
       doc.y = y + 20;
     });
-    sectionTitle("Top fixes", "Each item includes a client-ready checklist box, evidence, and the recommended next action.");
-    data.latestIssues.slice(0, 50).forEach(drawIssue);
-    if (data.latestIssues.length > 50) {
+    sectionTitle("Prioritized recommendations", "Repeated findings are grouped by issue type and ordered by priority and affected-page count.");
+    const groupedIssues = groupRecommendations(data.latestIssues);
+    groupedIssues.slice(0, 30).forEach((group, index) => {
+      const representative = data.latestIssues.find((issue) => issue.title === group.title && issue.category === group.category);
+      const groupedIssue = {
+        id: representative?.id || group.id,
+        severity: group.severity,
+        category: group.category,
+        title: group.affectedCount > 1 ? `${group.title} (${group.affectedCount} pages)` : group.title,
+        description: group.description,
+        affectedUrl: group.affectedUrls.slice(0, 3).join(", ") || "Site-wide",
+        evidence: group.evidence.slice(0, 3).join(" | "),
+        recommendation: group.recommendation,
+        detectedAt: representative?.detectedAt || audit.updatedAt
+      };
+      drawIssue(groupedIssue, index);
+    });
+    if (groupedIssues.length > 30) {
       ensureSpace(28);
-      doc.fillColor(COLORS.muted).font("Helvetica-Oblique").fontSize(8).text(`${data.latestIssues.length - 50} additional findings are available in the JSON and CSV exports.`, margin, doc.y, { width: contentWidth });
+      doc.fillColor(COLORS.muted).font("Helvetica-Oblique").fontSize(8).text(`${groupedIssues.length - 30} additional recommendation groups are available in the JSON and CSV exports.`, margin, doc.y, { width: contentWidth });
       doc.moveDown(1);
     }
     ensureSpace(92);
@@ -2426,13 +2517,27 @@ async function renderAuditPdf(data) {
     }
     const firstPage = data.latestPages.find((page) => page.title || page.metaDescription) || data.latestPages[0];
     sectionTitle("Search and page preview", "A safe metadata-based preview is included because live external pages cannot be embedded inside a PDF.");
-    ensureSpace(128);
+    const fullPreviewUrl = firstPage?.url || audit.finalUrl || audit.normalizedUrl;
+    const previewUrl = fullPreviewUrl.length > 108 ? `${fullPreviewUrl.slice(0, 105)}...` : fullPreviewUrl;
+    const previewTitle = firstPage?.title || `${audit.hostname} audit result`;
+    const previewDescription = firstPage?.metaDescription || "No meta description was available for the preview.";
+    doc.font("Helvetica").fontSize(8);
+    const previewUrlHeight = Math.min(24, doc.heightOfString(previewUrl, { width: contentWidth - 28, lineGap: 1 }));
+    doc.font("Helvetica-Bold").fontSize(14);
+    const previewTitleHeight = Math.min(36, doc.heightOfString(previewTitle, { width: contentWidth - 28, lineGap: 1 }));
+    doc.font("Helvetica").fontSize(8.5);
+    const previewDescriptionHeight = Math.min(30, doc.heightOfString(previewDescription, { width: contentWidth - 28, lineGap: 1 }));
+    const previewHeight = 14 + previewUrlHeight + 7 + previewTitleHeight + 8 + previewDescriptionHeight + 14;
+    ensureSpace(previewHeight + 16);
     const previewY = doc.y;
-    doc.roundedRect(margin, previewY, contentWidth, 116, 8).fillAndStroke("#ffffff", COLORS.line);
-    doc.fillColor(COLORS.muted).font("Helvetica").fontSize(8).text(firstPage?.url || audit.finalUrl || audit.normalizedUrl, margin + 14, previewY + 14, { width: contentWidth - 28 });
-    doc.fillColor(COLORS.blue).font("Helvetica-Bold").fontSize(14).text(firstPage?.title || `${audit.hostname} audit result`, margin + 14, previewY + 38, { width: contentWidth - 28, height: 36, ellipsis: true });
-    doc.fillColor(COLORS.muted).font("Helvetica").fontSize(8.5).text(firstPage?.metaDescription || "No meta description was available for the preview.", margin + 14, previewY + 76, { width: contentWidth - 28, height: 28, ellipsis: true });
-    doc.y = previewY + 130;
+    doc.roundedRect(margin, previewY, contentWidth, previewHeight, 8).fillAndStroke("#ffffff", COLORS.line);
+    const previewUrlY = previewY + 14;
+    doc.fillColor(COLORS.muted).font("Helvetica").fontSize(8).text(previewUrl, margin + 14, previewUrlY, { width: contentWidth - 28, height: previewUrlHeight, ellipsis: true });
+    const previewTitleY = previewUrlY + previewUrlHeight + 7;
+    doc.fillColor(COLORS.blue).font("Helvetica-Bold").fontSize(14).text(previewTitle, margin + 14, previewTitleY, { width: contentWidth - 28, height: previewTitleHeight, ellipsis: true });
+    const previewDescriptionY = previewTitleY + previewTitleHeight + 8;
+    doc.fillColor(COLORS.muted).font("Helvetica").fontSize(8.5).text(previewDescription, margin + 14, previewDescriptionY, { width: contentWidth - 28, height: previewDescriptionHeight, ellipsis: true });
+    doc.y = previewY + previewHeight + 14;
     sectionTitle("Audit activity", "Recent audit events show how the report was produced.");
     data.latestEvents.slice(-20).forEach((event) => {
       const label = `${new Date(event.timestamp).toLocaleTimeString()}  ${event.message || event.type}`;
@@ -2459,6 +2564,7 @@ async function renderAuditPdf(data) {
 var COLORS;
 var init_pdf = __esm({
   "src/lib/report/pdf.ts"() {
+    init_report_insights();
     COLORS = {
       ink: "#10243a",
       muted: "#5e7185",
@@ -2720,6 +2826,7 @@ var init_index = __esm({
       try {
         const liveData = await auditRepository.getLiveData(req.params.id);
         if (!liveData.audit) return res.status(404).json({ success: false, error: "Audit not found" });
+        if (!await canAccessAudit(req, liveData.audit)) return res.status(404).json({ success: false, error: "Audit not found" });
         res.json({ success: true, data: liveData });
       } catch (error) {
         res.status(500).json({ success: false, error: error.message || "Internal Server Error" });
@@ -2728,6 +2835,7 @@ var init_index = __esm({
     apiRouter.post("/audit/cancel/:id", asyncJsonRoute(async (req, res) => {
       const audit = await auditRepository.getAudit(req.params.id);
       if (!audit) return res.status(404).json({ success: false, error: "Audit not found" });
+      if (!await canAccessAudit(req, audit)) return res.status(404).json({ success: false, error: "Audit not found" });
       await auditRepository.cancelAudit(req.params.id);
       res.json({ success: true, data: { auditId: req.params.id, status: "cancelled" } });
     }));
@@ -2735,6 +2843,7 @@ var init_index = __esm({
       try {
         const liveData = await auditRepository.getLiveData(req.params.id);
         if (!liveData.audit) return res.status(404).json({ success: false, error: "Audit not found" });
+        if (!await canAccessAudit(req, liveData.audit)) return res.status(404).json({ success: false, error: "Audit not found" });
         res.json({ success: true, data: liveData });
       } catch (error) {
         res.status(500).json({ success: false, error: error.message || "Internal Server Error" });
@@ -2744,10 +2853,8 @@ var init_index = __esm({
       const { id, format } = req.params;
       const liveData = await auditRepository.getLiveData(id);
       if (!liveData.audit) return res.status(404).json({ success: false, error: "Audit not found" });
+      if (!await canAccessAudit(req, liveData.audit)) return res.status(404).json({ success: false, error: "Audit not found" });
       if (format === "pdf") {
-        if (!await canAccessAudit(req, liveData.audit)) {
-          return res.status(404).json({ success: false, error: "Audit not found" });
-        }
         if (liveData.audit.status !== "completed") {
           return res.status(409).json({ success: false, error: "PDF export is available after the audit completes." });
         }
