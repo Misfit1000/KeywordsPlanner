@@ -31,6 +31,7 @@ import {
   StatusBadge,
   SurfaceCard,
 } from './ui/visual-system';
+import { PageHeader } from './ui/page-system';
 
 interface DashboardProps {
   keyword?: string;
@@ -105,6 +106,13 @@ export default function Dashboard(props: DashboardProps) {
 
   return (
     <div className="w-full space-y-8 animate-rise">
+      <PageHeader
+        eyebrow="Workspace overview"
+        icon={Gauge}
+        title="Website audit workspace"
+        description="Review current plan usage, measured website health, recent audit history, and the next fixes that deserve attention."
+        actions={<button type="button" onClick={props.onOpenSeoAudit} className="trust-button"><Rocket className="h-4 w-4" /> Start new audit</button>}
+      />
       <SurfaceCard className="p-0">
         <div className="grid lg:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
           <div className="p-6 md:p-8">
@@ -112,7 +120,7 @@ export default function Dashboard(props: DashboardProps) {
               <StatusBadge tone={plan === 'free' ? 'warning' : 'success'}>{plan} plan</StatusBadge>
               <StatusBadge tone="accent">{plan === 'free' ? 'Quick audits' : 'Full audits'}</StatusBadge>
             </div>
-            <h1 className="mt-5 max-w-3xl text-3xl font-bold leading-tight md:text-4xl">Your website audit workspace</h1>
+            <h2 className="mt-5 max-w-3xl text-2xl font-semibold leading-tight md:text-3xl">Audit results and next actions in one place</h2>
             <p className="mt-3 max-w-3xl text-base leading-7 text-muted-foreground">
               Run a live website scan, review the highest-priority fixes, and return to measured results without mixing in unsupported ranking or backlink data.
             </p>
@@ -219,7 +227,7 @@ export default function Dashboard(props: DashboardProps) {
             ].map((item) => {
               const Icon = item.icon;
               return (
-                <button key={item.label} type="button" onClick={item.action} className="flex items-center gap-3 rounded-lg px-3 py-3 text-left hover:bg-muted">
+                <button key={item.label} type="button" onClick={item.action} className="flex w-full min-w-0 items-center gap-3 rounded-lg px-3 py-3 text-left hover:bg-muted">
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent"><Icon className="h-5 w-5" /></span>
                   <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{item.label}</span><span className="block truncate text-xs text-muted-foreground">{item.detail}</span></span>
                   <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />

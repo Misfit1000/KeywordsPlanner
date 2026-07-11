@@ -1,83 +1,24 @@
-import React, { useState } from 'react';
-import { AlertTriangle, Target } from 'lucide-react';
+import { Target } from 'lucide-react';
+import { Notice, PageHeader, Panel } from './ui/page-system';
 
 export default function CompetitorGap() {
-  const [myUrl, setMyUrl] = useState('');
-  const [comp1, setComp1] = useState('');
-  const [comp2, setComp2] = useState('');
-
-  const handleAnalyze = (e: React.FormEvent) => {
-    e.preventDefault();
-  };
-
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight mb-2">Competitor Keyword Gap</h1>
-        <p className="text-muted-foreground">
-          Competitor Gap is being rebuilt as a safe background analysis feature.
-        </p>
-      </div>
-
-      <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 text-yellow-700 rounded-xl flex gap-3">
-        <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
-        <div>
-          <p className="font-semibold">Temporarily disabled</p>
-          <p className="text-sm">
-            Competitor Gap is temporarily disabled while safe background analysis is being enabled. This prevents long competitor scans from running inside live website requests.
-          </p>
-        </div>
-      </div>
-
-      <div className="bg-card border border-border p-6 rounded-2xl shadow-sm opacity-75">
-        <form onSubmit={handleAnalyze} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Your Website</label>
-              <input
-                type="text"
-                value={myUrl}
-                onChange={e => setMyUrl(e.target.value)}
-                placeholder="https://your-site.com"
-                className="w-full bg-muted/50 border border-border rounded-xl py-2 px-4 outline-none"
-              />
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Competitor 1</label>
-                <input
-                  type="text"
-                  value={comp1}
-                  onChange={e => setComp1(e.target.value)}
-                  placeholder="https://competitor1.com"
-                  className="w-full bg-muted/50 border border-border rounded-xl py-2 px-4 outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1 text-muted-foreground">Competitor 2 (Optional)</label>
-                <input
-                  type="text"
-                  value={comp2}
-                  onChange={e => setComp2(e.target.value)}
-                  placeholder="https://competitor2.com"
-                  className="w-full bg-muted/50 border border-border rounded-xl py-2 px-4 outline-none"
-                />
-              </div>
-            </div>
+    <div className="mx-auto w-full max-w-5xl space-y-8 animate-rise">
+      <PageHeader eyebrow="Planned workflow" icon={Target} title="Competitor comparison" description="Compare public page structure only after the background audit engine supports a bounded, resource-light workflow." />
+      <Notice tone="warning" title="Background comparison is not active">The unfinished form has been removed so the page does not present controls that cannot complete an analysis. No long competitor scan will run inside a Vercel request.</Notice>
+      <Panel className="grid gap-6 p-6 sm:p-8 md:grid-cols-3">
+        {[
+          ['1', 'Choose audited pages', 'Use completed SEOIntel audits as the evidence source.'],
+          ['2', 'Compare measured checks', 'Metadata, headings, links, response signals, and passive safety only.'],
+          ['3', 'Review differences', 'Show real observed differences without invented rankings or traffic.'],
+        ].map(([step, title, copy]) => (
+          <div key={step}>
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent/10 text-sm font-semibold text-accent">{step}</div>
+            <h2 className="mt-4 text-lg font-semibold">{title}</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{copy}</p>
           </div>
-
-          <div className="flex justify-end pt-2 border-t border-border mt-4">
-            <button
-              type="submit"
-              disabled
-              className="px-6 py-2.5 bg-muted text-muted-foreground font-semibold rounded-xl cursor-not-allowed flex items-center gap-2"
-            >
-              <Target className="w-5 h-5" />
-              Background analysis coming soon
-            </button>
-          </div>
-        </form>
-      </div>
+        ))}
+      </Panel>
     </div>
   );
 }

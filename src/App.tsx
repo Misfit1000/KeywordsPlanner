@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
-import { Search, LogOut, User, Menu, Mail, Loader2, TrendingUp } from 'lucide-react';
+import { Mail, Loader2 } from 'lucide-react';
 import LandingPage, { type LandingDestination } from './components/LandingPage';
 import { useAuth } from './contexts/AuthContext';
 import { useTheme } from './contexts/ThemeContext';
@@ -8,6 +8,7 @@ import { safeJsonFetch } from './lib/http/safe-json';
 import { getAuditStartHeaders } from './lib/api/auth-headers';
 import { createAuditSubmitGuard } from './lib/api/audit-submit-guard';
 import { BrandMark, LoadingSkeleton, ThemeToggle } from './components/ui/visual-system';
+import { MarketingShell, WorkspaceShell } from './components/layout/ProductShells';
 
 // Lazy load heavy components
 const Login = lazy(() => import('./components/Login'));
@@ -31,7 +32,7 @@ const PublicDiscovery = lazy(() => import('./components/PublicDiscovery'));
 const SearchData = lazy(() => import('./components/SearchData'));
 const LiveAuditProgress = lazy(() => import('./components/audit/LiveAuditProgress').then((mod) => ({ default: mod.LiveAuditProgress })));
 
-export type TabType = 'dashboard' | 'keyword-research' | 'website-analyzer' | 'keyword-clusters' | 'competitor-gap' | 'content-briefs' | 'seo-audit' | 'security-audit' | 'rank-tracker' | 'imports' | 'reports' | 'settings' | 'admin-dashboard' | 'public-discovery' | 'search-data';
+export type TabType = 'dashboard' | 'keyword-research' | 'website-analyzer' | 'keyword-clusters' | 'competitor-gap' | 'content-briefs' | 'seo-audit' | 'seo-findings' | 'technical-seo' | 'crawlability' | 'performance' | 'pages' | 'audit-history' | 'security-audit' | 'rank-tracker' | 'imports' | 'reports' | 'settings' | 'admin-dashboard' | 'public-discovery' | 'search-data';
 
 const LOCATIONS = [
   { code: 'US', name: 'United States' },
@@ -428,6 +429,18 @@ export default function App() {
         return <ContentBriefs />;
       case 'seo-audit':
         return <SeoAudit initialUrl={searchedKeyword} />;
+      case 'seo-findings':
+        return <Reports onStartAudit={() => setActiveTab('seo-audit')} initialSection="report-on-page" />;
+      case 'technical-seo':
+        return <Reports onStartAudit={() => setActiveTab('seo-audit')} initialSection="report-technical" />;
+      case 'crawlability':
+        return <Reports onStartAudit={() => setActiveTab('seo-audit')} initialSection="report-crawlability" />;
+      case 'performance':
+        return <Reports onStartAudit={() => setActiveTab('seo-audit')} initialSection="report-performance" />;
+      case 'pages':
+        return <Reports onStartAudit={() => setActiveTab('seo-audit')} initialSection="report-pages" />;
+      case 'audit-history':
+        return <Reports onStartAudit={() => setActiveTab('seo-audit')} initialSection="report-history" />;
       case 'security-audit':
         return <SecurityAudit />;
       case 'rank-tracker':
@@ -460,9 +473,9 @@ export default function App() {
       )}
 
       {authMode && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[#0b1b46]/35 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={authMode === 'login' ? 'Sign in' : 'Create account'}>
           <div className="relative w-full max-w-md">
-            <Suspense fallback={<div className="bg-card border border-border rounded-3xl p-8 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-accent" /></div>}>
+            <Suspense fallback={<div className="flex items-center justify-center rounded-2xl border border-border bg-card p-8"><Loader2 className="h-6 w-6 animate-spin text-accent" /></div>}>
               {authMode === 'login' ? (
                 <Login onToggle={() => setAuthMode('register')} onClose={() => setAuthMode(null)} />
               ) : (
@@ -475,63 +488,16 @@ export default function App() {
 
       <div className="relative z-10 flex flex-col min-h-screen">
         {!isSearching ? (
-            <div className="flex min-h-screen flex-1 flex-col">
-              <header className="sticky top-0 z-50 border-b border-border bg-background/90 px-3 py-3 shadow-sm shadow-slate-950/5 backdrop-blur-xl sm:px-4 md:px-8">
-                <div className="mx-auto flex w-full max-w-[1500px] items-center justify-between gap-2 sm:gap-4">
-                  <button type="button" onClick={() => setIsSearching(false)} className="rounded-2xl">
-                    <BrandMark />
-                  </button>
-                  <nav className="hidden items-center gap-1 text-sm font-semibold text-muted-foreground lg:flex" aria-label="Product navigation">
-                    <a href="#features" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">Features</a>
-                    <a href="#free-tools" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">Free tools</a>
-                    <a href="#use-cases" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">Use cases</a>
-                    <a href="#pricing" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">Pricing</a>
-                    <a href="#reports" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">Reports</a>
-                    <a href="#faq" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">FAQ</a>
-                  </nav>
-                  <div className="flex items-center gap-1 sm:gap-3">
-                    <ThemeToggle theme={theme} onToggle={toggleTheme} />
-                {authLoading ? (
-                      <div className="h-10 w-28 animate-pulse rounded-full border border-border bg-card/60" />
-                ) : user ? (
-                  <>
-                    <button 
-                      onClick={() => {
-                        setActiveTab('settings');
-                        setIsSearching(true);
-                      }}
-                          className="hidden items-center gap-2 rounded-full border border-border bg-card/80 px-4 py-2 text-foreground transition-colors hover:bg-muted md:flex"
-                    >
-                      <User className="w-4 h-4" />
-                      <span className="text-sm font-medium">{user.username || 'User'}</span>
-                    </button>
-                        <button onClick={handleLogout} className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-500" title="Sign out" aria-label="Sign out">
-                      <LogOut className="w-5 h-5" />
-                    </button>
-                  </>
-                ) : (
-                  <div className="flex items-center gap-1 sm:gap-2">
-                    <button 
-                      onClick={() => setAuthMode('login')}
-                      aria-label="Sign In"
-                          className="inline-flex items-center justify-center whitespace-nowrap rounded-full p-2 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:px-4"
-                    >
-                          <User className="h-4 w-4 sm:hidden" />
-                          <span className="hidden sm:inline">Sign In</span>
-                    </button>
-                    <a
-                      href="#start-audit"
-                          className="whitespace-nowrap rounded-full bg-accent px-3 py-2 text-sm font-bold text-accent-foreground shadow-sm shadow-accent/20 transition-colors hover:bg-accent/90 sm:px-4"
-                    >
-                          <span className="hidden sm:inline">Start Free Audit</span>
-                          <span className="sm:hidden">Audit</span>
-                    </a>
-                  </div>
-                )}
-              </div>
-                </div>
-              </header>
-
+            <MarketingShell
+              theme={theme}
+              onToggleTheme={toggleTheme}
+              userLabel={user?.username || (user ? 'Account' : null)}
+              authLoading={authLoading}
+              onHome={() => setIsSearching(false)}
+              onLogin={() => setAuthMode('login')}
+              onSettings={() => openAppTab('settings')}
+              onLogout={handleLogout}
+            >
               <LandingPage 
                 onStartAudit={async (url) => {
                   try {
@@ -554,98 +520,25 @@ export default function App() {
                   {startAuditError}
                 </div>
               )}
-            </div>
+            </MarketingShell>
           ) : (
-            <div className="flex-1 flex flex-col">
-              {/* Header */}
-              <header className="sticky top-0 z-50 flex h-[4.5rem] items-center justify-between border-b border-border bg-background/90 px-3 shadow-sm shadow-slate-950/5 backdrop-blur-xl transition-colors duration-300 sm:px-4 md:px-6">
-                <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
-                  <div className="flex items-center gap-2">
-                    <button 
-                      onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                      className="-ml-2 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                      aria-label="Toggle navigation"
-                    >
-                      <Menu className="w-5 h-5" />
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-lg"
-                      onClick={() => setIsSearching(false)}
-                    >
-                      <BrandMark />
-                    </button>
-                  </div>
-                  
-                  <form onSubmit={(e) => handleSearch(e, undefined, false)} className="group relative ml-4 hidden max-w-3xl flex-1 items-center rounded-lg border border-border bg-card/80 shadow-sm transition-all hover:bg-card focus-within:border-accent focus-within:bg-card focus-within:ring-2 focus-within:ring-accent/15 md:flex">
-                    <Search className="w-4 h-4 text-muted-foreground ml-3 flex-shrink-0" />
-                    <input
-                      type="text"
-                      value={keyword}
-                      onChange={(e) => setKeyword(e.target.value)}
-                      placeholder="Search audits, reports, pages..."
-                      className="min-w-0 flex-1 border-none bg-transparent px-3 py-2.5 text-sm font-medium text-foreground outline-none placeholder:text-muted-foreground"
-                    />
-                    <div className="flex items-center gap-1 pr-2 flex-shrink-0">
-                      <button
-                        type="submit"
-                        className="rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-bold text-foreground transition-colors hover:bg-muted"
-                      >
-                        Basic
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => handleSearch(e, undefined, true)}
-                        className="flex items-center gap-1 rounded-xl bg-accent px-3 py-1.5 text-xs font-bold text-accent-foreground shadow-sm shadow-accent/20 transition-colors hover:bg-accent/90"
-                      >
-                        <TrendingUp className="w-3 h-3" />
-                        In-Depth
-                      </button>
-                    </div>
-                  </form>
-                </div>
-                
-                <div className="ml-2 flex items-center gap-1 sm:ml-4 sm:gap-3">
-                  <ThemeToggle theme={theme} onToggle={toggleTheme} />
-                  <div className="mx-1 hidden h-5 w-px bg-border md:block"></div>
-                  {authLoading ? (
-                    <div className="h-9 w-16 animate-pulse rounded-lg border border-border bg-muted/30 sm:w-28" />
-                  ) : user ? (
-                    <>
-                      <button 
-                        onClick={() => setActiveTab('settings')}
-                        className="hidden items-center gap-2 rounded-lg border border-border bg-card/80 px-3 py-2 text-foreground shadow-sm transition-colors hover:bg-muted md:flex"
-                      >
-                        <User className="w-4 h-4 text-muted-foreground" />
-                        <span className="text-sm font-medium truncate max-w-[120px]">{user.username || 'User'}</span>
-                      </button>
-                      <button onClick={handleLogout} className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-500" title="Sign out">
-                        <LogOut className="w-5 h-5" />
-                      </button>
-                    </>
-                  ) : (
-                    <div className="flex items-center gap-1 sm:gap-2">
-                      <button 
-                        onClick={() => setAuthMode('login')}
-                        aria-label="Log in"
-                        className="inline-flex items-center justify-center rounded-lg p-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:px-3"
-                      >
-                        <User className="h-4 w-4 sm:hidden" />
-                        <span className="hidden sm:inline">Log in</span>
-                      </button>
-                      <button 
-                        onClick={() => setAuthMode('register')}
-                        className="rounded-lg bg-accent px-3 py-2 text-sm font-bold text-accent-foreground shadow-sm transition-colors hover:bg-accent/90 sm:px-4"
-                      >
-                        <span className="sm:hidden">Join</span>
-                        <span className="hidden sm:inline">Sign up</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </header>
-
-              <div className="flex flex-1 relative">
+            <WorkspaceShell
+              theme={theme}
+              onToggleTheme={toggleTheme}
+              sidebarOpen={isSidebarOpen}
+              onToggleSidebar={() => setIsSidebarOpen((open) => !open)}
+              onHome={() => setIsSearching(false)}
+              query={keyword}
+              onQueryChange={setKeyword}
+              onSearch={(event) => handleSearch(event, undefined, false)}
+              onDeepSearch={() => handleSearch(undefined, undefined, true)}
+              userLabel={user?.username || (user ? 'Account' : null)}
+              authLoading={authLoading}
+              onLogin={() => setAuthMode('login')}
+              onRegister={() => setAuthMode('register')}
+              onSettings={() => setActiveTab('settings')}
+              onLogout={handleLogout}
+              sidebar={
                 <Suspense fallback={null}>
                   <Sidebar
                     isOpen={isSidebarOpen}
@@ -655,19 +548,10 @@ export default function App() {
                     onOpenHelp={() => openHomeSection('faq')}
                   />
                 </Suspense>
-                <main className="w-full flex-1">
-                  <Suspense fallback={
-                    <div className="suite-page">
-                      <LoadingSkeleton rows={5} />
-                    </div>
-                  }>
-                    <div className="suite-page">
-                      {renderContent()}
-                    </div>
-                  </Suspense>
-                </main>
-              </div>
-            </div>
+              }
+            >
+              <Suspense fallback={<LoadingSkeleton rows={5} />}>{renderContent()}</Suspense>
+            </WorkspaceShell>
           )}
       </div>
     </div>

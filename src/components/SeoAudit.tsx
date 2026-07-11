@@ -7,6 +7,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Activity, Play, RefreshCw, AlertTriangle, CheckCircle2, Globe, Layers, ShieldAlert, Lock } from 'lucide-react';
 import { FullAuditResult, AuditIssue } from '../lib/audit/types';
 import { useAuth } from '../contexts/AuthContext';
+import { FormField, Notice, PageHeader, Panel, SegmentedControl } from './ui/page-system';
+import { FindingRow, MetricCard } from './ui/visual-system';
 
 export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
   const { user } = useAuth();
@@ -70,63 +72,58 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
   };
 
   return (
-    <div className="w-full space-y-6 animate-rise">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight mb-2">SEO visibility audit</h1>
-        <p className="text-muted-foreground">Check titles, descriptions, Google access, page structure, links, and search previews with clear next steps.</p>
-      </div>
+    <div className="w-full space-y-9 animate-rise">
+      <PageHeader eyebrow="Start audit" icon={Activity} title="Audit a website" description="Run a live, worker-backed review of on-page SEO, technical delivery, search access, page health, and passive browser protections." />
 
-      <div className="trust-card p-5 md:p-6">
-        <form onSubmit={startAudit} className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1 relative">
-            <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-            <input
-              type="text"
-              value={url}
-              onChange={e => setUrl(e.target.value)}
-              placeholder="Enter a website URL (e.g. https://example.com)"
-              className="suite-input py-3 pl-10 pr-4"
-            />
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
+        <Panel className="p-5 sm:p-7">
+          <form onSubmit={startAudit} className="space-y-6">
+            <FormField label="Website URL" htmlFor="audit-url" hint="Use the public homepage or a specific page. Redirects and the final URL are recorded by the audit engine.">
+              <div className="relative">
+                <Globe className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                <input id="audit-url" type="url" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://example.com" className="suite-input pl-10" required />
+              </div>
+            </FormField>
+            <FormField label="Audit type" hint="Unavailable modes stay locked to protect plan limits and worker capacity.">
+              <SegmentedControl<'quick' | 'standard' | 'deep'>
+                label="Audit type"
+                value={mode}
+                onChange={setMode}
+                options={[
+                  { value: 'quick', label: 'Quick' },
+                  { value: 'standard', label: 'Full', disabled: !canUseStandard },
+                  { value: 'deep', label: 'Deep', disabled: !canUseDeep },
+                ]}
+              />
+            </FormField>
+            {mode === 'deep' && <Notice tone="warning">Deep audits require an agency or admin plan and an available audit engine.</Notice>}
+            {plan === 'free' && <Notice tone="info" title="Free plan">Quick audits check up to 5 pages with core SEO, technical, and passive security observations. Server-side entitlements enforce the final limit.</Notice>}
+            <button type="submit" disabled={loading || !url.trim()} className="trust-button w-full sm:w-auto">
+              {loading ? <RefreshCw className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5" />}
+              {loading ? 'Starting audit...' : 'Start live audit'}
+            </button>
+          </form>
+        </Panel>
+
+        <Panel className="p-5 sm:p-7">
+          <h2 className="text-xl font-semibold">What this audit includes</h2>
+          <div className="mt-5 space-y-4">
+            {[
+              ['On-page SEO', 'Titles, descriptions, headings, links, image text, and social metadata.'],
+              ['Technical SEO', 'Status codes, redirects, preferred URLs, search access, and response signals.'],
+              ['Passive security', 'HTTPS and public browser protection observations without attack traffic.'],
+            ].map(([title, copy]) => (
+              <div key={title} className="flex gap-3 border-b border-border pb-4 last:border-0 last:pb-0">
+                <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+                <div><div className="font-semibold">{title}</div><p className="mt-1 text-sm leading-6 text-muted-foreground">{copy}</p></div>
+              </div>
+            ))}
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium whitespace-nowrap">Audit type</label>
-            <select
-              value={mode}
-              onChange={e => setMode(e.target.value as any)}
-              className="bg-muted/50 border border-border rounded-xl py-3 px-3 outline-none focus:border-accent"
-            >
-              <option value="quick">Quick - free 5-page scan</option>
-              <option value="standard" disabled={!canUseStandard}>Full - paid/admin 25-page scan {!canUseStandard ? '(locked)' : ''}</option>
-              <option value="deep" disabled={!canUseDeep}>Deep - agency/admin expanded scan {!canUseDeep ? '(locked)' : ''}</option>
-            </select>
-          </div>
-          <button
-            type="submit"
-            disabled={loading || !url.trim()}
-            className="trust-button min-w-[140px] px-6 py-3"
-          >
-            {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Play className="w-5 h-5" />}
-            {loading ? 'Starting scan...' : 'Start scan'}
-          </button>
-        </form>
-        {mode === 'deep' && (
-          <div className="mt-3 text-sm text-amber-700 bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
-            Deep audit requires an agency/admin plan and a dedicated always-on audit engine.
-          </div>
-        )}
-        {plan === 'free' && (
-          <div className="mt-3 text-sm text-muted-foreground bg-muted/40 border border-border rounded-lg p-3 flex items-start gap-2">
-            <Lock className="w-4 h-4 mt-0.5" />
-            Free users get a quick 5-page scan and passive security observations. Paid/Admin accounts get larger scans, faster starts, richer reports, and deeper SEO plus safety categories.
-          </div>
-        )}
+          <div className="mt-6 rounded-xl bg-muted p-4 text-sm leading-6 text-muted-foreground"><Lock className="mr-2 inline h-4 w-4" />No raw HTML is stored. Long-running work stays on the separate audit engine.</div>
+        </Panel>
       </div>
       
-      {error && (
-        <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-500 rounded-xl flex items-center gap-2">
-          <AlertTriangle className="w-5 h-5" /> {error}
-        </div>
-      )}
+      {error && <Notice tone="danger" title="Audit could not start">{error}</Notice>}
       
       {jobId && !auditResult && (
   <LiveAuditProgress 
@@ -147,40 +144,11 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
 
       {auditResult && auditResult.status === 'completed' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-card border border-border p-6 rounded-2xl flex items-center justify-between shadow-sm hover:shadow-md transition-shadow group">
-              <div>
-                <p className="text-sm text-muted-foreground">SEO visibility score</p>
-                <p className={`text-4xl font-bold font-display ${auditResult.overallScore >= 80 ? 'text-green-500' : auditResult.overallScore >= 50 ? 'text-yellow-500' : 'text-red-500'}`}>
-                  {auditResult.overallScore}
-                </p>
-              </div>
-              <Activity className="w-10 h-10 text-muted-foreground/20 group-hover:scale-110 transition-transform" />
-            </div>
-            
-            <div className="bg-card border border-border p-6 rounded-2xl flex items-center justify-between shadow-sm hover:shadow-md transition-shadow group">
-              <div>
-                <p className="text-sm text-muted-foreground">Pages scanned</p>
-                <p className="text-4xl font-bold font-display text-accent">{auditResult.pagesCrawled}</p>
-              </div>
-              <Layers className="w-10 h-10 text-accent/20 group-hover:scale-110 transition-transform" />
-            </div>
-
-            <div className="bg-card border border-border p-6 rounded-2xl flex items-center justify-between shadow-sm hover:shadow-md transition-shadow group">
-              <div>
-                <p className="text-sm text-muted-foreground">Urgent fixes</p>
-                <p className="text-4xl font-bold font-display text-red-500">{auditResult.criticalIssues}</p>
-              </div>
-              <ShieldAlert className="w-10 h-10 text-red-500/20 group-hover:scale-110 transition-transform" />
-            </div>
-
-            <div className="bg-card border border-border p-6 rounded-2xl flex items-center justify-between shadow-sm hover:shadow-md transition-shadow group">
-              <div>
-                <p className="text-sm text-muted-foreground">Open fixes</p>
-                <p className="text-4xl font-bold font-display text-orange-500">{auditResult.allIssues.length}</p>
-              </div>
-              <AlertTriangle className="w-10 h-10 text-orange-500/20 group-hover:scale-110 transition-transform" />
-            </div>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <MetricCard label="Overall score" value={auditResult.overallScore} detail="Measured audit score" icon={<Activity className="h-5 w-5" />} tone={auditResult.overallScore >= 80 ? 'green' : auditResult.overallScore >= 50 ? 'yellow' : 'red'} />
+            <MetricCard label="Pages checked" value={auditResult.pagesCrawled} detail="Stored page summaries" icon={<Layers className="h-5 w-5" />} />
+            <MetricCard label="Fix now" value={auditResult.criticalIssues} detail="Critical findings" icon={<ShieldAlert className="h-5 w-5" />} tone={auditResult.criticalIssues ? 'red' : 'green'} />
+            <MetricCard label="Open fixes" value={auditResult.allIssues.length} detail="Across checked pages" icon={<AlertTriangle className="h-5 w-5" />} tone={auditResult.allIssues.length ? 'yellow' : 'green'} />
           </div>
           
           <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">

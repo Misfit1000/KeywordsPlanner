@@ -13,6 +13,7 @@ import {
   updatePlatformSettings,
   updateUserAdminFields,
 } from '../services/supabaseDataService';
+import { Notice, PageHeader, Panel as UiPanel } from './ui/page-system';
 
 type AdminTab = 'overview' | 'users' | 'audits' | 'queue' | 'workers' | 'settings' | 'plans';
 
@@ -61,10 +62,9 @@ export default function AdminDashboard() {
 
   if (!user || user.role !== 'admin') {
     return (
-      <div className="flex flex-col items-center justify-center py-32 space-y-4">
-        <ShieldAlert className="w-12 h-12 text-red-500" />
-        <h2 className="text-2xl font-bold">403 Admin access required</h2>
-        <p className="text-muted-foreground">Sign in with an admin account assigned through ADMIN_EMAILS or the admin panel.</p>
+      <div className="mx-auto w-full max-w-3xl space-y-8 py-16">
+        <PageHeader eyebrow="Protected area" icon={ShieldAlert} title="Admin access required" description="This operational workspace is available only to accounts with the server-verified admin role." />
+        <Notice tone="danger">Sign in with an administrator account assigned through the existing admin role controls. Client-side state cannot grant access.</Notice>
       </div>
     );
   }
@@ -75,21 +75,18 @@ export default function AdminDashboard() {
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Admin operations</h1>
-        <p className="text-muted-foreground">Manage users, plans, audit queue, audit engine health, and safe platform settings.</p>
-      </div>
+    <div className="space-y-8 animate-rise">
+      <PageHeader eyebrow="Operations" icon={Activity} title="Admin operations" description="Manage users, plans, audit queue, audit engine health, and safe platform settings from measured platform data." />
 
-      <div className="flex flex-wrap gap-2">
+      <UiPanel className="flex max-w-full flex-wrap gap-2 p-2" as="nav">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           return (
             <button
               key={tab.id}
               onClick={() => switchTab(tab.id)}
-              className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold ${
-                activeTab === tab.id ? 'bg-accent text-accent-foreground border-accent' : 'bg-card border-border hover:bg-muted'
+              className={`flex min-h-10 items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
+                activeTab === tab.id ? 'bg-accent text-accent-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
               }`}
             >
               <Icon className="w-4 h-4" />
@@ -97,7 +94,7 @@ export default function AdminDashboard() {
             </button>
           );
         })}
-      </div>
+      </UiPanel>
 
       {activeTab === 'overview' && <AdminOverview />}
       {activeTab === 'users' && <AdminUsers adminUserId={user.id} />}

@@ -3,6 +3,7 @@ import { safeJsonFetch } from '../lib/http/safe-json';
 import React, { useState } from 'react';
 import { Search, Loader2, Download, TrendingUp, BarChart } from 'lucide-react';
 import { KeywordResult } from '../lib/keywords/generator';
+import { Notice, PageHeader, Panel, ResponsiveTable } from './ui/page-system';
 
 export default function KeywordResearch({ keyword: initialKeyword }: { keyword?: string }) {
   const [keyword, setKeyword] = useState(initialKeyword || '');
@@ -33,15 +34,24 @@ export default function KeywordResearch({ keyword: initialKeyword }: { keyword?:
     }
   };
 
-  return (
-    <div className="space-y-6 max-w-7xl mx-auto">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight mb-2">Keyword Research</h1>
-        <p className="text-muted-foreground">Generate deterministic keyword ideas and estimate opportunity scores.</p>
-      </div>
+  const exportCsv = () => {
+    if (!results.length) return;
+    const cell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const rows = [['Keyword', 'Intent', 'Estimated difficulty', 'Opportunity score', 'Source'], ...results.map((row) => [row.keyword, row.intent, row.estimatedDifficulty, row.opportunityScore, row.source])];
+    const href = URL.createObjectURL(new Blob([rows.map((row) => row.map(cell).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = href;
+    link.download = 'seointel-keyword-ideas.csv';
+    link.click();
+    URL.revokeObjectURL(href);
+  };
 
-      <div className="bg-card border border-border p-6 rounded-2xl shadow-sm">
-        <form onSubmit={handleResearch} className="flex gap-4">
+  return (
+    <div className="mx-auto max-w-7xl space-y-8 animate-rise">
+      <PageHeader eyebrow="Rule-based planning" icon={Search} title="Keyword ideas" description="Generate deterministic phrase variations and planning scores without pretending they are live search volume, traffic, or ranking data." />
+
+      <Panel className="p-5 sm:p-6">
+        <form onSubmit={handleResearch} className="flex flex-col gap-4 sm:flex-row">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
             <input
@@ -49,25 +59,21 @@ export default function KeywordResearch({ keyword: initialKeyword }: { keyword?:
               value={keyword}
               onChange={e => setKeyword(e.target.value)}
               placeholder="Enter a seed keyword..."
-              className="w-full bg-muted/50 border border-border rounded-xl py-3 pl-10 pr-4 outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all"
+              className="suite-input pl-10"
             />
           </div>
           <button
             type="submit"
             disabled={loading || !keyword.trim()}
-            className="px-6 py-3 bg-accent text-accent-foreground font-semibold rounded-xl hover:bg-accent/90 disabled:opacity-50 flex items-center gap-2"
+            className="trust-button sm:w-auto"
           >
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Search className="w-5 h-5" />}
             Analyze
           </button>
         </form>
-      </div>
+      </Panel>
 
-      {error && (
-        <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-500 rounded-xl">
-          {error}
-        </div>
-      )}
+      {error && <Notice tone="danger" title="Ideas could not be generated">{error}</Notice>}
 
       {results.length > 0 && (
         <div className="space-y-6">
@@ -86,15 +92,15 @@ export default function KeywordResearch({ keyword: initialKeyword }: { keyword?:
             </div>
           </div>
 
-          <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
+          <Panel className="overflow-hidden">
             <div className="p-4 border-b border-border flex justify-between items-center bg-muted/20">
               <h3 className="font-semibold">Generated Keywords</h3>
-              <button className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
+              <button type="button" onClick={exportCsv} className="quiet-button px-3 py-2 text-sm">
                 <Download className="w-4 h-4" /> Export CSV
               </button>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+            <ResponsiveTable label="Generated keyword ideas" minWidth={760}>
+              <table className="suite-table">
                 <thead className="bg-muted/50 border-b border-border">
                   <tr>
                     <th className="px-6 py-3 font-semibold text-muted-foreground">Keyword</th>
@@ -133,8 +139,8 @@ export default function KeywordResearch({ keyword: initialKeyword }: { keyword?:
                   ))}
                 </tbody>
               </table>
-            </div>
-          </div>
+            </ResponsiveTable>
+          </Panel>
         </div>
       )}
     </div>

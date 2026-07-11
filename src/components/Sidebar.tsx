@@ -1,4 +1,4 @@
-import { Activity, BarChart3, FileText, Globe, HelpCircle, LayoutDashboard, Layers, PieChart, Search, Settings, ShieldAlert, ShieldCheck, Target, Upload, X, type LucideIcon } from 'lucide-react';
+import { Activity, BarChart3, FileText, Gauge, Globe, HelpCircle, History, LayoutDashboard, Layers, ListChecks, Search, Settings, ShieldAlert, ShieldCheck, X, type LucideIcon } from 'lucide-react';
 import { TabType } from '../App';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -9,37 +9,24 @@ const navGroups: Array<{
   {
     title: 'Overview',
     items: [
-      { icon: LayoutDashboard, label: 'Dashboard', description: 'Scores, limits, and next actions', id: 'dashboard' },
-      { icon: PieChart, label: 'Reports', description: 'Client-ready summaries', id: 'reports' },
+      { icon: LayoutDashboard, label: 'Overview', description: 'Scores, usage, and next actions', id: 'dashboard' },
+      { icon: Activity, label: 'Start Audit', description: 'Run a live website audit', id: 'seo-audit' },
+      { icon: History, label: 'Audit History', description: 'Past runs and comparisons', id: 'audit-history' },
+      { icon: FileText, label: 'Reports', description: 'Evidence, exports, and delivery', id: 'reports' },
     ],
   },
   {
-    title: 'Audits',
+    title: 'Audit Evidence',
     items: [
-      { icon: Activity, label: 'SEO checks', description: 'Titles, links, Google access', id: 'seo-audit' },
+      { icon: Search, label: 'SEO Findings', description: 'Metadata and content checks', id: 'seo-findings' },
+      { icon: Gauge, label: 'Technical SEO', description: 'Delivery and status signals', id: 'technical-seo' },
+      { icon: Layers, label: 'Crawlability', description: 'Discovery and indexing signals', id: 'crawlability' },
+      { icon: BarChart3, label: 'Performance', description: 'Observed response and size', id: 'performance' },
       { icon: ShieldCheck, label: 'Passive Security', description: 'Non-invasive public checks', id: 'security-audit' },
-      { icon: Globe, label: 'Website health', description: 'Pages, speed, redirects', id: 'website-analyzer' },
+      { icon: Globe, label: 'Pages', description: 'Filter page-level evidence', id: 'pages' },
     ],
   },
-  {
-    title: 'SEO Data',
-    items: [
-      { icon: Upload, label: 'Data Sources', description: 'Import real CSV data', id: 'imports' },
-      { icon: BarChart3, label: 'Search Data', description: 'GSC/Bing performance', id: 'search-data' },
-      { icon: BarChart3, label: 'Rankings Data', description: 'Imported SERP positions', id: 'rank-tracker' },
-      { icon: Search, label: 'Keyword Ideas', description: 'Deterministic suggestions', id: 'keyword-research' },
-      { icon: Layers, label: 'Topic Clusters', description: 'Group keyword themes', id: 'keyword-clusters' },
-    ],
-  },
-  {
-    title: 'Planning',
-    items: [
-      { icon: Target, label: 'Competitor Compare', description: 'Content gap workflow', id: 'competitor-gap' },
-      { icon: FileText, label: 'Content Briefs', description: 'Outline next pages', id: 'content-briefs' },
-      { icon: Globe, label: 'Public Discovery', description: 'Find public signals', id: 'public-discovery' },
-      { icon: ShieldAlert, label: 'Admin Panel', description: 'Worker and plan controls', id: 'admin-dashboard', adminOnly: true },
-    ],
-  },
+  { title: 'Administration', items: [{ icon: ShieldAlert, label: 'Admin', description: 'Users, queue, and engine health', id: 'admin-dashboard', adminOnly: true }] },
 ];
 
 interface SidebarProps {
@@ -65,12 +52,12 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOp
       {isOpen && <div onClick={onClose} className="fixed inset-0 z-40 bg-background/70 backdrop-blur-sm lg:hidden" />}
 
       {isOpen && (
-        <aside className="fixed left-0 top-[4.5rem] z-50 flex h-[calc(100vh-4.5rem)] w-64 flex-col overflow-hidden border-r border-border bg-card shadow-sm lg:sticky">
+        <aside className="fixed left-0 top-[4.25rem] z-50 flex h-[calc(100vh-4.25rem)] w-[17rem] flex-col overflow-hidden border-r border-border bg-card shadow-sm lg:sticky">
           <div className="border-b border-border p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-bold">SEO suite</div>
-                <div className="text-xs text-muted-foreground">Audit, data, reports</div>
+                <div className="text-xs text-muted-foreground">Audit workspace</div>
               </div>
               <button onClick={onClose} className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden" aria-label="Close navigation">
                 <X className="h-4 w-4" />
@@ -81,7 +68,7 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOp
           <nav className="flex-1 space-y-4 overflow-y-auto p-3" aria-label="Main navigation">
             {filteredGroups.map((group) => (
               <div key={group.title}>
-                <div className="mb-2 px-2 text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground">{group.title}</div>
+                <div className="mb-2 px-2 text-xs font-semibold text-[var(--subtle-foreground)]">{group.title}</div>
                 <div className="space-y-1">
                   {group.items.map((item) => {
                     const isActive = activeTab === item.id;
@@ -94,16 +81,16 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOp
                           setActiveTab(item.id);
                           if (window.innerWidth < 1024) onClose();
                         }}
-                        className={`group flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-200 ${
+                        className={`group flex min-h-12 w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-colors duration-200 ${
                           isActive
-                            ? 'bg-accent text-accent-foreground'
+                            ? 'bg-accent/10 text-accent'
                             : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                         }`}
                       >
-                        <Icon className={`mt-0.5 h-5 w-5 shrink-0 ${isActive ? 'text-accent-foreground' : 'text-accent'}`} />
+                        <Icon className="mt-0.5 h-5 w-5 shrink-0 text-accent" />
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-bold">{item.label}</span>
-                          <span className={`block truncate text-xs ${isActive ? 'text-accent-foreground/80' : 'text-muted-foreground'}`}>{item.description}</span>
+                          <span className="block truncate text-xs text-muted-foreground">{item.description}</span>
                         </span>
                       </button>
                     );
@@ -116,7 +103,10 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOp
           <div className="border-t border-border p-4">
             <button
               type="button"
-              onClick={() => setActiveTab('settings')}
+              onClick={() => {
+                setActiveTab('settings');
+                if (window.innerWidth < 1024) onClose();
+              }}
               className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <Settings className="h-5 w-5 text-accent" />

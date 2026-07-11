@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   BarChart3,
   Clipboard,
   Download,
   FileJson,
+  FileText,
   FileSpreadsheet,
   Globe2,
   History,
@@ -47,13 +48,13 @@ import {
   EmptyState,
   FindingRow,
   MetricCard,
-  SectionHeader,
   SeverityDistribution,
   SitePreviewSection,
   StatusBadge,
   StickyReportNavigation,
   SurfaceCard,
 } from './ui/visual-system';
+import { PageHeader } from './ui/page-system';
 
 type ApiEnvelope<T> = { success: boolean; data: T; error?: string };
 type PageStatusFilter = 'all' | '2xx' | '3xx' | '4xx' | '5xx';
@@ -61,9 +62,24 @@ type PageSort = 'issues' | 'url' | 'status' | 'response' | 'size';
 
 interface ReportsProps {
   onStartAudit?: () => void;
+  initialSection?: string;
 }
 
 const PAGE_SIZE = 15;
+
+function reportViewCopy(initialSection?: string) {
+  const views: Record<string, { eyebrow: string; title: string; description: string }> = {
+    'report-history': { eyebrow: 'Audit history', title: 'Audit history and comparisons', description: 'Review real stored audit runs by website, date, mode, status, pages, and measured score.' },
+    'report-on-page': { eyebrow: 'SEO findings', title: 'On-page SEO findings', description: 'Review stored metadata, headings, content, image, and social-preview findings with affected-page evidence.' },
+    'report-technical': { eyebrow: 'Technical SEO', title: 'Technical SEO evidence', description: 'Inspect measured status, redirect, delivery, preferred URL, and technical page findings from the selected audit.' },
+    'report-crawlability': { eyebrow: 'Crawlability', title: 'Crawlability and indexing', description: 'Review discovered pages, search-engine access, preferred URL signals, and page-level crawl evidence.' },
+    'report-performance': { eyebrow: 'Performance', title: 'Performance observations', description: 'Inspect audit-time response and HTML payload observations without mislabeling them as Core Web Vitals.' },
+    'report-pages': { eyebrow: 'Page explorer', title: 'Audited pages', description: 'Search, filter, sort, and inspect the actual page summaries stored by the audit engine.' },
+  };
+  return initialSection && views[initialSection]
+    ? views[initialSection]
+    : { eyebrow: 'Reports', title: 'Professional audit report', description: 'Start with the executive result, work through prioritized recommendations, then open technical evidence only when needed.' };
+}
 
 function formatDate(value?: string | null) {
   if (!value) return 'Not available';
@@ -124,7 +140,9 @@ function downloadLocalCsv(filename: string, rows: Array<Record<string, unknown>>
   URL.revokeObjectURL(url);
 }
 
-export default function Reports({ onStartAudit }: ReportsProps) {
+export default function Reports({ onStartAudit, initialSection }: ReportsProps) {
+  const initialSectionHandled = useRef(false);
+  const viewCopy = reportViewCopy(initialSection);
   const [history, setHistory] = useState<AuditHistoryEntry[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reportData, setReportData] = useState<ResourceAuditLiveData | null>(null);
@@ -144,6 +162,12 @@ export default function Reports({ onStartAudit }: ReportsProps) {
     setHistory(entries);
     setSelectedId(initialId);
   }, []);
+
+  useEffect(() => {
+    if (!initialSection || initialSectionHandled.current || reportLoading || !history.length || !selectedId) return;
+    initialSectionHandled.current = true;
+    window.setTimeout(() => document.getElementById(initialSection)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+  }, [history.length, initialSection, reportLoading, selectedId]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -266,7 +290,7 @@ export default function Reports({ onStartAudit }: ReportsProps) {
   if (!history.length) {
     return (
       <div className="w-full space-y-8 animate-rise">
-        <SectionHeader eyebrow="Reports" title="Audit reports" description="Measured scores, prioritized fixes, page evidence, and export-ready summaries appear here after an audit runs." headingLevel="h1" />
+        <PageHeader eyebrow={viewCopy.eyebrow} icon={FileText} title={viewCopy.title} description="Run a website audit to populate this workspace with measured scores, prioritized fixes, page evidence, and export-ready summaries." />
         <SurfaceCard className="p-5 md:p-8">
           <EmptyState
             icon={History}
@@ -281,14 +305,15 @@ export default function Reports({ onStartAudit }: ReportsProps) {
 
   return (
     <div className="w-full space-y-8 animate-rise">
-      <SectionHeader
-        eyebrow="Reports"
-        title="Professional audit report"
-        description="Start with the executive result, work through prioritized recommendations, then open technical evidence only when needed."
-        action={selectedHistory ? <StatusBadge tone={selectedHistory.status === 'completed' ? 'success' : 'warning'}>{selectedHistory.status}</StatusBadge> : undefined}
-        headingLevel="h1"
+      <PageHeader
+        eyebrow={viewCopy.eyebrow}
+        icon={FileText}
+        title={viewCopy.title}
+        description={viewCopy.description}
+        actions={selectedHistory ? <StatusBadge tone={selectedHistory.status === 'completed' ? 'success' : 'warning'}>{selectedHistory.status}</StatusBadge> : undefined}
       />
 
+      <div id="report-history" className="scroll-mt-28">
       <SurfaceCard className="p-0">
         <div className="grid lg:grid-cols-[minmax(300px,0.7fr)_minmax(0,1.3fr)]">
           <div className="border-b border-border p-5 md:p-6 lg:border-b-0 lg:border-r">
@@ -318,6 +343,7 @@ export default function Reports({ onStartAudit }: ReportsProps) {
           </div>
         </div>
       </SurfaceCard>
+      </div>
 
       {reportLoading && <SurfaceCard className="flex items-center gap-3 p-6 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin text-accent" /> Loading stored audit evidence...</SurfaceCard>}
       {reportError && <SurfaceCard className="border-red-500/25 p-5"><div className="flex gap-3 text-red-700 dark:text-red-300"><AlertTriangle className="h-5 w-5 shrink-0" /><div><div className="font-semibold">Full report data could not be loaded</div><p className="mt-1 text-sm">{reportError}</p><p className="mt-2 text-xs text-muted-foreground">The browser history summary remains visible, but no missing section data is being invented.</p></div></div></SurfaceCard>}

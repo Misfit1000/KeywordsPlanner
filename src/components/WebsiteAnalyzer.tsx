@@ -9,6 +9,7 @@ import { ParsedPageData } from '../lib/seo/html-parser';
 import { AuditResult } from '../lib/audit/types';
 import { useAuth } from '../contexts/AuthContext';
 import { SitePreviewSection } from './ui/visual-system';
+import { FormField, Notice, PageHeader, PageSection, Panel, SegmentedControl } from './ui/page-system';
 
 export default function WebsiteAnalyzer() {
   const { user } = useAuth();
@@ -75,11 +76,8 @@ export default function WebsiteAnalyzer() {
 
   if (auditId) {
     return (
-       <div className="w-full space-y-6 animate-rise">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2">Website scan</h1>
-          <p className="text-muted-foreground">Check pages, content signals, search visibility, and fix priorities as the audit runs.</p>
-        </div>
+       <div className="w-full space-y-8 animate-rise">
+        <PageHeader eyebrow="Live audit" icon={Globe} title="Website scan" description="Follow pages, content signals, search access, and prioritized findings as the audit engine works." />
         <LiveAuditProgress 
           auditId={auditId} 
           onRerun={(nextUrl) => {
@@ -107,72 +105,45 @@ export default function WebsiteAnalyzer() {
   }
 
   return (
-    <div className="w-full space-y-6 animate-rise">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight mb-2">Website health scan</h1>
-        <p className="text-muted-foreground">Review pages, redirects, speed signals, search access, and the fixes that matter most.</p>
-      </div>
+    <div className="w-full space-y-9 animate-rise">
+      <PageHeader eyebrow="Website health" icon={Globe} title="Website scan" description="Review page delivery, redirects, response signals, search access, and the fixes that matter most." />
 
-      <div className="trust-card p-5 md:p-6">
-        <form onSubmit={handleAnalyze} className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1 relative">
-            <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-            <input
-              type="text"
-              value={url}
-              onChange={e => setUrl(e.target.value)}
-              placeholder="Enter a website URL (e.g. https://example.com)"
-              className="suite-input py-3 pl-10 pr-4"
-            />
+      <Panel className="p-5 sm:p-7">
+        <form onSubmit={handleAnalyze} className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+          <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_auto]">
+            <FormField label="Website URL" htmlFor="website-scan-url">
+              <div className="relative"><Globe className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" /><input id="website-scan-url" type="url" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://example.com" className="suite-input pl-10" required /></div>
+            </FormField>
+            <FormField label="Scan type">
+              <SegmentedControl<'quick' | 'standard' | 'deep'> label="Scan type" value={mode} onChange={setMode} options={[{ value: 'quick', label: 'Quick' }, { value: 'standard', label: 'Full', disabled: !canUseStandard }, { value: 'deep', label: 'Deep', disabled: !canUseDeep }]} />
+            </FormField>
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium whitespace-nowrap">Scan type</label>
-            <select
-              value={mode}
-              onChange={e => setMode(e.target.value as any)}
-              className="bg-muted/50 border border-border rounded-xl py-3 px-3 outline-none focus:border-accent"
-            >
-              <option value="quick">Quick - free 5-page scan</option>
-              <option value="standard" disabled={!canUseStandard}>Full - paid/admin 25-page scan {!canUseStandard ? '(locked)' : ''}</option>
-              <option value="deep" disabled={!canUseDeep}>Deep - agency/admin expanded scan {!canUseDeep ? '(locked)' : ''}</option>
-            </select>
-          </div>
-          <button
-            type="submit"
-            disabled={loading || !url.trim()}
-            className="trust-button px-6 py-3"
-          >
-            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Globe className="w-5 h-5" />}
-            {loading ? 'Starting scan...' : 'Start scan'}
+          <button type="submit" disabled={loading || !url.trim()} className="trust-button w-full lg:w-auto">
+            {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Globe className="h-5 w-5" />}{loading ? 'Starting scan...' : 'Start scan'}
           </button>
         </form>
-        {mode === 'deep' && (
-          <div className="mt-3 text-sm text-amber-700 bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
-            Deep scans may take longer and require more audit engine capacity.
-          </div>
-        )}
-      </div>
+        {mode === 'deep' && <Notice tone="warning" className="mt-5">Deep scans require eligible plan access and available audit engine capacity.</Notice>}
+      </Panel>
 
+      <PageSection title="Included quick checks" description="These checks all start the same real quick-audit workflow; the cards explain coverage and are intentionally not duplicate buttons.">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         {freeMiniTools.map((tool) => {
           const Icon = tool.icon;
           return (
-            <button
+            <Panel
               key={tool.title}
-              type="button"
-              onClick={() => setMode('quick')}
-              className="trust-card p-5 text-left"
+              className="p-5"
             >
-              <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-accent/10 text-accent">
+              <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-accent/10 text-accent">
                 <Icon className="h-5 w-5" />
               </div>
-              <h3 className="font-bold">{tool.title}</h3>
+              <h3 className="font-semibold">{tool.title}</h3>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">{tool.text}</p>
-              <span className="mt-4 inline-flex text-sm font-bold text-accent">Use quick audit</span>
-            </button>
+            </Panel>
           );
         })}
       </div>
+      </PageSection>
 
       {error && (
         <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-500 rounded-xl flex items-center gap-2">

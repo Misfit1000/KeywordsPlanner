@@ -10,6 +10,7 @@ import { safeJsonFetch } from '../../lib/http/safe-json';
 import { formatAuditElapsed, isTerminalAuditStatus } from '../../lib/audit/audit-time';
 import { downloadAuditExport } from '../../lib/http/download';
 import { AuditStageTimeline, CategoryScoreBar, MetricBarChart, MetricCard, ProgressBar, RadialScoreGauge, SeverityDistribution, SitePreviewSection, SparklineChart, StatusBadge, SurfaceCard } from '../ui/visual-system';
+import { Notice, PageHeader, Panel } from '../ui/page-system';
 import {
   buildHistoryEntry,
   buildIssueInsight,
@@ -302,16 +303,12 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
   };
 
   if (error) {
-    return (
-      <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-500 rounded-xl flex items-center gap-2">
-        <AlertTriangle className="w-5 h-5" /> {error}
-      </div>
-    );
+    return <Notice tone="danger" title="Live audit could not be loaded">{error}</Notice>;
   }
 
   if (!audit) {
     return (
-      <div className="bg-card border border-border rounded-xl p-6 space-y-4">
+      <Panel className="space-y-4 p-5 sm:p-6">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3 text-muted-foreground">
             <Loader2 className="w-5 h-5 animate-spin text-accent" />
@@ -328,7 +325,7 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
             {warning}
           </div>
         )}
-      </div>
+      </Panel>
     );
   }
 
@@ -380,34 +377,30 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
   const elapsedTime = formatAuditElapsed(audit, now);
 
   return (
-    <div className="w-full space-y-6 animate-rise">
+    <div className="w-full space-y-8 animate-rise" aria-live="polite">
+      <PageHeader
+        eyebrow="Live audit"
+        icon={Radio}
+        title="Audit workspace"
+        description={audit.normalizedUrl}
+        metadata={
+          <>
+            <StatusBadge tone={statusTone as any}>{statusLabel(audit.status)}</StatusBadge>
+            <StatusBadge tone="accent">{tierLabel(audit.processingTier)}</StatusBadge>
+            <ConnectionBadge connection={connection} now={now} />
+          </>
+        }
+        actions={hasScoreEvidence ? (
+          <RadialScoreGauge value={overallScore} label={data.finalReport ? 'Site health' : 'Estimated health'} detail={data.finalReport ? 'Final report score' : 'Updates from measured findings'} size="sm" />
+        ) : (
+          <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full border border-dashed border-border bg-card text-center"><div className="text-xl font-semibold">--</div><div className="mt-1 px-3 text-xs text-muted-foreground">Score pending</div></div>
+        )}
+      />
       <SurfaceCard className="overflow-hidden">
         <div className="grid-overlay relative p-5 md:p-8">
           <div className="absolute inset-0 -z-0 bg-gradient-to-br from-accent/10 via-transparent to-green-500/10" />
           <div className="relative z-10">
             <div className="space-y-6">
-              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StatusBadge tone={statusTone as any}>{statusLabel(audit.status)}</StatusBadge>
-                    <StatusBadge tone="accent">{tierLabel(audit.processingTier)}</StatusBadge>
-                    <ConnectionBadge connection={connection} now={now} />
-                  </div>
-                  <h1 className="mt-4 text-3xl font-bold md:text-4xl">Audit workspace</h1>
-                  <p className="mt-2 max-w-3xl break-all text-muted-foreground">{audit.normalizedUrl}</p>
-                </div>
-                <div className="flex justify-start md:justify-end">
-                  {hasScoreEvidence ? (
-                    <RadialScoreGauge value={overallScore} label={data.finalReport ? 'Site health' : 'Estimated health'} detail={data.finalReport ? 'Final report score' : 'Updates from measured findings'} size="sm" />
-                  ) : (
-                    <div className="flex h-28 w-28 flex-col items-center justify-center rounded-full border border-dashed border-border bg-card text-center">
-                      <div className="text-xl font-bold">--</div>
-                      <div className="mt-1 px-3 text-xs leading-4 text-muted-foreground">Score pending</div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
               <ProgressBar label={humanizeAuditText(audit.currentPhase) || statusLabel(audit.status)} value={progress} tone={audit.status === 'failed' ? 'red' : 'accent'} />
               <CurrentWorkCard currentWork={currentWork} connection={connection} now={now} />
 
@@ -928,7 +921,7 @@ function AuditWorkflowPanel({
 function PlainEnglishBlock({ title, text }: { title: string; text: string }) {
   return (
     <div className="rounded-2xl border border-border bg-card/70 p-3">
-      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">{title}</div>
+      <div className="text-xs font-semibold text-muted-foreground">{title}</div>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">{text || 'No detail available yet.'}</p>
     </div>
   );

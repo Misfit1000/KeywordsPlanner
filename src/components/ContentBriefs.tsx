@@ -3,6 +3,7 @@ import { safeJsonFetch } from '../lib/http/safe-json';
 import React, { useState } from 'react';
 import { FileText, Loader2, Download, Search } from 'lucide-react';
 import { ContentBrief } from '../lib/keywords/content-brief';
+import { Notice, PageHeader, Panel } from './ui/page-system';
 
 export default function ContentBriefs() {
   const [topic, setTopic] = useState('');
@@ -17,8 +18,7 @@ export default function ContentBriefs() {
     setLoading(true);
     setError(null);
     try {
-      // Mock passing a cluster object
-      const mockCluster = {
+      const inputCluster = {
         id: '1',
         name: topic,
         primaryKeyword: topic,
@@ -32,7 +32,7 @@ export default function ContentBriefs() {
       const dataResp = await safeJsonFetch<any>(API_ROUTES.contentBrief, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cluster: mockCluster })
+        body: JSON.stringify({ cluster: inputCluster })
       });
       const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
       if (!dataResp.success) throw new Error(data.error || 'Failed to generate brief');
@@ -45,15 +45,38 @@ export default function ContentBriefs() {
     }
   };
 
-  return (
-    <div className="space-y-6 max-w-4xl mx-auto">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight mb-2">Content Brief Builder</h1>
-        <p className="text-muted-foreground">Generate rule-based SEO content outlines without AI.</p>
-      </div>
+  const exportBrief = () => {
+    if (!brief) return;
+    const text = [
+      `${topic} - SEOIntel content brief`,
+      `Intent: ${brief.targetIntent}`,
+      `Format: ${brief.suggestedFormat}`,
+      `Length: ${brief.wordCount}`,
+      '',
+      'Title ideas', ...brief.titleTemplates.map((value) => `- ${value}`),
+      '',
+      'Meta description ideas', ...brief.metaDescriptionTemplates.map((value) => `- ${value}`),
+      '',
+      'H1 ideas', ...brief.h1Suggestions.map((value) => `- ${value}`),
+      '',
+      'Outline', ...brief.h2Outline.map((value, index) => `${index + 1}. ${value}`),
+      '',
+      'Related phrases', ...brief.relatedKeywords.map((value) => `- ${value}`),
+    ].join('\n');
+    const href = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = href;
+    link.download = 'seointel-content-brief.txt';
+    link.click();
+    URL.revokeObjectURL(href);
+  };
 
-      <div className="bg-card border border-border p-6 rounded-2xl shadow-sm">
-        <form onSubmit={handleGenerate} className="flex gap-4">
+  return (
+    <div className="mx-auto max-w-5xl space-y-8 animate-rise">
+      <PageHeader eyebrow="Deterministic planning" icon={FileText} title="Content brief builder" description="Build rule-based metadata and heading outlines without AI or unsupported search-volume claims." />
+
+      <Panel className="p-5 sm:p-6">
+        <form onSubmit={handleGenerate} className="flex flex-col gap-4 sm:flex-row">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
             <input
@@ -61,28 +84,24 @@ export default function ContentBriefs() {
               value={topic}
               onChange={e => setTopic(e.target.value)}
               placeholder="Enter a primary keyword or topic..."
-              className="w-full bg-muted/50 border border-border rounded-xl py-3 pl-10 pr-4 outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all"
+              className="suite-input pl-10"
             />
           </div>
           <button
             type="submit"
             disabled={loading || !topic.trim()}
-            className="px-6 py-3 bg-accent text-accent-foreground font-semibold rounded-xl hover:bg-accent/90 disabled:opacity-50 flex items-center gap-2"
+            className="trust-button"
           >
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileText className="w-5 h-5" />}
             Build Brief
           </button>
         </form>
-      </div>
+      </Panel>
 
-      {error && (
-        <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-500 rounded-xl">
-          {error}
-        </div>
-      )}
+      {error && <Notice tone="danger" title="Brief could not be built">{error}</Notice>}
 
       {brief && (
-        <div className="bg-card border border-border rounded-2xl p-8 shadow-sm space-y-8">
+        <Panel className="space-y-8 p-6 sm:p-8">
           <div className="flex justify-between items-start border-b border-border pb-6">
             <div>
               <h2 className="text-2xl font-bold capitalize mb-2">{topic} - Content Brief</h2>
@@ -92,7 +111,7 @@ export default function ContentBriefs() {
                 <span className="bg-muted px-2 py-1 rounded-md">Length: {brief.wordCount}</span>
               </div>
             </div>
-            <button className="flex items-center gap-2 text-sm font-medium bg-muted hover:bg-muted/80 px-4 py-2 rounded-lg transition-colors">
+            <button type="button" onClick={exportBrief} className="quiet-button px-3 py-2 text-sm">
               <Download className="w-4 h-4" /> Export
             </button>
           </div>
@@ -144,7 +163,7 @@ export default function ContentBriefs() {
               </ul>
             </div>
           )}
-        </div>
+        </Panel>
       )}
     </div>
   );

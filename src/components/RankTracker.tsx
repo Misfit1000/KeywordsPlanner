@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, BarChart3, CheckCircle2, FileSpreadsheet, Search, Upload } from 'lucide-react';
 import Papa from 'papaparse';
-import { MetricCard, SectionHeader, StatusBadge, SurfaceCard } from './ui/visual-system';
+import { MetricCard, StatusBadge, SurfaceCard } from './ui/visual-system';
+import { Notice, PageHeader } from './ui/page-system';
 
 type RankRow = {
   keyword: string;
@@ -109,11 +110,12 @@ export default function RankTracker() {
 
   return (
     <div className="space-y-8 animate-rise">
-      <SectionHeader
+      <PageHeader
         eyebrow="Rankings data"
+        icon={BarChart3}
         title="Actual SERP positions from your imported data"
         description="Import Google Search Console, Bing Webmaster Tools, or provider CSV exports. SEOIntel does not scrape Google results or invent ranking rows."
-        action={
+        actions={
           <button type="button" onClick={() => fileRef.current?.click()} className="trust-button">
             <Upload className="h-4 w-4" /> Import rankings CSV
           </button>
@@ -122,12 +124,7 @@ export default function RankTracker() {
 
       <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleCsv} />
 
-      {error && (
-        <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-sm font-semibold text-red-600 dark:text-red-300">
-          <AlertTriangle className="mr-2 inline h-4 w-4" />
-          {error}
-        </div>
-      )}
+      {error && <Notice tone="danger" title="Import failed">{error}</Notice>}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Imported rows" value={rows.length} detail="Only real imported data" icon={<FileSpreadsheet className="h-6 w-6" />} tone="accent" />

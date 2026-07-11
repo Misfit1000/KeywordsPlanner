@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, BarChart3, Eye, MousePointerClick, Search, TrendingUp } from 'lucide-react';
-import { MetricCard, SectionHeader, StatusBadge, SurfaceCard } from './ui/visual-system';
+import { MetricCard, StatusBadge, SurfaceCard } from './ui/visual-system';
+import { PageHeader } from './ui/page-system';
 
 type SearchRow = Record<string, any>;
 
@@ -67,8 +68,9 @@ export default function SearchData() {
 
   return (
     <div className="space-y-8 animate-rise">
-      <SectionHeader
+      <PageHeader
         eyebrow="Search data"
+        icon={BarChart3}
         title="Search Console and Bing performance"
         description="View real query, page, clicks, impressions, CTR, and position data after importing CSV exports. No search volume or traffic is estimated."
       />

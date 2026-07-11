@@ -3,6 +3,7 @@ import { safeJsonFetch } from '../lib/http/safe-json';
 import React, { useState } from 'react';
 import { Layers, Loader2, Search, Download } from 'lucide-react';
 import { Cluster } from '../lib/keywords/clustering';
+import { Notice, PageHeader, Panel } from './ui/page-system';
 
 export default function KeywordClusters() {
   const [keywordList, setKeywordList] = useState('');
@@ -14,21 +15,15 @@ export default function KeywordClusters() {
     e.preventDefault();
     if (!keywordList.trim()) return;
 
-    // Convert string to array of KeywordResult mock objects since we only need the keyword property for clustering here
-    // In a real flow, you'd pass full KeywordResult objects from Keyword Research
     const rawKeywords = keywordList.split('\n').map(k => k.trim()).filter(k => k);
-    
-    // Using a separate local logic to mock full objects for the API, 
-    // but the API expects `KeywordResult[]`. We'll just generate them first.
     
     setLoading(true);
     setError(null);
     try {
-      // First generate full keywords
-      const genResponse = await safeJsonFetch<any>('/api/tools/keyword/research', {
+      const genResponse = await safeJsonFetch<any>(API_ROUTES.keywordResearch, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ seed: rawKeywords[0] }) // just use first as seed for demo
+        body: JSON.stringify({ seed: rawKeywords[0] })
       });
       
       if (!genResponse.success) throw new Error((genResponse as any).error || 'Failed to fetch keywords');
@@ -51,14 +46,23 @@ export default function KeywordClusters() {
     }
   };
 
-  return (
-    <div className="space-y-6 max-w-7xl mx-auto">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight mb-2">Keyword Clustering</h1>
-        <p className="text-muted-foreground">Group keywords into semantic clusters using local similarity algorithms.</p>
-      </div>
+  const exportCsv = () => {
+    if (!results?.length) return;
+    const cell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const rows = [['Cluster', 'Primary keyword', 'Secondary keywords', 'Intent', 'Opportunity'], ...results.map((cluster) => [cluster.name, cluster.primaryKeyword, cluster.keywords.join(' | '), cluster.intent, cluster.opportunityScore])];
+    const href = URL.createObjectURL(new Blob([rows.map((row) => row.map(cell).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = href;
+    link.download = 'seointel-keyword-clusters.csv';
+    link.click();
+    URL.revokeObjectURL(href);
+  };
 
-      <div className="bg-card border border-border p-6 rounded-2xl shadow-sm">
+  return (
+    <div className="mx-auto max-w-7xl space-y-8 animate-rise">
+      <PageHeader eyebrow="Local planning" icon={Layers} title="Keyword clusters" description="Group deterministic keyword ideas by local similarity. Scores are planning aids, not live search-volume or ranking measurements." />
+
+      <Panel className="p-5 sm:p-6">
         <form onSubmit={handleCluster} className="space-y-4">
           <div>
              <label className="block text-sm font-medium mb-2">Enter seed keyword to generate and cluster</label>
@@ -67,7 +71,7 @@ export default function KeywordClusters() {
                 value={keywordList}
                 onChange={e => setKeywordList(e.target.value)}
                 placeholder="e.g. bookkeeping"
-                className="w-full bg-muted/50 border border-border rounded-xl py-2 px-4 outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+                className="suite-input"
                 required
               />
           </div>
@@ -76,33 +80,29 @@ export default function KeywordClusters() {
             <button
               type="submit"
               disabled={loading || !keywordList.trim()}
-              className="px-6 py-2.5 bg-accent text-accent-foreground font-semibold rounded-xl hover:bg-accent/90 disabled:opacity-50 flex items-center gap-2"
+              className="trust-button"
             >
               {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Layers className="w-5 h-5" />}
               Generate Clusters
             </button>
           </div>
         </form>
-      </div>
+      </Panel>
 
-      {error && (
-        <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-500 rounded-xl">
-          {error}
-        </div>
-      )}
+      {error && <Notice tone="danger" title="Clusters could not be generated">{error}</Notice>}
 
       {results && (
         <div className="space-y-4">
            <div className="flex justify-between items-center">
             <h2 className="text-xl font-bold">Generated Clusters</h2>
-            <button className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
+            <button type="button" onClick={exportCsv} className="quiet-button px-3 py-2 text-sm">
               <Download className="w-4 h-4" /> Export CSV
             </button>
            </div>
            
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
              {results.map(cluster => (
-               <div key={cluster.id} className="bg-card border border-border rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
+               <Panel key={cluster.id} className="p-5">
                  <div className="flex justify-between items-start mb-3">
                    <h3 className="font-bold text-lg capitalize">{cluster.name}</h3>
                    <span className="bg-muted px-2 py-1 rounded-md text-xs font-medium">{cluster.keywords.length + 1} keywords</span>
@@ -132,7 +132,7 @@ export default function KeywordClusters() {
                       <p className="text-sm font-bold text-green-500">{cluster.opportunityScore}</p>
                     </div>
                  </div>
-               </div>
+               </Panel>
              ))}
            </div>
         </div>

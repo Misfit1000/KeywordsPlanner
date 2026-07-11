@@ -59,14 +59,14 @@ export type LandingDestination =
   | 'start-audit';
 
 const trustBullets = [
-  'Worker-backed live audits',
+  'Separate audit engine for live audits',
   'No paid SEO or AI API required',
   'Passive Security Review only',
   'No raw HTML storage',
 ];
 
 const credibilityBadges: Array<{ icon: IconType; title: string; description: string }> = [
-  { icon: Activity, title: 'Worker-backed audits', description: 'The Render audit engine handles crawling and checks outside Vercel request paths.' },
+  { icon: Activity, title: 'Separate audit engine', description: 'The Render audit engine handles website checks outside Vercel request paths.' },
   { icon: Zap, title: 'Realtime progress', description: 'Supabase realtime events show what the audit engine is checking now.' },
   { icon: CheckCircle2, title: 'No raw HTML storage', description: 'SEOIntel stores audit results, page summaries, events, and issues, not full raw HTML.' },
   { icon: BarChart3, title: 'No fake ranking data', description: 'No fake traffic, CPC, backlink, domain authority, or SERP-position claims.' },
@@ -108,7 +108,7 @@ const featureHighlights = [
     icon: Briefcase,
     title: 'Visual Reports',
     description: 'Turn audit findings into executive summaries, previews, and top-fix lists.',
-    checks: ['Overall and category scores', 'Severity distribution', 'Desktop, mobile, and SERP previews'],
+    checks: ['Overall and category scores', 'Fix priority distribution', 'Desktop, mobile, and SERP previews'],
     cta: 'Open reports',
     action: 'reports' as LandingDestination,
   },
@@ -224,7 +224,7 @@ const suiteFeatures: Array<{
     title: 'Competitor Compare',
     description: 'Competitor analysis remains a roadmap area until background worker support is available.',
     status: 'Coming soon',
-    points: ['No serverless crawl loops', 'Worker-ready direction', 'Clear expectation setting'],
+    points: ['No serverless scan loops', 'Background audit processing', 'Clear expectation setting'],
     cta: 'Open dashboard',
     action: 'dashboard',
     muted: true,
@@ -508,13 +508,6 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
       <section id="product" className="section-shell relative overflow-hidden pb-16 pt-8 md:pb-24 md:pt-20">
         <div className="grid items-start gap-10 lg:grid-cols-[1.02fr_0.98fr]">
           <div className="space-y-8">
-            <nav className="hidden flex-wrap gap-2 text-sm sm:flex" aria-label="Homepage sections">
-              <a href="#features" className="quiet-button px-3 py-1.5">Features</a>
-              <a href="#free-tools" className="quiet-button px-3 py-1.5">Free tools</a>
-              <a href="#use-cases" className="quiet-button px-3 py-1.5">Use cases</a>
-              <a href="#pricing" className="quiet-button px-3 py-1.5">Pricing</a>
-            </nav>
-
             <div className="space-y-5">
               <StatusBadge tone="accent">Live SEO suite for practical website checks</StatusBadge>
               <h1 className="max-w-3xl text-4xl font-bold leading-tight md:text-5xl">
@@ -556,7 +549,6 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
             </div>
 
             <div className="flex flex-wrap gap-3">
-              <a href="#features" className="quiet-button">View Features</a>
               <a href="#reports" className="quiet-button">
                 See Report Preview
               </a>
@@ -822,7 +814,7 @@ function useCountUp(target: number, durationMs = 900) {
     const startedAt = performance.now();
 
     const tick = (time: number) => {
-      const progress = Math.min(1, (time - startedAt) / durationMs);
+      const progress = Math.max(0, Math.min(1, (time - startedAt) / durationMs));
       const eased = 1 - Math.pow(1 - progress, 3);
       setValue(Math.round(target * eased));
       if (progress < 1) frame = window.requestAnimationFrame(tick);
@@ -840,12 +832,12 @@ function StatBlock({ icon: Icon, label, value, suffix, note }: { icon: IconType;
   const displayValue = `${new Intl.NumberFormat('en-US').format(animatedValue)}${suffix}`;
 
   return (
-    <div className="group rounded-[1.5rem] border border-border bg-background/80 p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
+    <div className="rounded-2xl border border-border bg-background/80 p-5 shadow-sm">
       <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/10 text-accent transition-colors group-hover:bg-accent group-hover:text-accent-foreground">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/10 text-accent">
           <Icon className="h-6 w-6" />
         </div>
-        <StatusBadge tone="accent">Preview</StatusBadge>
+        <StatusBadge tone="accent">Illustrative</StatusBadge>
       </div>
       <div className="text-4xl font-bold tracking-tight">{displayValue}</div>
       <div className="mt-1 font-semibold">{label}</div>
@@ -1112,7 +1104,7 @@ function SerpRankingDataPanel() {
       </div>
       <div className="mt-5 max-w-full overflow-x-auto rounded-2xl border border-border">
         <table className="w-full text-left text-sm">
-          <thead className="bg-muted/60 text-xs uppercase tracking-[0.12em] text-muted-foreground">
+          <thead className="bg-muted/60 text-xs text-muted-foreground">
             <tr>
               <th className="px-3 py-3 sm:px-4">Keyword</th>
               <th className="px-3 py-3 sm:px-4">URL</th>

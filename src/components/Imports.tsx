@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { Database, CheckCircle2, AlertTriangle, FileSpreadsheet, Link2, MousePointerClick, Search } from "lucide-react";
 import Papa from 'papaparse';
+import { Notice, PageHeader } from './ui/page-system';
 
 function pick(row: Record<string, any>, names: string[]) {
   const entries = Object.entries(row || {});
@@ -72,21 +73,11 @@ export default function Imports() {
   const backlinkTargets = new Set(backlinkData.map((row) => pick(row, ['target url', 'target', 'to', 'landing page'])).filter(Boolean)).size;
 
   return (
-    <div className="space-y-8 animate-rise">
-      <div>
-        <div className="suite-chip mb-3 text-accent">Data sources</div>
-        <h1 className="text-3xl font-bold font-display md:text-4xl">Import real SEO data</h1>
-        <p className="mt-2 max-w-3xl text-muted-foreground">Load CSV files containing real performance, keyword, ranking, or backlink data. Imported rows stay local to this browser unless you export or save them elsewhere.</p>
-        <div className="mt-5 rounded-2xl border border-border bg-muted/50 p-4 text-sm leading-6">
-          <strong>Free Real Data Alternatives:</strong> Instead of paying for expensive third-party APIs, SEOIntel relies on your own first-party data. Import <strong>Google Search Console (GSC)</strong> data, <strong>Bing Webmaster Tools</strong> CSVs, or public discovery sources like <strong>Common Crawl</strong>. Note: GSC/Bing data only works for verified/imported sites. No fake data is generated.
-        </div>
-      </div>
+    <div className="space-y-9 animate-rise">
+      <PageHeader eyebrow="Data sources" icon={Database} title="Import real SEO data" description="Load your own search-performance, keyword-position, or backlink CSV exports. Imported rows stay in this browser unless you deliberately export them." />
+      <Notice tone="info" title="First-party and user-provided data only">Google Search Console and Bing data works only for sites you can verify or export. SEOIntel does not invent search volume, rankings, traffic, backlinks, or authority metrics.</Notice>
 
-      {error && (
-        <div className="p-4 bg-red-500/10 text-red-500 rounded-xl flex gap-2">
-          <AlertTriangle className="w-5 h-5"/> {error}
-        </div>
-      )}
+      {error && <Notice tone="danger" title="Import failed">{error}</Notice>}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
 
