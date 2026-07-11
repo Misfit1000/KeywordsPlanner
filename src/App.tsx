@@ -333,7 +333,7 @@ export default function App() {
   if (unverifiedEmail) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <div className="w-full max-w-md bg-card border border-border rounded-3xl p-8 text-center shadow-2xl">
+        <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 text-center shadow-sm">
           <div className="p-3 bg-accent/10 rounded-2xl text-accent mb-4 inline-block">
             <Mail className="w-12 h-12" />
           </div>
@@ -412,6 +412,8 @@ export default function App() {
             onRunInDepth={() => handleSearch(undefined, searchedKeyword, true)}
             onOpenSeoAudit={() => setActiveTab('seo-audit')}
             onOpenSecurityAudit={() => setActiveTab('security-audit')}
+            onOpenImports={() => setActiveTab('imports')}
+            onOpenReports={() => setActiveTab('reports')}
           />
         );
       case 'keyword-research':
@@ -435,7 +437,7 @@ export default function App() {
       case 'imports':
         return <Imports />;
       case 'reports':
-        return <Reports />;
+        return <Reports onStartAudit={() => setActiveTab('seo-audit')} />;
       case 'settings':
         return <Settings />;
       case 'admin-dashboard':
@@ -474,8 +476,8 @@ export default function App() {
       <div className="relative z-10 flex flex-col min-h-screen">
         {!isSearching ? (
             <div className="flex min-h-screen flex-1 flex-col">
-              <header className="sticky top-0 z-50 border-b border-border bg-background/90 px-4 py-3 shadow-sm shadow-slate-950/5 backdrop-blur-xl md:px-8">
-                <div className="mx-auto flex w-full max-w-[1500px] items-center justify-between gap-4">
+              <header className="sticky top-0 z-50 border-b border-border bg-background/90 px-3 py-3 shadow-sm shadow-slate-950/5 backdrop-blur-xl sm:px-4 md:px-8">
+                <div className="mx-auto flex w-full max-w-[1500px] items-center justify-between gap-2 sm:gap-4">
                   <button type="button" onClick={() => setIsSearching(false)} className="rounded-2xl">
                     <BrandMark />
                   </button>
@@ -487,7 +489,7 @@ export default function App() {
                     <a href="#reports" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">Reports</a>
                     <a href="#faq" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">FAQ</a>
                   </nav>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1 sm:gap-3">
                     <ThemeToggle theme={theme} onToggle={toggleTheme} />
                 {authLoading ? (
                       <div className="h-10 w-28 animate-pulse rounded-full border border-border bg-card/60" />
@@ -508,12 +510,14 @@ export default function App() {
                     </button>
                   </>
                 ) : (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 sm:gap-2">
                     <button 
                       onClick={() => setAuthMode('login')}
-                          className="whitespace-nowrap rounded-full px-3 py-2 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:px-4"
+                      aria-label="Sign In"
+                          className="inline-flex items-center justify-center whitespace-nowrap rounded-full p-2 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:px-4"
                     >
-                          Sign In
+                          <User className="h-4 w-4 sm:hidden" />
+                          <span className="hidden sm:inline">Sign In</span>
                     </button>
                     <a
                       href="#start-audit"
@@ -554,26 +558,26 @@ export default function App() {
           ) : (
             <div className="flex-1 flex flex-col">
               {/* Header */}
-              <header className="sticky top-0 z-50 flex h-[4.5rem] items-center justify-between border-b border-border bg-background/90 px-4 shadow-sm shadow-slate-950/5 backdrop-blur-xl transition-colors duration-300 md:px-6">
-                <div className="flex items-center gap-4 flex-1">
+              <header className="sticky top-0 z-50 flex h-[4.5rem] items-center justify-between border-b border-border bg-background/90 px-3 shadow-sm shadow-slate-950/5 backdrop-blur-xl transition-colors duration-300 sm:px-4 md:px-6">
+                <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
                   <div className="flex items-center gap-2">
                     <button 
                       onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                      className="-ml-2 rounded-2xl p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      className="-ml-2 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                       aria-label="Toggle navigation"
                     >
                       <Menu className="w-5 h-5" />
                     </button>
                     <button
                       type="button"
-                      className="rounded-2xl"
+                      className="rounded-lg"
                       onClick={() => setIsSearching(false)}
                     >
                       <BrandMark />
                     </button>
                   </div>
                   
-                  <form onSubmit={(e) => handleSearch(e, undefined, false)} className="group relative ml-4 hidden max-w-3xl flex-1 items-center rounded-2xl border border-border bg-card/80 shadow-sm transition-all hover:bg-card focus-within:border-accent focus-within:bg-card focus-within:ring-2 focus-within:ring-accent/15 md:flex">
+                  <form onSubmit={(e) => handleSearch(e, undefined, false)} className="group relative ml-4 hidden max-w-3xl flex-1 items-center rounded-lg border border-border bg-card/80 shadow-sm transition-all hover:bg-card focus-within:border-accent focus-within:bg-card focus-within:ring-2 focus-within:ring-accent/15 md:flex">
                     <Search className="w-4 h-4 text-muted-foreground ml-3 flex-shrink-0" />
                     <input
                       type="text"
@@ -601,37 +605,40 @@ export default function App() {
                   </form>
                 </div>
                 
-                <div className="flex items-center gap-3 ml-4">
+                <div className="ml-2 flex items-center gap-1 sm:ml-4 sm:gap-3">
                   <ThemeToggle theme={theme} onToggle={toggleTheme} />
                   <div className="mx-1 hidden h-5 w-px bg-border md:block"></div>
                   {authLoading ? (
-                    <div className="h-9 w-28 rounded-xl bg-muted/30 border border-border animate-pulse" />
+                    <div className="h-9 w-16 animate-pulse rounded-lg border border-border bg-muted/30 sm:w-28" />
                   ) : user ? (
                     <>
                       <button 
                         onClick={() => setActiveTab('settings')}
-                        className="hidden items-center gap-2 rounded-2xl border border-border bg-card/80 px-3 py-2 text-foreground shadow-sm transition-colors hover:bg-muted md:flex"
+                        className="hidden items-center gap-2 rounded-lg border border-border bg-card/80 px-3 py-2 text-foreground shadow-sm transition-colors hover:bg-muted md:flex"
                       >
                         <User className="w-4 h-4 text-muted-foreground" />
                         <span className="text-sm font-medium truncate max-w-[120px]">{user.username || 'User'}</span>
                       </button>
-                      <button onClick={handleLogout} className="rounded-2xl p-2 text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-500" title="Sign out">
+                      <button onClick={handleLogout} className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-500" title="Sign out">
                         <LogOut className="w-5 h-5" />
                       </button>
                     </>
                   ) : (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 sm:gap-2">
                       <button 
                         onClick={() => setAuthMode('login')}
-                        className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors px-3 py-2 rounded-xl hover:bg-muted"
+                        aria-label="Log in"
+                        className="inline-flex items-center justify-center rounded-lg p-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:px-3"
                       >
-                        Log in
+                        <User className="h-4 w-4 sm:hidden" />
+                        <span className="hidden sm:inline">Log in</span>
                       </button>
                       <button 
                         onClick={() => setAuthMode('register')}
-                        className="text-sm font-bold bg-accent text-accent-foreground hover:bg-accent/90 px-4 py-2 rounded-xl transition-colors shadow-sm shadow-accent/20"
+                        className="rounded-lg bg-accent px-3 py-2 text-sm font-bold text-accent-foreground shadow-sm transition-colors hover:bg-accent/90 sm:px-4"
                       >
-                        Sign up
+                        <span className="sm:hidden">Join</span>
+                        <span className="hidden sm:inline">Sign up</span>
                       </button>
                     </div>
                   )}

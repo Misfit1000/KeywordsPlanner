@@ -66,7 +66,7 @@ export default function CommandPalette({ isOpen, onClose, onSearch }: CommandPal
  className="fixed inset-0 bg-background/80 backdrop-blur-sm z-[100]"
  />
  <div
- className="fixed top-[15%] left-1/2 -translate-x-1/2 w-full max-w-2xl bg-card border border-border rounded-3xl shadow-2xl z-[101] overflow-hidden"
+ className="fixed left-1/2 top-[15%] z-[101] w-full max-w-2xl -translate-x-1/2 overflow-hidden rounded-xl border border-border bg-card shadow-sm"
  >
  <div className="p-4 border-b border-border flex items-center gap-3">
  <Search className="w-5 h-5 text-muted-foreground"/>

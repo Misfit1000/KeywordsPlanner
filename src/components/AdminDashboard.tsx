@@ -77,7 +77,7 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Admin Panel</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Admin operations</h1>
         <p className="text-muted-foreground">Manage users, plans, audit queue, audit engine health, and safe platform settings.</p>
       </div>
 
@@ -88,7 +88,7 @@ export default function AdminDashboard() {
             <button
               key={tab.id}
               onClick={() => switchTab(tab.id)}
-              className={`px-3 py-2 rounded-xl border text-sm font-semibold flex items-center gap-2 ${
+              className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold ${
                 activeTab === tab.id ? 'bg-accent text-accent-foreground border-accent' : 'bg-card border-border hover:bg-muted'
               }`}
             >

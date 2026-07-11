@@ -33,7 +33,7 @@ export default function Register({
   };
 
   return (
-    <div className="w-full max-w-md animate-rise rounded-3xl border border-border bg-card p-7 shadow-2xl">
+    <div className="w-full max-w-md animate-rise rounded-xl border border-border bg-card p-7 shadow-sm">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="rounded-2xl bg-accent/10 p-3 text-accent">

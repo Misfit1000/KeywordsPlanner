@@ -1,5 +1,5 @@
 import { API_ROUTES } from '../lib/api/routes';
-import { getAuditStartHeaders } from '../lib/api/auth-headers';
+import { getAuditAccessHeaders, getAuditStartHeaders } from '../lib/api/auth-headers';
 import { createAuditSubmitGuard } from '../lib/api/audit-submit-guard';
 import { safeJsonFetch } from '../lib/http/safe-json';
 import React, { useEffect, useRef, useState } from 'react';
@@ -33,7 +33,7 @@ export default function WebsiteAnalyzer() {
     { title: 'SERP preview checker', text: 'See if the page snippet is clear before users click.', icon: FileText },
     { title: 'Redirect and status checker', text: 'Check final URL, status code, response timing, and redirect health.', icon: Route },
     { title: 'Sitemap and search access checker', text: 'Review sitemap and search engine access signals.', icon: Link2 },
-    { title: 'Passive browser safety checker', text: 'Check HTTPS and public browser protection signals safely.', icon: ShieldCheck },
+    { title: 'Passive Security Review', text: 'Check HTTPS and public browser protection signals without attack testing.', icon: ShieldCheck },
   ];
 
   useEffect(() => {
@@ -88,7 +88,7 @@ export default function WebsiteAnalyzer() {
           }}
           onComplete={async () => {
              try {
-                const dataResp = await safeJsonFetch<any>(API_ROUTES.auditResult(auditId));
+                const dataResp = await safeJsonFetch<any>(API_ROUTES.auditResult(auditId), { headers: await getAuditAccessHeaders() });
         const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
                 if (data.success) {
                    setResult({

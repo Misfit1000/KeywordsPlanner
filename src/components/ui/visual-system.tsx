@@ -1,6 +1,7 @@
 import React from 'react';
 import { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ExternalLink, Eye, Globe, Loader2, Monitor, Moon, Search, ShieldCheck, Smartphone, Sun, TrendingUp } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, ExternalLink, Eye, Globe, Loader2, Monitor, Moon, Search, ShieldCheck, Smartphone, Sun, TrendingUp } from 'lucide-react';
+import { gradeRangeLabel, scoreToGrade, scoreTone as reportScoreTone } from '../../lib/audit/report-insights';
 
 type VisualIcon = React.ComponentType<{ className?: string }>;
 type ScoreTone = 'accent' | 'green' | 'yellow' | 'red';
@@ -32,20 +33,23 @@ export function SectionHeader({
   title,
   description,
   action,
+  headingLevel = 'h2',
 }: {
   eyebrow?: string;
   title: string;
   description?: string;
   action?: React.ReactNode;
+  headingLevel?: 'h1' | 'h2' | 'h3';
 }) {
+  const Heading = headingLevel;
   return (
     <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
       <div>
         {eyebrow && <div className="suite-chip mb-3 w-fit text-accent">{eyebrow}</div>}
-        <h2 className="text-2xl font-bold tracking-tight md:text-4xl">{title}</h2>
+        <Heading className="text-2xl font-bold tracking-tight md:text-4xl">{title}</Heading>
         {description && <p className="mt-3 max-w-3xl text-sm leading-7 text-muted-foreground md:text-base">{description}</p>}
       </div>
-      {action}
+      {action && <div className="self-start md:self-auto">{action}</div>}
     </div>
   );
 }
@@ -65,6 +69,186 @@ export function StatusBadge({
     accent: 'border-accent/20 bg-accent/10 text-accent',
   };
   return <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-bold shadow-sm ${tones[tone]}`}>{children}</span>;
+}
+
+export function AuditGrade({
+  score,
+  label = 'Overall grade',
+  detail,
+  compact = false,
+}: {
+  score: number | null | undefined;
+  label?: string;
+  detail?: string;
+  compact?: boolean;
+}) {
+  const grade = scoreToGrade(score);
+  const tone = reportScoreTone(score);
+  const toneClasses = {
+    green: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+    accent: 'border-accent/25 bg-accent/10 text-accent',
+    yellow: 'border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+    red: 'border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300',
+  };
+
+  return (
+    <div className={`flex items-center gap-4 ${compact ? '' : 'min-w-0'}`}>
+      <div className={`flex shrink-0 items-center justify-center rounded-xl border font-bold tabular-nums ${toneClasses[tone]} ${compact ? 'h-12 w-12 text-2xl' : 'h-20 w-20 text-4xl'}`}>
+        {grade || '--'}
+      </div>
+      <div className="min-w-0">
+        <div className="text-sm font-semibold text-muted-foreground">{label}</div>
+        <div className={`font-bold tabular-nums ${compact ? 'text-lg' : 'text-2xl'}`}>
+          {score == null || !Number.isFinite(score) ? 'Not measured' : `${Math.round(score)}/100`}
+        </div>
+        <div className="mt-0.5 text-xs leading-5 text-muted-foreground">{detail || gradeRangeLabel(grade)}</div>
+      </div>
+    </div>
+  );
+}
+
+export function CategoryGradeCard({
+  label,
+  score,
+  description,
+  icon,
+}: {
+  label: string;
+  score: number | null | undefined;
+  description: string;
+  icon?: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-background/65 p-4">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="font-semibold">{label}</div>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
+        </div>
+        {icon && <div className="shrink-0 rounded-lg bg-muted p-2 text-accent">{icon}</div>}
+      </div>
+      <AuditGrade score={score} label="Section grade" compact />
+    </div>
+  );
+}
+
+export function EmptyState({
+  icon: Icon,
+  title,
+  description,
+  action,
+}: {
+  icon: VisualIcon;
+  title: string;
+  description: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="flex min-h-48 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/25 px-5 py-10 text-center">
+      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-accent/10 text-accent">
+        <Icon className="h-6 w-6" />
+      </div>
+      <h3 className="text-lg font-semibold">{title}</h3>
+      <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">{description}</p>
+      {action && <div className="mt-5">{action}</div>}
+    </div>
+  );
+}
+
+export function StickyReportNavigation({
+  items,
+}: {
+  items: Array<{ id: string; label: string; count?: number }>;
+}) {
+  return (
+    <nav aria-label="Report sections" className="sticky top-[4.5rem] z-20 -mx-1 overflow-x-auto border-y border-border bg-background/95 px-1 py-3 backdrop-blur-md">
+      <div className="flex min-w-max items-center gap-1">
+        {items.map((item) => (
+          <a key={item.id} href={`#${item.id}`} className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-muted-foreground hover:bg-muted hover:text-foreground">
+            {item.label}
+            {item.count != null && <span className="rounded-full bg-muted px-2 py-0.5 text-xs tabular-nums">{item.count}</span>}
+          </a>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+export function FindingRow({
+  severity,
+  category,
+  title,
+  description,
+  whyItMatters,
+  recommendation,
+  evidence = [],
+  affectedUrls = [],
+  statusControl,
+}: {
+  severity: SeverityTone;
+  category: string;
+  title: string;
+  description?: string;
+  whyItMatters?: string;
+  recommendation?: string;
+  evidence?: string[];
+  affectedUrls?: string[];
+  statusControl?: React.ReactNode;
+}) {
+  return (
+    <details className="group rounded-xl border border-border bg-card open:border-accent/30">
+      <summary className="flex cursor-pointer list-none items-start gap-3 p-4 marker:content-none">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <SeverityBadge severity={severity} />
+            <span className="text-xs font-semibold text-muted-foreground">{category}</span>
+            {affectedUrls.length > 0 && <span className="text-xs text-muted-foreground">{affectedUrls.length} affected page{affectedUrls.length === 1 ? '' : 's'}</span>}
+          </div>
+          <h3 className="mt-2 text-base font-semibold leading-6">{title}</h3>
+          {description && <p className="mt-1 line-clamp-2 text-sm leading-6 text-muted-foreground">{description}</p>}
+        </div>
+        <ChevronDown className="mt-1 h-5 w-5 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="border-t border-border px-4 py-5">
+        <div className="grid gap-5 lg:grid-cols-3">
+          <div>
+            <div className="text-sm font-semibold">What happened</div>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{description || 'The audit recorded this finding in public page data.'}</p>
+          </div>
+          <div>
+            <div className="text-sm font-semibold">Why it matters</div>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{whyItMatters || 'This may affect search engine access, page understanding, user experience, or browser-side protection.'}</p>
+          </div>
+          <div>
+            <div className="text-sm font-semibold">How to fix it</div>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{recommendation || 'Review the affected page and apply the recommended website change.'}</p>
+          </div>
+        </div>
+        {(evidence.length > 0 || affectedUrls.length > 0 || statusControl) && (
+          <div className="mt-5 grid gap-4 border-t border-border pt-4 lg:grid-cols-2">
+            <div>
+              <div className="text-xs font-semibold text-muted-foreground">Evidence</div>
+              {evidence.length ? (
+                <ul className="mt-2 space-y-1 text-xs leading-5 text-foreground">
+                  {evidence.slice(0, 4).map((item) => <li key={item} className="break-words">{item}</li>)}
+                </ul>
+              ) : <p className="mt-2 text-xs text-muted-foreground">No extra evidence was stored.</p>}
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-muted-foreground">Affected pages</div>
+              {affectedUrls.length ? (
+                <ul className="mt-2 space-y-1 text-xs leading-5 text-foreground">
+                  {affectedUrls.slice(0, 5).map((url) => <li key={url} className="break-all">{url}</li>)}
+                  {affectedUrls.length > 5 && <li className="text-muted-foreground">+{affectedUrls.length - 5} more pages</li>}
+                </ul>
+              ) : <p className="mt-2 text-xs text-muted-foreground">Site-wide finding.</p>}
+            </div>
+          </div>
+        )}
+        {statusControl && <div className="mt-5 border-t border-border pt-4">{statusControl}</div>}
+      </div>
+    </details>
+  );
 }
 
 export function FeatureSuiteCard({
@@ -550,7 +734,6 @@ export function MetricCard({
   };
   return (
     <SurfaceCard className="group p-5">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-accent via-emerald-400 to-sky-400 opacity-70" />
       <div className="flex items-center justify-between gap-4">
         <div>
           <div className="text-sm font-medium text-muted-foreground">{label}</div>
@@ -754,7 +937,7 @@ export function ProductMockupPanel({
         </div>
       </div>
       <div className="bg-gradient-to-br from-background via-muted/40 to-accent/10 p-4">
-        <div className="grid overflow-hidden rounded-[1.75rem] border border-border bg-card shadow-xl lg:grid-cols-[72px_1fr]">
+        <div className="grid overflow-hidden rounded-xl border border-border bg-card shadow-sm lg:grid-cols-[72px_1fr]">
           <aside className="hidden border-r border-border bg-slate-950 p-3 text-white lg:block">
             <div className="mb-6 flex h-10 w-10 items-center justify-center rounded-2xl bg-accent font-bold">SI</div>
             <div className="space-y-3">
@@ -974,7 +1157,7 @@ export function RealisticDesktopPreviewCard({
         </div>
       </div>
       <div className="bg-gradient-to-br from-accent/10 via-background to-emerald-500/10 p-4 md:p-5">
-        <div className="overflow-hidden rounded-2xl border border-border bg-background shadow-xl">
+        <div className="overflow-hidden rounded-xl border border-border bg-background shadow-sm">
           <div className="border-b border-border bg-card/95 px-5 py-4">
             <div className="flex items-center justify-between gap-4">
               <div className="flex min-w-0 items-center gap-3">
@@ -997,7 +1180,7 @@ export function RealisticDesktopPreviewCard({
               <h3 className="line-clamp-3 text-3xl font-bold leading-tight">{pageTitle}</h3>
               <p className="mt-4 line-clamp-4 text-sm leading-6 text-muted-foreground">{desc}</p>
               <div className="mt-5 flex flex-wrap gap-2">
-                {['SEO audit', 'Technical SEO', 'Browser safety'].map((item) => (
+                {['SEO audit', 'Technical SEO', 'Passive security'].map((item) => (
                   <span key={item} className="rounded-full border border-border bg-card px-3 py-1 text-xs font-semibold text-muted-foreground">{item}</span>
                 ))}
               </div>
@@ -1297,11 +1480,11 @@ export function ThemeToggle({
     <button
       type="button"
       onClick={onToggle}
-      className="group inline-flex h-10 w-[4.5rem] items-center rounded-full border border-border bg-card/90 px-1.5 text-sm font-semibold shadow-sm transition-all duration-300 hover:bg-muted focus:outline-none focus:ring-2 focus:ring-accent/40"
+      className="group inline-flex h-10 w-10 items-center rounded-full border border-border bg-card/90 px-1.5 text-sm font-semibold shadow-sm transition-all duration-300 hover:bg-muted focus:outline-none focus:ring-2 focus:ring-accent/40 sm:w-[4.5rem]"
       aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
       title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
     >
-      <span className={`flex h-7 w-7 items-center justify-center rounded-full shadow-sm transition-all duration-300 ${theme === 'dark' ? 'translate-x-8 bg-accent text-accent-foreground' : 'translate-x-0 bg-amber-400 text-slate-950'}`}>
+      <span className={`flex h-7 w-7 items-center justify-center rounded-full shadow-sm transition-all duration-300 ${theme === 'dark' ? 'bg-accent text-accent-foreground sm:translate-x-8' : 'translate-x-0 bg-amber-400 text-slate-950'}`}>
         {theme === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
       </span>
       <span className="sr-only">{theme === 'dark' ? 'Dark mode' : 'Light mode'}</span>
@@ -1321,11 +1504,11 @@ export function LoadingSkeleton({ rows = 3 }: { rows?: number }) {
 
 export function BrandMark() {
   return (
-    <div className="flex items-center gap-2.5 font-bold tracking-tight text-foreground">
-      <div className="rounded-2xl bg-gradient-to-br from-accent to-emerald-500 p-2 text-accent-foreground shadow-lg shadow-accent/20">
+    <div className="flex items-center gap-2 font-bold tracking-tight text-foreground">
+      <div className="rounded-lg bg-accent p-2 text-accent-foreground shadow-sm">
         <TrendingUp className="h-5 w-5" />
       </div>
-      <span className="text-xl">SEO<span className="text-accent">Intel</span></span>
+      <span className="text-lg sm:text-xl">SEO<span className="text-accent">Intel</span></span>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { API_ROUTES } from '../lib/api/routes';
-import { getAuditStartHeaders } from '../lib/api/auth-headers';
+import { getAuditAccessHeaders, getAuditStartHeaders } from '../lib/api/auth-headers';
 import { createAuditSubmitGuard } from '../lib/api/audit-submit-guard';
 import { safeJsonFetch } from '../lib/http/safe-json';
 import { LiveAuditProgress } from './audit/LiveAuditProgress';
@@ -117,7 +117,7 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
         {plan === 'free' && (
           <div className="mt-3 text-sm text-muted-foreground bg-muted/40 border border-border rounded-lg p-3 flex items-start gap-2">
             <Lock className="w-4 h-4 mt-0.5" />
-            Free users get a quick 5-page scan and passive browser safety checks. Paid/Admin accounts get larger scans, faster starts, richer reports, and deeper SEO plus safety categories.
+            Free users get a quick 5-page scan and passive security observations. Paid/Admin accounts get larger scans, faster starts, richer reports, and deeper SEO plus safety categories.
           </div>
         )}
       </div>
@@ -134,7 +134,7 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
      
     onComplete={async () => {
       try {
-        const dataResp = await safeJsonFetch<any>(API_ROUTES.auditResult(jobId));
+        const dataResp = await safeJsonFetch<any>(API_ROUTES.auditResult(jobId), { headers: await getAuditAccessHeaders() });
         const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
         if (data.success) {
           setAuditResult(data.data);

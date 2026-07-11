@@ -124,7 +124,7 @@
   }
 
   .suite-table thead {
-    @apply bg-muted/60 text-xs uppercase tracking-[0.12em] text-muted-foreground;
+    @apply bg-muted/60 text-xs text-muted-foreground;
   }
 
   .suite-table th {

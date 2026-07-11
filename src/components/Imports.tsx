@@ -150,25 +150,25 @@ export default function Imports() {
           <div className="trust-card p-5">
             <MousePointerClick className="mb-3 h-6 w-6 text-accent" />
             <div className="text-sm text-muted-foreground">Imported clicks</div>
-            <div className="text-3xl font-black">{gscClicks || '-'}</div>
+            <div className="text-3xl font-bold">{gscClicks || '-'}</div>
             <div className="mt-1 text-xs text-muted-foreground">{gscImpressions || 0} impressions</div>
           </div>
           <div className="trust-card p-5">
             <Search className="mb-3 h-6 w-6 text-accent" />
             <div className="text-sm text-muted-foreground">Keyword rows</div>
-            <div className="text-3xl font-black">{keywordData.length || '-'}</div>
+            <div className="text-3xl font-bold">{keywordData.length || '-'}</div>
             <div className="mt-1 text-xs text-muted-foreground">Planner, rank, or custom CSV</div>
           </div>
           <div className="trust-card p-5">
             <Link2 className="mb-3 h-6 w-6 text-accent" />
             <div className="text-sm text-muted-foreground">Backlink rows</div>
-            <div className="text-3xl font-black">{backlinkData.length || '-'}</div>
+            <div className="text-3xl font-bold">{backlinkData.length || '-'}</div>
             <div className="mt-1 text-xs text-muted-foreground">{backlinkDomains || 0} source domains</div>
           </div>
           <div className="trust-card p-5">
             <Database className="mb-3 h-6 w-6 text-accent" />
             <div className="text-sm text-muted-foreground">Linked pages</div>
-            <div className="text-3xl font-black">{backlinkTargets || '-'}</div>
+            <div className="text-3xl font-bold">{backlinkTargets || '-'}</div>
             <div className="mt-1 text-xs text-muted-foreground">From imported backlink CSV</div>
           </div>
         </div>

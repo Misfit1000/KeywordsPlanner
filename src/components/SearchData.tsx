@@ -122,9 +122,9 @@ export default function SearchData() {
                       <StatusBadge tone="warning">{row.ctr.toFixed(1)}% CTR</StatusBadge>
                     </div>
                     <div className="mt-3 grid gap-2 text-sm md:grid-cols-3">
-                      <div className="rounded-xl bg-muted/40 p-3"><span className="text-muted-foreground">Impressions</span><div className="font-black">{row.impressions}</div></div>
-                      <div className="rounded-xl bg-muted/40 p-3"><span className="text-muted-foreground">Clicks</span><div className="font-black">{row.clicks}</div></div>
-                      <div className="rounded-xl bg-muted/40 p-3"><span className="text-muted-foreground">Position</span><div className="font-black">{row.position}</div></div>
+                      <div className="rounded-xl bg-muted/40 p-3"><span className="text-muted-foreground">Impressions</span><div className="font-bold">{row.impressions}</div></div>
+                      <div className="rounded-xl bg-muted/40 p-3"><span className="text-muted-foreground">Clicks</span><div className="font-bold">{row.clicks}</div></div>
+                      <div className="rounded-xl bg-muted/40 p-3"><span className="text-muted-foreground">Position</span><div className="font-bold">{row.position}</div></div>
                     </div>
                   </div>
                 ))}

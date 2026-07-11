@@ -61,7 +61,7 @@ export type LandingDestination =
 const trustBullets = [
   'Worker-backed live audits',
   'No paid SEO or AI API required',
-  'Passive browser-safety checks only',
+  'Passive Security Review only',
   'No raw HTML storage',
 ];
 
@@ -70,7 +70,7 @@ const credibilityBadges: Array<{ icon: IconType; title: string; description: str
   { icon: Zap, title: 'Realtime progress', description: 'Supabase realtime events show what the audit engine is checking now.' },
   { icon: CheckCircle2, title: 'No raw HTML storage', description: 'SEOIntel stores audit results, page summaries, events, and issues, not full raw HTML.' },
   { icon: BarChart3, title: 'No fake ranking data', description: 'No fake traffic, CPC, backlink, domain authority, or SERP-position claims.' },
-  { icon: ShieldCheck, title: 'Passive security only', description: 'Browser-safety checks stay non-invasive and public-signal based.' },
+  { icon: ShieldCheck, title: 'Passive security only', description: 'The Passive Security Review stays non-invasive and uses public signals.' },
 ];
 
 const platformStats = [
@@ -99,7 +99,7 @@ const featureHighlights = [
   {
     icon: ShieldCheck,
     title: 'Passive Security',
-    description: 'Check public browser-safety signals without scans that attack or exploit the site.',
+    description: 'Review public browser protection signals without scans that attack or exploit the site.',
     checks: ['HTTPS and HSTS review', 'CSP and frame protection', 'Mixed-content warning signals'],
     cta: 'Open safety check',
     action: 'security-audit' as LandingDestination,
@@ -129,7 +129,7 @@ const auditCheckGroups: Array<{ title: string; description: string; icon: IconTy
   },
   {
     title: 'Passive security checks',
-    description: 'Non-invasive browser-safety checks from public response signals.',
+    description: 'Non-invasive security observations from public response signals.',
     icon: ShieldCheck,
     checks: ['HTTPS', 'HSTS', 'CSP', 'X-Frame-Options', 'X-Content-Type-Options', 'Referrer-Policy', 'Insecure form warning when detected', 'Mixed content warning when detected'],
   },
@@ -179,11 +179,11 @@ const suiteFeatures: Array<{
   {
     icon: ShieldCheck,
     eyebrow: 'Passive safety',
-    title: 'Browser Safety',
+    title: 'Passive Security Review',
     description: 'Review public HTTPS and browser protection settings without probing or attacking the site.',
     status: 'Live',
     points: ['HTTPS checks', 'Browser security protections', 'Non-invasive only'],
-    cta: 'Check browser safety',
+    cta: 'Start passive review',
     action: 'security-audit',
   },
   {
@@ -364,7 +364,7 @@ const useCases = [
   {
     icon: Code2,
     title: 'Developers',
-    description: 'See technical SEO and browser-safety signals without digging through raw page output.',
+    description: 'See technical SEO and passive security signals without digging through raw page output.',
     outcomes: ['Status and redirect checks', 'Preferred page URL review', 'Browser protection notes'],
   },
   {
@@ -429,7 +429,7 @@ const resourcesColumns = [
     links: [
       { label: 'Quick SEO Checker', href: '#start-audit', description: 'Run the live audit flow.' },
       { label: 'Google Preview Tool', href: '#free-tools', description: 'Review title and description snippets.' },
-      { label: 'Browser Safety Checker', href: '#free-tools', description: 'Check public browser protection signals.' },
+      { label: 'Passive Security Review', href: '#free-tools', description: 'Review public browser protection signals.' },
     ],
   },
   {
@@ -460,7 +460,7 @@ const faqs = [
     answer: 'No. The app stores audit jobs, events, page summaries, issues, and report data. Raw page HTML is not stored.',
   },
   {
-    question: 'Are browser-safety checks invasive?',
+    question: 'Is the Passive Security Review invasive?',
     answer: 'No. They review public HTTPS and browser protection settings. SEOIntel does not exploit vulnerabilities, run penetration tests, or attack the site.',
   },
   {
@@ -505,12 +505,10 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
 
   return (
     <main className="w-full bg-background text-foreground">
-      <section id="product" className="section-shell relative overflow-hidden pb-16 pt-12 md:pb-24 md:pt-20">
-        <div className="absolute inset-x-4 top-8 -z-10 h-80 rounded-[3rem] bg-gradient-to-br from-accent/12 via-emerald-500/10 to-transparent blur-3xl" />
-
+      <section id="product" className="section-shell relative overflow-hidden pb-16 pt-8 md:pb-24 md:pt-20">
         <div className="grid items-start gap-10 lg:grid-cols-[1.02fr_0.98fr]">
           <div className="space-y-8">
-            <nav className="flex flex-wrap gap-2 text-sm" aria-label="Homepage sections">
+            <nav className="hidden flex-wrap gap-2 text-sm sm:flex" aria-label="Homepage sections">
               <a href="#features" className="quiet-button px-3 py-1.5">Features</a>
               <a href="#free-tools" className="quiet-button px-3 py-1.5">Free tools</a>
               <a href="#use-cases" className="quiet-button px-3 py-1.5">Use cases</a>
@@ -519,11 +517,11 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
 
             <div className="space-y-5">
               <StatusBadge tone="accent">Live SEO suite for practical website checks</StatusBadge>
-              <h1 className="max-w-4xl text-4xl font-bold leading-tight md:text-6xl">
-                Visual SEO, Technical SEO, and Passive Security Audits in One Dashboard
+              <h1 className="max-w-3xl text-4xl font-bold leading-tight md:text-5xl">
+                Professional SEO audits, clearly explained
               </h1>
               <p className="max-w-2xl text-lg leading-8 text-muted-foreground md:text-xl">
-                SEOIntel checks public website signals, crawlability, metadata, performance signals, Google-style appearance, and passive browser-safety headers without paid SEO APIs or AI APIs.
+                See on-page SEO, technical health, crawlability, performance observations, and passive security in one prioritized report. No paid SEO data feeds or AI APIs.
               </p>
             </div>
 
@@ -789,14 +787,14 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
           <div>
             <div className="text-xl font-bold">SEO<span className="text-accent">Intel</span></div>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Visual SEO, website health, and passive browser-safety audits with a resource-light architecture.
+              Visual SEO, website health, and Passive Security Review reports with a resource-light architecture.
             </p>
             <p className="mt-3 text-xs leading-5 text-muted-foreground">
               Safety note: passive checks only. SEOIntel does not run exploit tests, store raw HTML, or invent ranking/backlink data.
             </p>
           </div>
           <FooterLinks title="Product" links={[['Features', '#features'], ['Reports', '#reports'], ['Pricing', '#pricing']]} />
-          <FooterLinks title="Free tools" links={[['Quick SEO Checker', '#start-audit'], ['Google Preview Tool', '#free-tools'], ['Browser Safety Checker', '#free-tools']]} />
+          <FooterLinks title="Free tools" links={[['Quick SEO Checker', '#start-audit'], ['Google Preview Tool', '#free-tools'], ['Passive Security Review', '#free-tools']]} />
           <FooterLinks title="Resources" links={[['Use cases', '#use-cases'], ['Guides', '#resources'], ['FAQ', '#faq'], ['Audit safety', '#audit-checks']]} />
         </div>
       </footer>
@@ -885,7 +883,7 @@ function ReportShowcase({ onNavigate }: { onNavigate: (destination: LandingDesti
   const issueRows = [
     { title: 'Missing or weak page title', detail: 'The page title is short or unclear for search snippets.', severity: 'high' as const },
     { title: 'Meta description needs a rewrite', detail: 'The Google-style preview may not explain the page clearly.', severity: 'medium' as const },
-    { title: 'Browser protection headers incomplete', detail: 'Passive checks found missing browser-safety protections.', severity: 'medium' as const },
+    { title: 'Browser protection headers incomplete', detail: 'The Passive Security Review found missing browser protections.', severity: 'medium' as const },
   ];
   const viewCopy = {
     summary: 'Top fixes and score cards stay first so report readers know what to do next.',
@@ -1073,7 +1071,7 @@ function HomepageMobilePreview() {
 
 function HomepageSerpPreview() {
   return (
-    <div className="w-full min-w-0 rounded-[1.5rem] border border-border bg-background p-4 shadow-xl shadow-slate-950/5 sm:p-5">
+    <div className="w-full min-w-0 rounded-xl border border-border bg-background p-4 shadow-sm sm:p-5">
       <div className="mb-4 flex items-center gap-2">
         <Search className="h-5 w-5 text-accent" />
         <h3 className="text-lg font-bold">Google-style preview</h3>
@@ -1102,7 +1100,7 @@ function HomepageSerpPreview() {
 
 function SerpRankingDataPanel() {
   return (
-    <div className="w-full min-w-0 rounded-[1.5rem] border border-border bg-background p-4 shadow-xl shadow-slate-950/5 sm:p-5">
+    <div className="w-full min-w-0 rounded-xl border border-border bg-background p-4 shadow-sm sm:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h3 className="text-lg font-bold">Actual SERP ranking data</h3>

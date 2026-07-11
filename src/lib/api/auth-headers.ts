@@ -25,8 +25,10 @@ export function getOrCreateGuestSessionId() {
   }
 }
 
-export async function getAuditStartHeaders(base: Record<string, string> = {}) {
+export async function getAuditAccessHeaders(base: Record<string, string> = {}) {
   const headers = await getAuthHeaders(base);
   const guestId = getOrCreateGuestSessionId();
   return guestId ? { ...headers, 'X-SEOIntel-Guest-Id': guestId } : headers;
 }
+
+export const getAuditStartHeaders = getAuditAccessHeaders;

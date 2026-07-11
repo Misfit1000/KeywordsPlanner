@@ -17,7 +17,7 @@ const navGroups: Array<{
     title: 'Audits',
     items: [
       { icon: Activity, label: 'SEO checks', description: 'Titles, links, Google access', id: 'seo-audit' },
-      { icon: ShieldCheck, label: 'Browser safety', description: 'Passive protection checks', id: 'security-audit' },
+      { icon: ShieldCheck, label: 'Passive Security', description: 'Non-invasive public checks', id: 'security-audit' },
       { icon: Globe, label: 'Website health', description: 'Pages, speed, redirects', id: 'website-analyzer' },
     ],
   },
@@ -65,20 +65,20 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOp
       {isOpen && <div onClick={onClose} className="fixed inset-0 z-40 bg-background/70 backdrop-blur-sm lg:hidden" />}
 
       {isOpen && (
-        <aside className="fixed left-0 top-[4.5rem] z-50 flex h-[calc(100vh-4.5rem)] w-[18rem] flex-col overflow-hidden border-r border-border bg-card/92 shadow-lg shadow-slate-950/10 backdrop-blur-xl lg:sticky dark:shadow-black/30">
-          <div className="border-b border-border p-5">
+        <aside className="fixed left-0 top-[4.5rem] z-50 flex h-[calc(100vh-4.5rem)] w-64 flex-col overflow-hidden border-r border-border bg-card shadow-sm lg:sticky">
+          <div className="border-b border-border p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-bold">SEO suite</div>
                 <div className="text-xs text-muted-foreground">Audit, data, reports</div>
               </div>
-              <button onClick={onClose} className="rounded-xl p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden" aria-label="Close navigation">
+              <button onClick={onClose} className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden" aria-label="Close navigation">
                 <X className="h-4 w-4" />
               </button>
             </div>
           </div>
 
-          <nav className="flex-1 space-y-5 overflow-y-auto p-4" aria-label="Main navigation">
+          <nav className="flex-1 space-y-4 overflow-y-auto p-3" aria-label="Main navigation">
             {filteredGroups.map((group) => (
               <div key={group.title}>
                 <div className="mb-2 px-2 text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground">{group.title}</div>
@@ -94,9 +94,9 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOp
                           setActiveTab(item.id);
                           if (window.innerWidth < 1024) onClose();
                         }}
-                        className={`group flex w-full items-start gap-3 rounded-2xl px-3 py-3 text-left transition-all duration-200 ${
+                        className={`group flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-200 ${
                           isActive
-                            ? 'bg-accent text-accent-foreground shadow-lg shadow-accent/20'
+                            ? 'bg-accent text-accent-foreground'
                             : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                         }`}
                       >
@@ -117,7 +117,7 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOp
             <button
               type="button"
               onClick={() => setActiveTab('settings')}
-              className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <Settings className="h-5 w-5 text-accent" />
               <span>
@@ -131,7 +131,7 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOp
                 onOpenHelp?.();
                 if (window.innerWidth < 1024) onClose();
               }}
-              className="mt-1 flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <HelpCircle className="h-5 w-5 text-accent" />
               <span>

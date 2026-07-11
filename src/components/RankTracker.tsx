@@ -175,7 +175,7 @@ export default function RankTracker() {
                     <div className="h-3 overflow-hidden rounded-full bg-muted">
                       <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-accent" style={{ width: `${width}%` }} />
                     </div>
-                    <div className="text-sm font-black text-accent">#{position.toFixed(1)}</div>
+                    <div className="text-sm font-bold text-accent">#{position.toFixed(1)}</div>
                   </div>
                 );
               })}

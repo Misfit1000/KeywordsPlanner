@@ -1,5 +1,5 @@
 import { API_ROUTES } from '../lib/api/routes';
-import { getAuditStartHeaders } from '../lib/api/auth-headers';
+import { getAuditAccessHeaders, getAuditStartHeaders } from '../lib/api/auth-headers';
 import { createAuditSubmitGuard } from '../lib/api/audit-submit-guard';
 import { safeJsonFetch } from '../lib/http/safe-json';
 import { normalizeDomainInput } from '../lib/seo/url-utils';
@@ -50,7 +50,7 @@ export default function SecurityAudit() {
   return (
     <div className="w-full space-y-6 animate-rise">
       <div>
-        <h1 className="text-3xl font-bold font-display">Browser safety audit</h1>
+        <h1 className="text-3xl font-bold font-display">Passive Security Review</h1>
         <p className="text-muted-foreground">Check public safety settings such as HTTPS and browser protections. This is passive and does not attack or exploit the website.</p>
       </div>
 
@@ -69,7 +69,7 @@ export default function SecurityAudit() {
           className="trust-button px-6 py-3"
         >
           {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Lock className="w-5 h-5" />}
-          {loading ? 'Starting check...' : 'Check browser safety'}
+          {loading ? 'Starting review...' : 'Start passive review'}
         </button>
       </form>
 
@@ -77,7 +77,7 @@ export default function SecurityAudit() {
         <LiveAuditProgress 
           auditId={auditId} 
           onComplete={async () => {
-            const dataResp = await safeJsonFetch<any>(API_ROUTES.auditResult(auditId));
+            const dataResp = await safeJsonFetch<any>(API_ROUTES.auditResult(auditId), { headers: await getAuditAccessHeaders() });
         const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
             if (data.success) {
               setResult(data.data.result || data.data);
@@ -98,7 +98,7 @@ export default function SecurityAudit() {
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-card border border-border p-6 rounded-2xl flex flex-col items-center justify-center text-center shadow-sm">
-              <span className="text-sm font-medium text-muted-foreground mb-2 uppercase tracking-wider">Safety score</span>
+              <span className="text-sm font-medium text-muted-foreground mb-2">Passive security score</span>
               <span className={`text-5xl font-display font-bold ${result.securityScore >= 90 ? 'text-green-500' : result.securityScore >= 70 ? 'text-amber-500' : 'text-red-500'}`}>
                 {result.securityScore}
               </span>
@@ -120,7 +120,7 @@ export default function SecurityAudit() {
 
           <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
             <div className="p-4 border-b border-border bg-muted/20">
-              <h3 className="font-bold text-lg font-display">Safety findings</h3>
+              <h3 className="font-bold text-lg font-display">Passive security findings</h3>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
@@ -163,7 +163,7 @@ export default function SecurityAudit() {
                     <tr>
                       <td colSpan={4} className="p-8 text-center text-muted-foreground flex flex-col items-center gap-2">
                         <CheckCircle2 className="w-8 h-8 text-green-500" />
-                        <p>No urgent browser safety fixes found.</p>
+                        <p>No urgent passive security fixes found.</p>
                       </td>
                     </tr>
                   )}
