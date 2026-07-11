@@ -18,6 +18,7 @@
     }
   ],
   "rewrites": [
+    { "source": "/sitemap.xml", "destination": "/api/index.js?path=tools/blog/sitemap.xml" },
     { "source": "/api/:path*", "destination": "/api/index.js?path=:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]

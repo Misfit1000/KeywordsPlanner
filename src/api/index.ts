@@ -19,6 +19,12 @@ import {
 import type { ResourceAuditDocument } from '../lib/audit/resource-types';
 import { getAuditProfileForDocument } from '../lib/audit/audit-profiles';
 import { renderAuditPdf } from '../lib/report/pdf';
+import { createRateLimiter } from '../lib/api/http-hardening';
+import { blogRepository } from '../lib/blog/repository';
+import { generateBlogWithGemini } from '../lib/blog/gemini';
+import { normalizeBlogSlug } from '../lib/blog/slug';
+import { BlogValidationError, prepareBlogPost } from '../lib/blog/validation';
+import { canonicalSiteOrigin, renderBlogSitemap } from '../lib/blog/sitemap';
 
 const DUPLICATE_AUDIT_WINDOW_MS = 10 * 60 * 1000;
 
@@ -39,6 +45,8 @@ function asyncJsonRoute(handler: any) {
 }
 
 export const apiRouter = Router();
+
+apiRouter.use('/admin/blog/generate', createRateLimiter({ namespace: 'blog-gemini', windowMs: 60_000, maxRequests: 5 }));
 
 function firstHeaderValue(value: unknown) {
   return Array.isArray(value) ? String(value[0] || '') : String(value || '');
@@ -78,6 +86,35 @@ async function getRequester(req: any) {
   if (!authUser) return { userId: null, profile: null };
   const profile = await ensureUserProfileFromAuthUser(authUser);
   return { userId: authUser.id, profile };
+}
+
+async function requireAdminRequester(req: any, res: any) {
+  const requester = await getRequester(req);
+  if (!requester.userId || !requester.profile) {
+    res.status(401).json({ success: false, error: 'Authentication required.' });
+    return null;
+  }
+  if (requester.profile.role !== 'admin') {
+    res.status(403).json({ success: false, error: 'Admin access required.' });
+    return null;
+  }
+  return requester;
+}
+
+async function uniqueBlogSlug(value: string, exceptId?: string) {
+  const base = normalizeBlogSlug(value);
+  let candidate = base;
+  for (let suffix = 2; await blogRepository.slugExists(candidate, exceptId); suffix += 1) {
+    candidate = `${base.slice(0, Math.max(1, 116 - String(suffix).length)).replace(/-+$/g, '')}-${suffix}`;
+    if (suffix > 9999) throw new Error('Could not create a unique slug.');
+  }
+  return candidate;
+}
+
+async function logBlogAction(adminUserId: string, action: string, postId: string, metadata: Record<string, unknown> = {}) {
+  const client = (await import('../lib/supabase/server')).getSupabaseAdminClient();
+  if (!client) return;
+  await client.from('admin_actions').insert({ admin_user_id: adminUserId, action, target_type: 'blog_post', target_id: postId, metadata });
 }
 
 async function canAccessAudit(req: any, audit: ResourceAuditDocument) {
@@ -123,6 +160,92 @@ apiRouter.get('/me/profile', asyncJsonRoute(async (req, res) => {
   const profile = await ensureUserProfileFromAuthUser(authUser);
   const limits = await getPlanLimits(profile.plan);
   res.json({ success: true, data: { profile, limits } });
+}));
+
+apiRouter.get('/blog/posts', asyncJsonRoute(async (req, res) => {
+  const result = await blogRepository.listPublished({ query: String(req.query.q || ''), limit: Number(req.query.limit || 12), offset: Number(req.query.offset || 0) });
+  res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+  res.json({ success: true, data: result });
+}));
+
+apiRouter.get('/blog/sitemap.xml', asyncJsonRoute(async (req, res) => {
+  const xml = await renderBlogSitemap(canonicalSiteOrigin(req));
+  res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+  res.status(200).send(xml);
+}));
+
+apiRouter.get('/blog/posts/:slug', asyncJsonRoute(async (req, res) => {
+  const post = await blogRepository.getPublishedBySlug(normalizeBlogSlug(req.params.slug));
+  if (!post) return res.status(404).json({ success: false, error: 'Article not found.' });
+  res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+  res.json({ success: true, data: { post } });
+}));
+
+apiRouter.get('/admin/blog/posts', asyncJsonRoute(async (req, res) => {
+  if (!(await requireAdminRequester(req, res))) return;
+  const posts = await blogRepository.listAdmin(Number(req.query.limit || 100));
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: { posts } });
+}));
+
+apiRouter.post('/admin/blog/posts', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  try {
+    const row = prepareBlogPost(req.body || {});
+    row.slug = await uniqueBlogSlug(row.slug);
+    const post = await blogRepository.create({ ...row, author_id: requester.userId, updated_by: requester.userId });
+    await logBlogAction(requester.userId, 'create_blog_post', post.id, { status: post.status, slug: post.slug });
+    res.status(201).json({ success: true, data: { post } });
+  } catch (error) {
+    if (error instanceof BlogValidationError) return res.status(error.status).json({ success: false, error: error.message });
+    throw error;
+  }
+}));
+
+apiRouter.put('/admin/blog/posts/:id', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const existing = await blogRepository.getAdminById(req.params.id);
+  if (!existing) return res.status(404).json({ success: false, error: 'Article not found.' });
+  try {
+    const row = prepareBlogPost(req.body || {});
+    row.slug = await uniqueBlogSlug(row.slug, existing.id);
+    const post = await blogRepository.update(existing.id, { ...row, updated_by: requester.userId });
+    await logBlogAction(requester.userId, 'update_blog_post', existing.id, { status: post?.status, slug: post?.slug });
+    res.json({ success: true, data: { post } });
+  } catch (error) {
+    if (error instanceof BlogValidationError) return res.status(error.status).json({ success: false, error: error.message });
+    throw error;
+  }
+}));
+
+apiRouter.delete('/admin/blog/posts/:id', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const post = await blogRepository.update(req.params.id, { status: 'archived', updated_by: requester.userId });
+  if (!post) return res.status(404).json({ success: false, error: 'Article not found.' });
+  await logBlogAction(requester.userId, 'archive_blog_post', post.id, { slug: post.slug });
+  res.json({ success: true, data: { post } });
+}));
+
+apiRouter.post('/admin/blog/generate', asyncJsonRoute(async (req, res) => {
+  if (!(await requireAdminRequester(req, res))) return;
+  try {
+    const result = await generateBlogWithGemini({
+      action: req.body?.action === 'topics' ? 'topics' : 'draft',
+      topic: req.body?.topic,
+      audience: req.body?.audience,
+      keywords: req.body?.keywords,
+    });
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json({ success: true, data: result });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Gemini draft generation failed.';
+    const status = /not configured/i.test(message) ? 503 : 502;
+    res.status(status).json({ success: false, error: message });
+  }
 }));
 
 async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'quick') {

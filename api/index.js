@@ -14,6 +14,113 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
+// src/lib/api/http-hardening.ts
+import express from "express";
+function apiSecurityHeaders(_req, res, next) {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
+  res.setHeader("Content-Security-Policy", "frame-ancestors 'none'; base-uri 'self'; object-src 'none'");
+  next();
+}
+function jsonBodyParser() {
+  return express.json({
+    limit: process.env.API_JSON_BODY_LIMIT || "64kb",
+    strict: true
+  });
+}
+function jsonParseErrorHandler(error, _req, res, next) {
+  if (error?.type === "entity.too.large") {
+    return res.status(413).json({
+      success: false,
+      error: "Request body is too large"
+    });
+  }
+  if (error instanceof SyntaxError && "body" in error) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid JSON request body"
+    });
+  }
+  next(error);
+}
+function apiErrorHandler(error, req, res, _next) {
+  console.error("[api] unhandled route error", {
+    message: error?.message,
+    stack: error?.stack,
+    method: req.method,
+    url: req.originalUrl || req.url
+  });
+  if (!res.headersSent) {
+    res.status(500).json({
+      success: false,
+      error: "Internal server error"
+    });
+  }
+}
+function clientIp(req) {
+  const forwardedFor = req.headers["x-forwarded-for"];
+  const forwardedValue = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
+  return req.ip || req.socket.remoteAddress || forwardedValue?.split(",")[0]?.trim() || "unknown";
+}
+function storeFor(namespace) {
+  let store = stores.get(namespace);
+  if (!store) {
+    store = /* @__PURE__ */ new Map();
+    stores.set(namespace, store);
+  }
+  return store;
+}
+function pruneStore(store, now, maxKeys) {
+  if (store.size <= maxKeys) {
+    return;
+  }
+  for (const [key, entry] of store) {
+    if (entry.resetAt <= now) {
+      store.delete(key);
+    }
+  }
+  while (store.size > maxKeys) {
+    const oldestKey = store.keys().next().value;
+    if (!oldestKey) {
+      break;
+    }
+    store.delete(oldestKey);
+  }
+}
+function createRateLimiter(options) {
+  return (req, res, next) => {
+    const now = Date.now();
+    const store = storeFor(options.namespace);
+    pruneStore(store, now, options.maxKeys || DEFAULT_RATE_LIMIT_MAX_KEYS);
+    const key = `${clientIp(req)}:${req.method}:${req.path}`;
+    const current = store.get(key);
+    if (!current || current.resetAt <= now) {
+      store.set(key, { count: 1, resetAt: now + options.windowMs });
+      return next();
+    }
+    current.count += 1;
+    if (current.count <= options.maxRequests) {
+      return next();
+    }
+    const retryAfterSeconds = Math.max(1, Math.ceil((current.resetAt - now) / 1e3));
+    res.setHeader("Retry-After", String(retryAfterSeconds));
+    return res.status(429).json({
+      success: false,
+      error: "Too many requests. Please retry shortly."
+    });
+  };
+}
+var stores, DEFAULT_RATE_LIMIT_MAX_KEYS;
+var init_http_hardening = __esm({
+  "src/lib/api/http-hardening.ts"() {
+    stores = /* @__PURE__ */ new Map();
+    DEFAULT_RATE_LIMIT_MAX_KEYS = 1e4;
+  }
+});
+
 // src/lib/seo/url-utils.ts
 function isPrivateHostname(hostname) {
   const lower = hostname.toLowerCase();
@@ -787,6 +894,13 @@ var init_url = __esm({
 });
 
 // src/lib/supabase/server.ts
+var server_exports = {};
+__export(server_exports, {
+  getSupabaseAdminClient: () => getSupabaseAdminClient,
+  getSupabaseProjectHostname: () => getSupabaseProjectHostname,
+  isSupabaseAdminEnabled: () => isSupabaseAdminEnabled,
+  requireSupabaseAdminClient: () => requireSupabaseAdminClient
+});
 import { createClient } from "@supabase/supabase-js";
 function hasSupabaseServerConfig() {
   return Boolean(normalizeSupabaseProjectUrl(process.env.SUPABASE_URL) && process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -2579,6 +2693,420 @@ var init_pdf = __esm({
   }
 });
 
+// src/lib/blog/slug.ts
+function createBlogSlug(value) {
+  const normalized = String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, MAX_SLUG_LENGTH).replace(/-+$/g, "");
+  return normalized || "article";
+}
+function normalizeBlogSlug(value) {
+  return createBlogSlug(value).slice(0, 120);
+}
+var MAX_SLUG_LENGTH;
+var init_slug = __esm({
+  "src/lib/blog/slug.ts"() {
+    MAX_SLUG_LENGTH = 110;
+  }
+});
+
+// src/lib/blog/seo.ts
+function cleanText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+function truncateAtWord(value, maxLength) {
+  const text = cleanText(value);
+  if (text.length <= maxLength) return text;
+  const sliced = text.slice(0, Math.max(1, maxLength - 1));
+  const boundary = sliced.lastIndexOf(" ");
+  return `${(boundary > maxLength * 0.6 ? sliced.slice(0, boundary) : sliced).trim()}...`;
+}
+function estimateReadingTime(contentText) {
+  const words = cleanText(contentText).split(" ").filter(Boolean).length;
+  return Math.max(1, Math.ceil(words / 220));
+}
+function buildBlogSeoFields(input) {
+  const title = cleanText(input.title);
+  const focusKeyword = cleanText(input.focusKeyword || "");
+  const contentText = cleanText(input.contentText || "");
+  const excerptSource = cleanText(input.excerpt || "") || contentText;
+  const titleWithKeyword = focusKeyword && !title.toLowerCase().includes(focusKeyword.toLowerCase()) ? `${title}: ${focusKeyword}` : title;
+  return {
+    slug: createBlogSlug(title),
+    seoTitle: truncateAtWord(titleWithKeyword, 60),
+    metaDescription: truncateAtWord(excerptSource, 160),
+    excerpt: truncateAtWord(excerptSource, 280),
+    focusKeyword
+  };
+}
+var init_seo = __esm({
+  "src/lib/blog/seo.ts"() {
+    init_slug();
+  }
+});
+
+// src/lib/blog/repository.ts
+import { randomUUID as randomUUID3 } from "node:crypto";
+function toPost(row) {
+  const contentText = String(row.content_text ?? row.contentText ?? "");
+  return {
+    id: String(row.id),
+    slug: String(row.slug || ""),
+    title: String(row.title || ""),
+    excerpt: String(row.excerpt || ""),
+    contentHtml: String(row.content_html ?? row.contentHtml ?? ""),
+    contentText,
+    focusKeyword: String(row.focus_keyword ?? row.focusKeyword ?? ""),
+    tags: Array.isArray(row.tags) ? row.tags.map(String) : [],
+    seoTitle: String(row.seo_title ?? row.seoTitle ?? ""),
+    metaDescription: String(row.meta_description ?? row.metaDescription ?? ""),
+    canonicalUrl: String(row.canonical_url ?? row.canonicalUrl ?? ""),
+    ogImageUrl: String(row.og_image_url ?? row.ogImageUrl ?? ""),
+    status: String(row.status || "draft"),
+    authorId: row.author_id ?? row.authorId ?? null,
+    updatedBy: row.updated_by ?? row.updatedBy ?? null,
+    publishedAt: row.published_at ?? row.publishedAt ?? null,
+    createdAt: String(row.created_at ?? row.createdAt ?? (/* @__PURE__ */ new Date()).toISOString()),
+    updatedAt: String(row.updated_at ?? row.updatedAt ?? (/* @__PURE__ */ new Date()).toISOString()),
+    readingTimeMinutes: estimateReadingTime(contentText)
+  };
+}
+function isPublic(row) {
+  return row.status === "published" && row.published_at && new Date(row.published_at).getTime() <= Date.now();
+}
+function publicMemoryRows() {
+  return [...memoryPosts.values()].filter(isPublic).sort((a, b) => String(b.published_at).localeCompare(String(a.published_at)));
+}
+var memoryPosts, blogRepository;
+var init_repository = __esm({
+  "src/lib/blog/repository.ts"() {
+    init_server();
+    init_seo();
+    memoryPosts = /* @__PURE__ */ new Map();
+    blogRepository = {
+      async listPublished({ query = "", limit = 12, offset = 0 } = {}) {
+        const safeLimit = Math.max(1, Math.min(30, Number(limit) || 12));
+        const safeOffset = Math.max(0, Number(offset) || 0);
+        const search = String(query || "").replace(/[^\p{L}\p{N}\s'"-]/gu, " ").trim().slice(0, 100);
+        const client = getSupabaseAdminClient();
+        if (!client) {
+          const filtered = publicMemoryRows().filter((row) => !search || `${row.title} ${row.excerpt} ${row.content_text}`.toLowerCase().includes(search.toLowerCase()));
+          return { posts: filtered.slice(safeOffset, safeOffset + safeLimit).map(toPost), total: filtered.length, limit: safeLimit, offset: safeOffset };
+        }
+        let request = client.from("blog_posts").select("id,slug,title,excerpt,focus_keyword,tags,seo_title,meta_description,canonical_url,og_image_url,status,author_id,published_at,created_at,updated_at,content_text", { count: "exact" }).eq("status", "published").not("published_at", "is", null).lte("published_at", (/* @__PURE__ */ new Date()).toISOString()).order("published_at", { ascending: false }).range(safeOffset, safeOffset + safeLimit - 1);
+        if (search) request = request.textSearch("search_vector", search, { config: "english", type: "websearch" });
+        const { data, error, count } = await request;
+        if (error) throw error;
+        return { posts: (data || []).map(toPost), total: count || 0, limit: safeLimit, offset: safeOffset };
+      },
+      async getPublishedBySlug(slug) {
+        const client = getSupabaseAdminClient();
+        if (!client) {
+          const row = [...memoryPosts.values()].find((item) => item.slug === slug && isPublic(item));
+          return row ? toPost(row) : null;
+        }
+        const { data, error } = await client.from("blog_posts").select("*").eq("slug", slug).eq("status", "published").lte("published_at", (/* @__PURE__ */ new Date()).toISOString()).maybeSingle();
+        if (error) throw error;
+        return data ? toPost(data) : null;
+      },
+      async listAdmin(limit = 100) {
+        const safeLimit = Math.max(1, Math.min(200, Number(limit) || 100));
+        const client = getSupabaseAdminClient();
+        if (!client) return [...memoryPosts.values()].sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at))).slice(0, safeLimit).map(toPost);
+        const { data, error } = await client.from("blog_posts").select("*").order("updated_at", { ascending: false }).limit(safeLimit);
+        if (error) throw error;
+        return (data || []).map(toPost);
+      },
+      async getAdminById(id) {
+        const client = getSupabaseAdminClient();
+        if (!client) {
+          const row = memoryPosts.get(id);
+          return row ? toPost(row) : null;
+        }
+        const { data, error } = await client.from("blog_posts").select("*").eq("id", id).maybeSingle();
+        if (error) throw error;
+        return data ? toPost(data) : null;
+      },
+      async slugExists(slug, exceptId) {
+        const client = getSupabaseAdminClient();
+        if (!client) return [...memoryPosts.values()].some((row) => row.slug === slug && row.id !== exceptId);
+        let request = client.from("blog_posts").select("id").eq("slug", slug).limit(1);
+        if (exceptId) request = request.neq("id", exceptId);
+        const { data, error } = await request;
+        if (error) throw error;
+        return Boolean(data?.length);
+      },
+      async create(row) {
+        const now = (/* @__PURE__ */ new Date()).toISOString();
+        const client = getSupabaseAdminClient();
+        if (!client) {
+          const stored = { ...row, id: randomUUID3(), created_at: now, updated_at: now };
+          memoryPosts.set(stored.id, stored);
+          return toPost(stored);
+        }
+        const { data, error } = await client.from("blog_posts").insert(row).select("*").single();
+        if (error) throw error;
+        return toPost(data);
+      },
+      async update(id, row) {
+        const client = getSupabaseAdminClient();
+        if (!client) {
+          const existing = memoryPosts.get(id);
+          if (!existing) return null;
+          const stored = { ...existing, ...row, id, updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+          memoryPosts.set(id, stored);
+          return toPost(stored);
+        }
+        const { data, error } = await client.from("blog_posts").update(row).eq("id", id).select("*").maybeSingle();
+        if (error) throw error;
+        return data ? toPost(data) : null;
+      },
+      async sitemapRows() {
+        const client = getSupabaseAdminClient();
+        if (!client) return publicMemoryRows().map((row) => ({ slug: String(row.slug), updatedAt: String(row.updated_at) }));
+        const { data, error } = await client.from("blog_posts").select("slug,updated_at").eq("status", "published").lte("published_at", (/* @__PURE__ */ new Date()).toISOString()).order("published_at", { ascending: false }).limit(5e3);
+        if (error) throw error;
+        return (data || []).map((row) => ({ slug: String(row.slug), updatedAt: String(row.updated_at) }));
+      }
+    };
+  }
+});
+
+// src/lib/blog/sanitize.ts
+import sanitizeHtml from "sanitize-html";
+function sanitizeBlogHtml(value) {
+  const input = String(value || "").slice(0, 1e5);
+  return sanitizeHtml(input, {
+    allowedTags,
+    allowedAttributes: {
+      a: ["href", "title"]
+    },
+    allowedSchemes: ["http", "https", "mailto"],
+    allowProtocolRelative: false,
+    disallowedTagsMode: "discard",
+    transformTags: {
+      a: (_tagName, attributes) => ({
+        tagName: "a",
+        attribs: {
+          href: attributes.href || "",
+          ...attributes.title ? { title: attributes.title } : {},
+          rel: "noopener noreferrer"
+        }
+      })
+    }
+  }).trim();
+}
+function blogTextFromHtml(value) {
+  return sanitizeHtml(String(value || ""), { allowedTags: [], allowedAttributes: {} }).replace(/\s+/g, " ").trim();
+}
+var allowedTags;
+var init_sanitize = __esm({
+  "src/lib/blog/sanitize.ts"() {
+    allowedTags = ["p", "h2", "h3", "h4", "ul", "ol", "li", "strong", "em", "u", "s", "blockquote", "pre", "code", "hr", "br", "a"];
+  }
+});
+
+// src/lib/blog/gemini.ts
+function modelName() {
+  const configured = String(process.env.GEMINI_MODEL || "gemini-2.5-flash");
+  return /^[a-z0-9._-]+$/i.test(configured) ? configured : "gemini-2.5-flash";
+}
+async function requestGemini(prompt, responseSchema) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("Gemini draft assistant is not configured. Add GEMINI_API_KEY to the Vercel server environment.");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45e3);
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName())}:generateContent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema,
+          temperature: 0.55,
+          maxOutputTokens: 5e3
+        }
+      }),
+      signal: controller.signal
+    });
+    if (!response.ok) throw new Error(`Gemini request failed with status ${response.status}.`);
+    const payload = await response.json();
+    const text = payload?.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("") || "";
+    if (!text) throw new Error("Gemini returned an empty draft.");
+    return JSON.parse(text);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+async function generateBlogWithGemini(input) {
+  const audience = String(input.audience || "website owners, marketers, developers, and SEO practitioners").slice(0, 240);
+  const keywords = String(input.keywords || "").slice(0, 300);
+  if (input.action === "topics") {
+    const result2 = await requestGemini(
+      `Suggest eight useful, non-duplicative blog topics for SEOIntel, a visual SEO, technical SEO, website health, and passive security audit product. Audience: ${audience}. Optional themes: ${keywords || "on-page SEO, crawlability, website performance observations, and passive browser protections"}. Avoid news claims, invented statistics, guaranteed ranking promises, backlinks, traffic estimates, and paid-data claims. Return concise evergreen titles with a one-sentence angle.`,
+      {
+        type: "object",
+        properties: {
+          topics: { type: "array", items: { type: "object", properties: { title: { type: "string" }, angle: { type: "string" } }, required: ["title", "angle"] } }
+        },
+        required: ["topics"]
+      }
+    );
+    return { topics: Array.isArray(result2.topics) ? result2.topics.slice(0, 8) : [] };
+  }
+  const topic = String(input.topic || "").trim().slice(0, 240);
+  if (topic.length < 5) throw new Error("Enter a specific topic before generating a draft.");
+  const result = await requestGemini(
+    `Write an original, practical, evidence-conscious article about: "${topic}". Audience: ${audience}. Focus phrases: ${keywords || topic}. The article is for SEOIntel. Use clear language, a short introduction, descriptive H2/H3 headings, lists where useful, concrete implementation guidance, and a concise conclusion. Produce 700-1200 words. Do not include an H1. Use only these HTML tags: p, h2, h3, h4, ul, ol, li, strong, em, blockquote, pre, code, hr, br, a. Do not invent statistics, customer claims, ranking guarantees, traffic, backlinks, search volume, or proprietary data. Do not claim current events or facts that require live verification. The draft must be reviewed and fact-checked by an administrator before publication.`,
+    {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        excerpt: { type: "string" },
+        contentHtml: { type: "string" },
+        focusKeyword: { type: "string" },
+        tags: { type: "array", items: { type: "string" } },
+        seoTitle: { type: "string" },
+        metaDescription: { type: "string" }
+      },
+      required: ["title", "excerpt", "contentHtml", "focusKeyword", "tags", "seoTitle", "metaDescription"]
+    }
+  );
+  const contentHtml = sanitizeBlogHtml(result.contentHtml);
+  const contentText = blogTextFromHtml(contentHtml);
+  const generatedSeo = buildBlogSeoFields({ title: result.title, excerpt: result.excerpt, contentText, focusKeyword: result.focusKeyword });
+  const draft = {
+    title: String(result.title || topic).slice(0, 140),
+    excerpt: String(result.excerpt || generatedSeo.excerpt).slice(0, 360),
+    contentHtml,
+    focusKeyword: String(result.focusKeyword || generatedSeo.focusKeyword).slice(0, 100),
+    tags: Array.isArray(result.tags) ? result.tags.map(String).map((tag) => tag.trim().slice(0, 40)).filter(Boolean).slice(0, 12) : [],
+    suggestedSlug: createBlogSlug(result.title || topic),
+    seoTitle: String(result.seoTitle || generatedSeo.seoTitle).slice(0, 70),
+    metaDescription: String(result.metaDescription || generatedSeo.metaDescription).slice(0, 180)
+  };
+  if (contentText.split(/\s+/).filter(Boolean).length < 250) throw new Error("Gemini returned an incomplete article. Try a more specific topic.");
+  return draft;
+}
+var init_gemini = __esm({
+  "src/lib/blog/gemini.ts"() {
+    init_seo();
+    init_sanitize();
+    init_slug();
+  }
+});
+
+// src/lib/blog/validation.ts
+function optionalHttpUrl(value, field) {
+  const text = String(value || "").trim().slice(0, 500);
+  if (!text) return "";
+  try {
+    const url = new URL(text);
+    if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("unsupported protocol");
+    return url.toString();
+  } catch {
+    throw new BlogValidationError(`${field} must be a valid HTTP or HTTPS URL.`);
+  }
+}
+function normalizeTags(value) {
+  const tags = Array.isArray(value) ? value : String(value || "").split(",");
+  return [...new Set(tags.map(String).map((tag) => tag.trim().replace(/\s+/g, " ").slice(0, 40)).filter(Boolean))].slice(0, 12);
+}
+function prepareBlogPost(input, options = {}) {
+  const title = String(input.title || "").replace(/\s+/g, " ").trim().slice(0, 140);
+  if (title.length < 3) throw new BlogValidationError("Title must be at least 3 characters.");
+  const contentHtml = sanitizeBlogHtml(input.contentHtml);
+  const contentText = blogTextFromHtml(contentHtml);
+  const status = ["draft", "published", "archived"].includes(String(input.status)) ? input.status : "draft";
+  const seo = buildBlogSeoFields({ title, excerpt: input.excerpt, contentText, focusKeyword: input.focusKeyword });
+  const excerpt = String(input.excerpt || seo.excerpt).replace(/\s+/g, " ").trim().slice(0, 360);
+  const seoTitle = String(input.seoTitle || seo.seoTitle).replace(/\s+/g, " ").trim().slice(0, 70);
+  const metaDescription = String(input.metaDescription || seo.metaDescription).replace(/\s+/g, " ").trim().slice(0, 180);
+  const focusKeyword = String(input.focusKeyword || seo.focusKeyword).replace(/\s+/g, " ").trim().slice(0, 100);
+  const slug = normalizeBlogSlug(input.slug || title);
+  const publishing = options.publishing || status === "published";
+  if (publishing) {
+    if (contentText.length < 500) throw new BlogValidationError("Published articles need at least 500 characters of useful content.");
+    if (excerpt.length < 60) throw new BlogValidationError("Published articles need a clear excerpt of at least 60 characters.");
+    if (seoTitle.length < 20) throw new BlogValidationError("Published articles need an SEO title of at least 20 characters.");
+    if (metaDescription.length < 70) throw new BlogValidationError("Published articles need a meta description of at least 70 characters.");
+  }
+  let publishedAt = null;
+  if (status === "published") {
+    const parsed = input.publishedAt ? new Date(input.publishedAt) : /* @__PURE__ */ new Date();
+    if (Number.isNaN(parsed.getTime())) throw new BlogValidationError("Publish date is invalid.");
+    publishedAt = parsed.toISOString();
+  }
+  return {
+    slug,
+    title,
+    excerpt,
+    content_html: contentHtml,
+    content_text: contentText,
+    focus_keyword: focusKeyword || null,
+    tags: normalizeTags(input.tags),
+    seo_title: seoTitle,
+    meta_description: metaDescription,
+    canonical_url: optionalHttpUrl(input.canonicalUrl, "Canonical URL") || null,
+    og_image_url: optionalHttpUrl(input.ogImageUrl, "Social image URL") || null,
+    status,
+    published_at: publishedAt
+  };
+}
+var BlogValidationError;
+var init_validation = __esm({
+  "src/lib/blog/validation.ts"() {
+    init_seo();
+    init_sanitize();
+    init_slug();
+    BlogValidationError = class extends Error {
+      constructor(message, status = 400) {
+        super(message);
+        this.status = status;
+      }
+    };
+  }
+});
+
+// src/lib/blog/sitemap.ts
+function escapeXml(value) {
+  return value.replace(/[<>&'"]/g, (character) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" })[character] || character);
+}
+function canonicalSiteOrigin(req) {
+  const configured = process.env.APP_URL || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "");
+  const fallback = "https://keywordsintel.vercel.app";
+  try {
+    const url = new URL(configured || fallback);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    const forwardedHost = String(req?.headers?.["x-forwarded-host"] || req?.headers?.host || "");
+    return /^[a-z0-9.-]+(?::\d+)?$/i.test(forwardedHost) ? `https://${forwardedHost}` : fallback;
+  }
+}
+async function renderBlogSitemap(origin) {
+  const posts = await blogRepository.sitemapRows();
+  const urls = [
+    { loc: `${origin}/`, changefreq: "weekly", priority: "1.0", lastmod: null },
+    { loc: `${origin}/blog`, changefreq: "weekly", priority: "0.8", lastmod: null },
+    ...posts.map((post) => ({ loc: `${origin}/blog/${encodeURIComponent(post.slug)}`, changefreq: "monthly", priority: "0.7", lastmod: post.updatedAt }))
+  ];
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls.map((url) => `  <url>
+    <loc>${escapeXml(url.loc)}</loc>${url.lastmod ? `
+    <lastmod>${escapeXml(new Date(url.lastmod).toISOString())}</lastmod>` : ""}
+    <changefreq>${url.changefreq}</changefreq>
+    <priority>${url.priority}</priority>
+  </url>`).join("\n")}
+</urlset>
+`;
+}
+var init_sitemap = __esm({
+  "src/lib/blog/sitemap.ts"() {
+    init_repository();
+  }
+});
+
 // src/api/index.ts
 var index_exports = {};
 __export(index_exports, {
@@ -2633,6 +3161,32 @@ async function getRequester(req) {
   if (!authUser) return { userId: null, profile: null };
   const profile = await ensureUserProfileFromAuthUser(authUser);
   return { userId: authUser.id, profile };
+}
+async function requireAdminRequester(req, res) {
+  const requester = await getRequester(req);
+  if (!requester.userId || !requester.profile) {
+    res.status(401).json({ success: false, error: "Authentication required." });
+    return null;
+  }
+  if (requester.profile.role !== "admin") {
+    res.status(403).json({ success: false, error: "Admin access required." });
+    return null;
+  }
+  return requester;
+}
+async function uniqueBlogSlug(value, exceptId) {
+  const base = normalizeBlogSlug(value);
+  let candidate = base;
+  for (let suffix = 2; await blogRepository.slugExists(candidate, exceptId); suffix += 1) {
+    candidate = `${base.slice(0, Math.max(1, 116 - String(suffix).length)).replace(/-+$/g, "")}-${suffix}`;
+    if (suffix > 9999) throw new Error("Could not create a unique slug.");
+  }
+  return candidate;
+}
+async function logBlogAction(adminUserId, action, postId, metadata = {}) {
+  const client = (await Promise.resolve().then(() => (init_server(), server_exports))).getSupabaseAdminClient();
+  if (!client) return;
+  await client.from("admin_actions").insert({ admin_user_id: adminUserId, action, target_type: "blog_post", target_id: postId, metadata });
 }
 async function canAccessAudit(req, audit) {
   const requester = await getRequester(req);
@@ -2762,8 +3316,15 @@ var init_index = __esm({
     init_entitlements();
     init_audit_profiles();
     init_pdf();
+    init_http_hardening();
+    init_repository();
+    init_gemini();
+    init_slug();
+    init_validation();
+    init_sitemap();
     DUPLICATE_AUDIT_WINDOW_MS = 10 * 60 * 1e3;
     apiRouter = Router();
+    apiRouter.use("/admin/blog/generate", createRateLimiter({ namespace: "blog-gemini", windowMs: 6e4, maxRequests: 5 }));
     apiRouter.get("/me/profile", asyncJsonRoute(async (req, res) => {
       const authUser = await getAuthenticatedUserFromRequest(req);
       if (!authUser) {
@@ -2772,6 +3333,84 @@ var init_index = __esm({
       const profile = await ensureUserProfileFromAuthUser(authUser);
       const limits = await getPlanLimits(profile.plan);
       res.json({ success: true, data: { profile, limits } });
+    }));
+    apiRouter.get("/blog/posts", asyncJsonRoute(async (req, res) => {
+      const result = await blogRepository.listPublished({ query: String(req.query.q || ""), limit: Number(req.query.limit || 12), offset: Number(req.query.offset || 0) });
+      res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=3600");
+      res.json({ success: true, data: result });
+    }));
+    apiRouter.get("/blog/sitemap.xml", asyncJsonRoute(async (req, res) => {
+      const xml = await renderBlogSitemap(canonicalSiteOrigin(req));
+      res.setHeader("Content-Type", "application/xml; charset=utf-8");
+      res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=3600");
+      res.status(200).send(xml);
+    }));
+    apiRouter.get("/blog/posts/:slug", asyncJsonRoute(async (req, res) => {
+      const post = await blogRepository.getPublishedBySlug(normalizeBlogSlug(req.params.slug));
+      if (!post) return res.status(404).json({ success: false, error: "Article not found." });
+      res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=3600");
+      res.json({ success: true, data: { post } });
+    }));
+    apiRouter.get("/admin/blog/posts", asyncJsonRoute(async (req, res) => {
+      if (!await requireAdminRequester(req, res)) return;
+      const posts = await blogRepository.listAdmin(Number(req.query.limit || 100));
+      res.setHeader("Cache-Control", "private, no-store");
+      res.json({ success: true, data: { posts } });
+    }));
+    apiRouter.post("/admin/blog/posts", asyncJsonRoute(async (req, res) => {
+      const requester = await requireAdminRequester(req, res);
+      if (!requester) return;
+      try {
+        const row = prepareBlogPost(req.body || {});
+        row.slug = await uniqueBlogSlug(row.slug);
+        const post = await blogRepository.create({ ...row, author_id: requester.userId, updated_by: requester.userId });
+        await logBlogAction(requester.userId, "create_blog_post", post.id, { status: post.status, slug: post.slug });
+        res.status(201).json({ success: true, data: { post } });
+      } catch (error) {
+        if (error instanceof BlogValidationError) return res.status(error.status).json({ success: false, error: error.message });
+        throw error;
+      }
+    }));
+    apiRouter.put("/admin/blog/posts/:id", asyncJsonRoute(async (req, res) => {
+      const requester = await requireAdminRequester(req, res);
+      if (!requester) return;
+      const existing = await blogRepository.getAdminById(req.params.id);
+      if (!existing) return res.status(404).json({ success: false, error: "Article not found." });
+      try {
+        const row = prepareBlogPost(req.body || {});
+        row.slug = await uniqueBlogSlug(row.slug, existing.id);
+        const post = await blogRepository.update(existing.id, { ...row, updated_by: requester.userId });
+        await logBlogAction(requester.userId, "update_blog_post", existing.id, { status: post?.status, slug: post?.slug });
+        res.json({ success: true, data: { post } });
+      } catch (error) {
+        if (error instanceof BlogValidationError) return res.status(error.status).json({ success: false, error: error.message });
+        throw error;
+      }
+    }));
+    apiRouter.delete("/admin/blog/posts/:id", asyncJsonRoute(async (req, res) => {
+      const requester = await requireAdminRequester(req, res);
+      if (!requester) return;
+      const post = await blogRepository.update(req.params.id, { status: "archived", updated_by: requester.userId });
+      if (!post) return res.status(404).json({ success: false, error: "Article not found." });
+      await logBlogAction(requester.userId, "archive_blog_post", post.id, { slug: post.slug });
+      res.json({ success: true, data: { post } });
+    }));
+    apiRouter.post("/admin/blog/generate", asyncJsonRoute(async (req, res) => {
+      if (!await requireAdminRequester(req, res)) return;
+      try {
+        const result = await generateBlogWithGemini({
+          action: req.body?.action === "topics" ? "topics" : "draft",
+          topic: req.body?.topic,
+          audience: req.body?.audience,
+          keywords: req.body?.keywords
+        });
+        res.setHeader("Cache-Control", "private, no-store");
+        res.json({ success: true, data: result });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Gemini draft generation failed.";
+        const status = /not configured/i.test(message) ? 503 : 502;
+        res.status(status).json({ success: false, error: message });
+      }
     }));
     apiRouter.post("/audit/start", asyncJsonRoute(async (req, res) => {
       try {
@@ -2941,111 +3580,8 @@ var init_index = __esm({
 });
 
 // src/api/vercel-handler.ts
+init_http_hardening();
 import express2 from "express";
-
-// src/lib/api/http-hardening.ts
-import express from "express";
-var stores = /* @__PURE__ */ new Map();
-var DEFAULT_RATE_LIMIT_MAX_KEYS = 1e4;
-function apiSecurityHeaders(_req, res, next) {
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("X-Frame-Options", "DENY");
-  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
-  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
-  res.setHeader("Content-Security-Policy", "frame-ancestors 'none'; base-uri 'self'; object-src 'none'");
-  next();
-}
-function jsonBodyParser() {
-  return express.json({
-    limit: process.env.API_JSON_BODY_LIMIT || "64kb",
-    strict: true
-  });
-}
-function jsonParseErrorHandler(error, _req, res, next) {
-  if (error?.type === "entity.too.large") {
-    return res.status(413).json({
-      success: false,
-      error: "Request body is too large"
-    });
-  }
-  if (error instanceof SyntaxError && "body" in error) {
-    return res.status(400).json({
-      success: false,
-      error: "Invalid JSON request body"
-    });
-  }
-  next(error);
-}
-function apiErrorHandler(error, req, res, _next) {
-  console.error("[api] unhandled route error", {
-    message: error?.message,
-    stack: error?.stack,
-    method: req.method,
-    url: req.originalUrl || req.url
-  });
-  if (!res.headersSent) {
-    res.status(500).json({
-      success: false,
-      error: "Internal server error"
-    });
-  }
-}
-function clientIp(req) {
-  const forwardedFor = req.headers["x-forwarded-for"];
-  const forwardedValue = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
-  return req.ip || req.socket.remoteAddress || forwardedValue?.split(",")[0]?.trim() || "unknown";
-}
-function storeFor(namespace) {
-  let store = stores.get(namespace);
-  if (!store) {
-    store = /* @__PURE__ */ new Map();
-    stores.set(namespace, store);
-  }
-  return store;
-}
-function pruneStore(store, now, maxKeys) {
-  if (store.size <= maxKeys) {
-    return;
-  }
-  for (const [key, entry] of store) {
-    if (entry.resetAt <= now) {
-      store.delete(key);
-    }
-  }
-  while (store.size > maxKeys) {
-    const oldestKey = store.keys().next().value;
-    if (!oldestKey) {
-      break;
-    }
-    store.delete(oldestKey);
-  }
-}
-function createRateLimiter(options) {
-  return (req, res, next) => {
-    const now = Date.now();
-    const store = storeFor(options.namespace);
-    pruneStore(store, now, options.maxKeys || DEFAULT_RATE_LIMIT_MAX_KEYS);
-    const key = `${clientIp(req)}:${req.method}:${req.path}`;
-    const current = store.get(key);
-    if (!current || current.resetAt <= now) {
-      store.set(key, { count: 1, resetAt: now + options.windowMs });
-      return next();
-    }
-    current.count += 1;
-    if (current.count <= options.maxRequests) {
-      return next();
-    }
-    const retryAfterSeconds = Math.max(1, Math.ceil((current.resetAt - now) / 1e3));
-    res.setHeader("Retry-After", String(retryAfterSeconds));
-    return res.status(429).json({
-      success: false,
-      error: "Too many requests. Please retry shortly."
-    });
-  };
-}
-
-// src/api/vercel-handler.ts
 var cachedApp = null;
 function rewriteVercelPath(req) {
   const requestUrl = new URL(req.url || "/", "http://localhost");

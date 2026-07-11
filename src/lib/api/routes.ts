@@ -12,5 +12,10 @@ export const API_ROUTES = {
   websiteAnalyze: "/api/tools/website/analyze",
   clusters: "/api/tools/clusters",
   contentBrief: "/api/tools/content-brief",
-  competitorGap: "/api/tools/competitor-gap"
+  competitorGap: "/api/tools/competitor-gap",
+  blogPosts: "/api/tools/blog/posts",
+  blogPost: (slug: string) => `/api/tools/blog/posts/${encodeURIComponent(slug)}`,
+  adminBlogPosts: "/api/tools/admin/blog/posts",
+  adminBlogPost: (id: string) => `/api/tools/admin/blog/posts/${encodeURIComponent(id)}`,
+  adminBlogGenerate: "/api/tools/admin/blog/generate"
 };

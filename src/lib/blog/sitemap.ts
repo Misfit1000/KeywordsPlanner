@@ -1,0 +1,27 @@
+import { blogRepository } from './repository';
+
+function escapeXml(value: string) {
+  return value.replace(/[<>&'"]/g, (character) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[character] || character));
+}
+
+export function canonicalSiteOrigin(req?: any) {
+  const configured = process.env.APP_URL || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '');
+  const fallback = 'https://keywordsintel.vercel.app';
+  try {
+    const url = new URL(configured || fallback);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    const forwardedHost = String(req?.headers?.['x-forwarded-host'] || req?.headers?.host || '');
+    return /^[a-z0-9.-]+(?::\d+)?$/i.test(forwardedHost) ? `https://${forwardedHost}` : fallback;
+  }
+}
+
+export async function renderBlogSitemap(origin: string) {
+  const posts = await blogRepository.sitemapRows();
+  const urls = [
+    { loc: `${origin}/`, changefreq: 'weekly', priority: '1.0', lastmod: null },
+    { loc: `${origin}/blog`, changefreq: 'weekly', priority: '0.8', lastmod: null },
+    ...posts.map((post) => ({ loc: `${origin}/blog/${encodeURIComponent(post.slug)}`, changefreq: 'monthly', priority: '0.7', lastmod: post.updatedAt })),
+  ];
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((url) => `  <url>\n    <loc>${escapeXml(url.loc)}</loc>${url.lastmod ? `\n    <lastmod>${escapeXml(new Date(url.lastmod).toISOString())}</lastmod>` : ''}\n    <changefreq>${url.changefreq}</changefreq>\n    <priority>${url.priority}</priority>\n  </url>`).join('\n')}\n</urlset>\n`;
+}

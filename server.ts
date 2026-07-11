@@ -7,6 +7,7 @@ import Database from "better-sqlite3";
 import path from "path";
 import { apiRouter } from "./src/api/index";
 import { securityRouter } from "./src/lib/security/api/index";
+import { canonicalSiteOrigin, renderBlogSitemap } from "./src/lib/blog/sitemap";
 import {
   apiErrorHandler,
   apiSecurityHeaders,
@@ -47,6 +48,13 @@ async function startServer() {
   app.use('/api/tools/audit/start', createRateLimiter({ namespace: 'local-audit-start', windowMs: 60_000, maxRequests: 20 }));
   app.use('/api/tools', apiRouter);
   app.use('/api/security-audit', securityRouter);
+  app.get('/sitemap.xml', async (req, res, next) => {
+    try {
+      res.type('application/xml').send(await renderBlogSitemap(canonicalSiteOrigin(req)));
+    } catch (error) {
+      next(error);
+    }
+  });
 
   // Auth Routes
   const authRateLimiter = createRateLimiter({ namespace: 'local-auth', windowMs: 60_000, maxRequests: 20 });
