@@ -19,6 +19,7 @@ import { API_ROUTES } from '../lib/api/routes';
 import { readAuditHistory, scoreTrendForUrl, type AuditHistoryEntry } from '../lib/audit/client-insights';
 import { groupRecommendations, scoreToGrade } from '../lib/audit/report-insights';
 import { safeJsonFetch } from '../lib/http/safe-json';
+import { isCompletedAuditStatus } from '../lib/audit/audit-time';
 import {
   AuditGrade,
   CategoryGradeCard,
@@ -97,7 +98,7 @@ export default function Dashboard(props: DashboardProps) {
   const dailyRemaining = Math.max(0, dailyLimit - dailyUsed);
   const monthlyRemaining = Math.max(0, monthlyLimit - monthlyUsed);
   const latest = history[0] || null;
-  const latestScore = latest?.status === 'completed' ? latest.score : null;
+  const latestScore = isCompletedAuditStatus(latest?.status) ? latest?.score ?? null : null;
   const latestGrade = scoreToGrade(latestScore);
   const latestPreview = latest?.pageSummaries.find((page) => page.title || page.metaDescription) || latest?.pageSummaries[0];
   const recommendations = useMemo(() => groupRecommendations(latest?.topIssues || []).slice(0, 4), [latest]);
@@ -142,11 +143,11 @@ export default function Dashboard(props: DashboardProps) {
                     <div className="mt-1 truncate font-semibold">{latest.hostname || latest.normalizedUrl}</div>
                     <div className="mt-1 text-xs text-muted-foreground">{formatDate(latest.updatedAt)}</div>
                   </div>
-                  <StatusBadge tone={latest.status === 'completed' ? 'success' : latest.status === 'failed' ? 'danger' : 'warning'}>{latest.status}</StatusBadge>
+                  <StatusBadge tone={isCompletedAuditStatus(latest.status) ? 'success' : latest.status === 'failed' ? 'danger' : 'warning'}>{latest.status.replace(/_/g, ' ')}</StatusBadge>
                 </div>
                 <AuditGrade
                   score={latestScore}
-                  detail={latest.status !== 'completed' ? `No final score: audit ${latest.status}` : latest.scoreSource === 'final_report' ? 'Final audit engine score' : 'Estimated from stored issue counts'}
+                  detail={!isCompletedAuditStatus(latest.status) ? `No final score: audit ${latest.status}` : latest.scoreSource === 'final_report' ? 'Final audit engine score' : 'Estimated from stored issue counts'}
                 />
                 <button type="button" onClick={() => selectReport(latest, props.onOpenReports)} className="quiet-button w-full">
                   Open full report <ArrowRight className="h-4 w-4" />
@@ -238,7 +239,7 @@ export default function Dashboard(props: DashboardProps) {
         </SurfaceCard>
       </div>
 
-      {latest?.status === 'completed' && (
+      {isCompletedAuditStatus(latest?.status) && (
         <section className="space-y-5" aria-labelledby="latest-health-title">
           <div>
             <h2 id="latest-health-title" className="text-2xl font-semibold">Latest audit health</h2>
@@ -256,7 +257,7 @@ export default function Dashboard(props: DashboardProps) {
                   <CategoryGradeCard label="Mobile usability" score={null} description="Not scored by the current audit engine." icon={<Layers className="h-4 w-4" />} />
                 </div>
               ) : (
-                <EmptyState icon={BarChart3} title="Section grades are not stored" description="Open or rerun a completed audit to save final worker-provided category scores. No category values are estimated here." />
+                <EmptyState icon={BarChart3} title="Section grades are not stored" description="Open or rerun a completed audit to save final category scores from the audit engine. No category values are estimated here." />
               )}
             </SurfaceCard>
             <SurfaceCard className="p-5 md:p-6">
@@ -301,10 +302,10 @@ export default function Dashboard(props: DashboardProps) {
                   {history.slice(0, 8).map((entry) => (
                     <tr key={entry.auditId}>
                       <td className="max-w-[280px] truncate font-semibold">{entry.normalizedUrl}</td>
-                      <td className="font-semibold tabular-nums">{entry.status === 'completed' ? <>{scoreToGrade(entry.score) || '--'} <span className="text-xs text-muted-foreground">{Math.round(entry.score)}</span></> : '--'}</td>
+                      <td className="font-semibold tabular-nums">{isCompletedAuditStatus(entry.status) ? <>{scoreToGrade(entry.score) || '--'} <span className="text-xs text-muted-foreground">{Math.round(entry.score)}</span></> : '--'}</td>
                       <td className="tabular-nums">{entry.pagesCrawled}</td>
                       <td className="tabular-nums">{entry.issuesFound}</td>
-                      <td><StatusBadge tone={entry.status === 'completed' ? 'success' : entry.status === 'failed' ? 'danger' : 'warning'}>{entry.status}</StatusBadge></td>
+                      <td><StatusBadge tone={isCompletedAuditStatus(entry.status) ? 'success' : entry.status === 'failed' ? 'danger' : 'warning'}>{entry.status.replace(/_/g, ' ')}</StatusBadge></td>
                       <td className="text-muted-foreground">{new Date(entry.updatedAt).toLocaleDateString()}</td>
                       <td><button type="button" onClick={() => selectReport(entry, props.onOpenReports)} className="text-sm font-semibold text-accent hover:underline">View report</button></td>
                     </tr>

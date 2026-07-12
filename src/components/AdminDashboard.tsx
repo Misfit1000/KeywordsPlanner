@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Activity, AlertTriangle, BarChart3, BookOpen, CheckCircle2, Clock3, Database, Gauge, Loader2, RefreshCw, Search, Settings, ShieldAlert, SlidersHorizontal, Users, Wifi, XCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { isCompletedAuditStatus } from '../lib/audit/audit-time';
 import {
   getAdminActions,
   getAdminAudits,
@@ -159,8 +160,8 @@ function AdminOverview() {
       queued: auditRows.filter((item: any) => item.status === 'queued').length,
       running: auditRows.filter((item: any) => item.status === 'running').length,
       failed: auditRows.filter((item: any) => item.status === 'failed').length,
-      completed: auditRows.filter((item: any) => item.status === 'completed').length,
-      successRate: auditRows.length ? Math.round((auditRows.filter((item: any) => item.status === 'completed').length / auditRows.length) * 100) : 0,
+      completed: auditRows.filter((item: any) => isCompletedAuditStatus(item.status)).length,
+      successRate: auditRows.length ? Math.round((auditRows.filter((item: any) => isCompletedAuditStatus(item.status)).length / auditRows.length) * 100) : 0,
     };
   }, [users.data, audits.data]);
 
@@ -276,7 +277,7 @@ function AdminAudits({ adminUserId }: { adminUserId: string }) {
   return (
     <Panel title="Audit jobs" description="Inspect recent jobs, change queue priority, retry failures, or recover stale leases." icon={Database} action={<button type="button" onClick={audits.refresh} className="quiet-button min-h-9 px-3 py-1.5 text-xs"><RefreshCw className="h-3.5 w-3.5" /> Refresh</button>}>
       {audits.error && <Notice tone="danger" className="mb-4">{audits.error}</Notice>}
-      <div className="mb-4 grid gap-3 md:grid-cols-[minmax(240px,1fr)_200px]"><label className="relative"><span className="sr-only">Search audit jobs</span><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search URL or audit ID" className="suite-input pl-9" /></label><select value={status} onChange={(event) => setStatus(event.target.value)} className="suite-input"><option value="all">All statuses</option>{['queued', 'running', 'completed', 'failed', 'cancelled'].map((item) => <option key={item} value={item}>{item}</option>)}</select></div>
+      <div className="mb-4 grid gap-3 md:grid-cols-[minmax(240px,1fr)_200px]"><label className="relative"><span className="sr-only">Search audit jobs</span><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search URL or audit ID" className="suite-input pl-9" /></label><select value={status} onChange={(event) => setStatus(event.target.value)} className="suite-input"><option value="all">All statuses</option>{['queued', 'running', 'completed', 'completed_with_warnings', 'failed', 'cancelled'].map((item) => <option key={item} value={item}>{item.replace(/_/g, ' ')}</option>)}</select></div>
       <AuditTable rows={rows} adminUserId={adminUserId} refresh={audits.refresh} />
     </Panel>
   );
@@ -511,7 +512,7 @@ function SimpleTable({ rows, columns }: { rows: any[]; columns: string[] }) {
 }
 
 function statusClass(status: string) {
-  if (status === 'completed') return 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
+  if (isCompletedAuditStatus(status)) return 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
   if (status === 'failed' || status === 'cancelled') return 'bg-red-500/10 text-red-700 dark:text-red-300';
   if (status === 'running') return 'bg-violet-500/10 text-violet-700 dark:text-violet-300';
   return 'bg-blue-500/10 text-blue-700 dark:text-blue-300';

@@ -11,7 +11,9 @@ export async function safeJsonFetch<T>(
       return {
         success: false,
         status: response.status,
-        error: `Empty response from server (${response.status})`,
+        error: response.status >= 500
+          ? 'The audit service is temporarily unavailable. Please try again shortly.'
+          : `The service returned an empty response (HTTP ${response.status}).`,
         raw,
       };
     }
@@ -22,8 +24,8 @@ export async function safeJsonFetch<T>(
         success: false,
         status: response.status,
         error: serviceUnavailable
-          ? `The API service is temporarily unavailable (HTTP ${response.status}). Please try again shortly.`
-          : `The server returned an unexpected response (HTTP ${response.status}).`,
+          ? `The audit service is temporarily unavailable (HTTP ${response.status}). Please try again shortly.`
+          : `The service returned an unexpected response (HTTP ${response.status}).`,
         raw,
       };
     }
@@ -47,14 +49,16 @@ export async function safeJsonFetch<T>(
       return {
         success: false,
         status: response.status,
-        error: `Invalid JSON response. First characters: ${raw.slice(0, 120)}`,
+          error: response.status >= 500
+            ? 'The audit service returned an invalid response. Please try again shortly.'
+            : 'The service returned an invalid response.',
         raw,
       };
     }
-  } catch (error) {
+  } catch {
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Network request failed",
+      error: 'The service could not be reached. Check your connection and try again.',
     };
   }
 }

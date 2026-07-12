@@ -68,7 +68,12 @@ assert.equal(typeof address, 'object');
 const healthResponse = await fetch(`http://127.0.0.1:${(address as any).port}/health`);
 const health = await healthResponse.json();
 assert.equal(health.ok, true);
-assert.equal(health.runtime, 'render-web-service');
+assert.equal(health.serviceStatus, 'online');
+assert.equal(health.queuePollingStatus, 'starting');
+assert.equal(health.databaseConnected, true);
+assert.equal('workerId' in health, false);
+assert.equal('runtime' in health, false);
+assert.equal('currentAuditId' in health, false);
 assert.deepEqual(health.supportedModes, ['quick', 'standard']);
 server!.close();
 

@@ -30,6 +30,12 @@ export interface AuditWorkerRuntimeState {
   runtime: string;
   supportedModes: Array<'quick' | 'standard' | 'deep'>;
   deepAuditEnabled: boolean;
+  queuePollingStatus: 'starting' | 'active' | 'error' | 'stopped';
+  databaseConnected: boolean;
+  lastCompletedAuditId: string | null;
+  lastCompletedAuditAt: string | null;
+  lastFatalWorkerError: string | null;
+  maintenanceMode: boolean;
 }
 
 function parsePollInterval(value: string | undefined) {
@@ -74,15 +80,27 @@ export function createInitialWorkerState(config: AuditWorkerConfig): AuditWorker
     runtime: config.runtime,
     supportedModes: config.supportedModes,
     deepAuditEnabled: config.deepAuditEnabled,
+    queuePollingStatus: 'starting',
+    databaseConnected: true,
+    lastCompletedAuditId: null,
+    lastCompletedAuditAt: null,
+    lastFatalWorkerError: null,
+    maintenanceMode: false,
   };
 }
 
 export function updateWorkerState(
   state: AuditWorkerRuntimeState,
-  patch: Partial<Pick<AuditWorkerRuntimeState, 'status' | 'currentAuditId'>>,
+  patch: Partial<AuditWorkerRuntimeState>,
 ) {
   if (patch.status) state.status = patch.status;
   if ('currentAuditId' in patch) state.currentAuditId = patch.currentAuditId ?? null;
+  if (patch.queuePollingStatus) state.queuePollingStatus = patch.queuePollingStatus;
+  if (typeof patch.databaseConnected === 'boolean') state.databaseConnected = patch.databaseConnected;
+  if ('lastCompletedAuditId' in patch) state.lastCompletedAuditId = patch.lastCompletedAuditId ?? null;
+  if ('lastCompletedAuditAt' in patch) state.lastCompletedAuditAt = patch.lastCompletedAuditAt ?? null;
+  if ('lastFatalWorkerError' in patch) state.lastFatalWorkerError = patch.lastFatalWorkerError ?? null;
+  if (typeof patch.maintenanceMode === 'boolean') state.maintenanceMode = patch.maintenanceMode;
   state.lastSeenAt = new Date().toISOString();
   return state;
 }
@@ -98,5 +116,11 @@ export function buildWorkerHeartbeat(state: AuditWorkerRuntimeState): WorkerHear
     runtime: state.runtime,
     supportedModes: state.supportedModes,
     deepAuditEnabled: state.deepAuditEnabled,
+    queuePollingStatus: state.queuePollingStatus,
+    databaseConnected: state.databaseConnected,
+    lastCompletedAuditId: state.lastCompletedAuditId,
+    lastCompletedAuditAt: state.lastCompletedAuditAt,
+    lastFatalWorkerError: state.lastFatalWorkerError,
+    maintenanceMode: state.maintenanceMode,
   };
 }

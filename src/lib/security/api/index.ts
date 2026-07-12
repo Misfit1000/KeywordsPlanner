@@ -27,7 +27,9 @@ securityRouter.post('/run', asyncJsonRoute(async (req, res) => {
     const { url, mode = 'quick' } = req.body;
     if (!url) return res.status(400).json({ success: false, error: 'URL is required' });
 
-    const normalized = normalizeUserUrl(String(url));
+    const normalized = normalizeUserUrl(String(url), {
+      allowPrivateForTesting: process.env.SEOINTEL_ALLOW_PRIVATE_TEST_TARGETS === 'true',
+    });
     if (!normalized.isValid) {
       return res.status(400).json({ success: false, error: normalized.error || 'Invalid URL' });
     }

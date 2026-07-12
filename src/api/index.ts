@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Router } from 'express';
 import { normalizeDomainInput, normalizeUserUrl } from '../lib/seo/url-utils';
+import { isCompletedAuditStatus } from '../lib/audit/audit-time';
 import { generateKeywords } from '../lib/keywords/generator';
 import { clusterKeywords } from '../lib/keywords/clustering';
 import { buildContentBrief } from '../lib/keywords/content-brief';
@@ -249,7 +250,9 @@ apiRouter.post('/admin/blog/generate', asyncJsonRoute(async (req, res) => {
 
 async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'quick') {
   const { url, mode = defaultMode, projectId = null } = req.body || {};
-  const normalized = normalizeUserUrl(String(url || ''));
+  const normalized = normalizeUserUrl(String(url || ''), {
+    allowPrivateForTesting: process.env.SEOINTEL_ALLOW_PRIVATE_TEST_TARGETS === 'true',
+  });
   if (!normalized.isValid) {
     return res.status(400).json({ success: false, error: normalized.error || 'Invalid URL' });
   }
@@ -344,7 +347,8 @@ apiRouter.post('/audit/start', asyncJsonRoute(async (req, res) => {
   try {
     return startQueuedAudit(req, res, 'quick');
   } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message || 'Internal Server Error' });
+    console.error('Audit status lookup failed', error);
+    res.status(500).json({ success: false, error: 'The audit status is temporarily unavailable. Please try again.' });
   }
 }));
 
@@ -406,7 +410,8 @@ apiRouter.get('/audit/status/:id', asyncJsonRoute(async (req, res) => {
     if (!(await canAccessAudit(req, liveData.audit))) return res.status(404).json({ success: false, error: 'Audit not found' });
     res.json({ success: true, data: liveData });
   } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message || 'Internal Server Error' });
+    console.error('Audit result lookup failed', error);
+    res.status(500).json({ success: false, error: 'The audit result is temporarily unavailable. Please try again.' });
   }
 }));
 
@@ -432,7 +437,7 @@ apiRouter.get('/audit/result/:id', asyncJsonRoute(async (req, res) => {
 apiRouter.get('/audits/history', asyncJsonRoute(async (req, res) => {
   const requester = await getRequester(req);
   if (!requester.userId) return res.status(401).json({ success: false, error: 'Authentication required.' });
-  const allowedStatuses = new Set(['queued', 'running', 'completed', 'failed', 'cancelled']);
+  const allowedStatuses = new Set(['queued', 'running', 'completed', 'completed_with_warnings', 'failed', 'cancelled']);
   const requestedStatus = String(req.query.status || '');
   const status = allowedStatuses.has(requestedStatus) ? requestedStatus : undefined;
   const hostname = String(req.query.hostname || '').trim().toLowerCase().slice(0, 253) || undefined;
@@ -470,7 +475,7 @@ apiRouter.get('/audit/export/:id/:format', asyncJsonRoute(async (req, res) => {
   if (!(await canAccessAudit(req, liveData.audit))) return res.status(404).json({ success: false, error: 'Audit not found' });
 
   if (format === 'pdf') {
-    if (liveData.audit.status !== 'completed') {
+    if (!isCompletedAuditStatus(liveData.audit.status)) {
       return res.status(409).json({ success: false, error: 'PDF export is available after the audit completes.' });
     }
     const profile = getAuditProfileForDocument(liveData.audit);

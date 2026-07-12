@@ -72,6 +72,7 @@ export class AuditWriteBatch {
   private events: AuditEventInput[] = [];
   private progress: Partial<ResourceAuditDocument> | null = null;
   private lastProgressWriteAt = 0;
+  private highestProgress = 0;
   private flushChain: Promise<void> = Promise.resolve();
 
   constructor(
@@ -108,6 +109,10 @@ export class AuditWriteBatch {
     event?: AuditEventInput,
     options: { force?: boolean } = {},
   ) {
+    if (typeof patch.progress === 'number') {
+      this.highestProgress = Math.max(this.highestProgress, Math.min(100, Math.max(0, patch.progress)));
+      patch = { ...patch, progress: this.highestProgress };
+    }
     this.progress = { ...(this.progress ?? {}), ...patch };
     if (event) {
       this.events.push({
@@ -118,7 +123,7 @@ export class AuditWriteBatch {
         progress: event.progress ?? patch.progress,
       });
     }
-    const terminal = patch.status === 'completed' || patch.status === 'failed' || patch.status === 'cancelled';
+    const terminal = patch.status === 'completed' || patch.status === 'completed_with_warnings' || patch.status === 'failed' || patch.status === 'cancelled';
     const throttleElapsed = this.now() - this.lastProgressWriteAt >= this.progressThrottleMs;
     if (options.force || terminal || throttleElapsed || this.events.length >= this.eventBatchSize) {
       await this.flush(options.force || terminal || throttleElapsed);

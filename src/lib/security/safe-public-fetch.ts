@@ -10,10 +10,19 @@ export type PublicFetchErrorCode =
   | 'UNSUPPORTED_PORT'
   | 'DNS_TIMEOUT'
   | 'DNS_FAILURE'
+  | 'DNS_NAME_NOT_FOUND'
+  | 'DNS_TEMPORARY_FAILURE'
   | 'PRIVATE_NETWORK_TARGET'
+  | 'UNSAFE_REDIRECT_TARGET'
   | 'TOO_MANY_REDIRECTS'
+  | 'REDIRECT_LOOP'
   | 'REDIRECT_WITHOUT_LOCATION'
+  | 'INVALID_REDIRECT_TARGET'
   | 'REQUEST_TIMEOUT'
+  | 'CONNECTION_TIMEOUT'
+  | 'CONNECTION_REFUSED'
+  | 'CONNECTION_RESET'
+  | 'TLS_CERTIFICATE_INVALID'
   | 'RESPONSE_TOO_LARGE'
   | 'UNSUPPORTED_CONTENT_TYPE'
   | 'REQUEST_FAILED';
@@ -51,6 +60,23 @@ export interface SafePublicResponse {
 }
 
 type ResolvedAddress = { address: string; family: 4 | 6 };
+
+function systemErrorCode(error: unknown) {
+  if (!error || typeof error !== 'object') return '';
+  const value = error as { code?: unknown; cause?: { code?: unknown } };
+  return String(value.code || value.cause?.code || '').toUpperCase();
+}
+
+function publicRequestError(error: unknown) {
+  if (error instanceof PublicFetchError) return error;
+  const code = systemErrorCode(error);
+  const message = error instanceof Error ? error.message : String(error || 'Request failed');
+  if (code === 'ETIMEDOUT' || code === 'ESOCKETTIMEDOUT') return new PublicFetchError('CONNECTION_TIMEOUT', message);
+  if (code === 'ECONNREFUSED') return new PublicFetchError('CONNECTION_REFUSED', message);
+  if (code === 'ECONNRESET' || code === 'EPIPE' || code === 'UND_ERR_SOCKET') return new PublicFetchError('CONNECTION_RESET', message);
+  if (/CERT|TLS|SSL|UNABLE_TO_VERIFY|SELF_SIGNED|WRONG_VERSION_NUMBER/.test(code)) return new PublicFetchError('TLS_CERTIFICATE_INVALID', message);
+  return new PublicFetchError('REQUEST_FAILED', message);
+}
 
 function ipv4Number(address: string) {
   const octets = address.split('.').map(Number);
@@ -129,18 +155,22 @@ async function resolvePublicAddresses(hostname: string, timeoutMs: number, allow
     const records = await Promise.race([
       lookup(hostname, { all: true, verbatim: true }),
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new PublicFetchError('DNS_TIMEOUT', 'DNS resolution timed out.')), timeoutMs);
+        timer = setTimeout(() => reject(new PublicFetchError('DNS_TEMPORARY_FAILURE', 'DNS resolution timed out.')), timeoutMs);
       }),
     ]);
     const addresses = records.map((record) => ({ address: record.address, family: record.family as 4 | 6 }));
-    if (!addresses.length) throw new PublicFetchError('DNS_FAILURE', 'The hostname did not resolve to an address.');
+    if (!addresses.length) throw new PublicFetchError('DNS_NAME_NOT_FOUND', 'The hostname did not resolve to an address.');
     if (!allowPrivateForTesting && addresses.some((record) => isPrivateOrReservedAddress(record.address))) {
       throw new PublicFetchError('PRIVATE_NETWORK_TARGET', 'Private, local, reserved, and metadata-network targets cannot be audited.');
     }
     return addresses;
   } catch (error) {
     if (error instanceof PublicFetchError) throw error;
-    throw new PublicFetchError('DNS_FAILURE', error instanceof Error ? `DNS resolution failed: ${error.message}` : 'DNS resolution failed.');
+    const code = systemErrorCode(error);
+    const detail = error instanceof Error ? error.message : 'DNS resolution failed.';
+    if (code === 'ENOTFOUND' || code === 'ENODATA') throw new PublicFetchError('DNS_NAME_NOT_FOUND', detail);
+    if (code === 'EAI_AGAIN' || code === 'ETIMEOUT') throw new PublicFetchError('DNS_TEMPORARY_FAILURE', detail);
+    throw new PublicFetchError('DNS_FAILURE', detail);
   } finally {
     if (timer) clearTimeout(timer);
   }
@@ -215,7 +245,7 @@ async function requestPinned(url: URL, address: ResolvedAddress, options: Requir
       response.on('error', (error) => {
         if (settled) return;
         settled = true;
-        reject(new PublicFetchError('REQUEST_FAILED', error.message));
+        reject(publicRequestError(error));
       });
     });
 
@@ -223,12 +253,12 @@ async function requestPinned(url: URL, address: ResolvedAddress, options: Requir
       if (settled) return;
       settled = true;
       request.destroy();
-      reject(new PublicFetchError('REQUEST_TIMEOUT', `Request timed out after ${options.timeoutMs}ms.`));
+      reject(new PublicFetchError('CONNECTION_TIMEOUT', `Request timed out after ${options.timeoutMs}ms.`));
     });
     request.on('error', (error) => {
       if (settled) return;
       settled = true;
-      reject(error instanceof PublicFetchError ? error : new PublicFetchError('REQUEST_FAILED', error.message));
+      reject(publicRequestError(error));
     });
     request.end();
   });
@@ -251,15 +281,30 @@ export async function safePublicFetch(value: string, input: SafePublicFetchOptio
   const seen = new Set<string>();
 
   for (let redirectCount = 0; redirectCount <= options.maxRedirects; redirectCount += 1) {
-    if (seen.has(current.toString())) throw new PublicFetchError('TOO_MANY_REDIRECTS', 'A redirect loop was detected.');
+    if (seen.has(current.toString())) throw new PublicFetchError('REDIRECT_LOOP', 'A redirect loop was detected.');
     seen.add(current.toString());
-    const addresses = await resolvePublicAddresses(current.hostname, options.dnsTimeoutMs, options.allowPrivateForTesting);
+    let addresses: ResolvedAddress[];
+    try {
+      addresses = await resolvePublicAddresses(current.hostname, options.dnsTimeoutMs, options.allowPrivateForTesting);
+    } catch (error) {
+      if (redirectCount > 0 && error instanceof PublicFetchError && error.code === 'PRIVATE_NETWORK_TARGET') {
+        throw new PublicFetchError('UNSAFE_REDIRECT_TARGET', error.message);
+      }
+      throw error;
+    }
     const response = await requestPinned(current, addresses[0], options);
     const location = response.headers.location;
     if ([301, 302, 303, 307, 308].includes(response.status)) {
       if (!location) throw new PublicFetchError('REDIRECT_WITHOUT_LOCATION', 'The server returned a redirect without a destination.');
       if (redirectCount >= options.maxRedirects) throw new PublicFetchError('TOO_MANY_REDIRECTS', 'The response exceeded the redirect limit.');
-      current = parsePublicHttpUrl(new URL(location, current).toString(), options);
+      try {
+        current = parsePublicHttpUrl(new URL(location, current).toString(), options);
+      } catch (error) {
+        if (error instanceof PublicFetchError && error.code === 'PRIVATE_NETWORK_TARGET') {
+          throw new PublicFetchError('UNSAFE_REDIRECT_TARGET', error.message);
+        }
+        throw new PublicFetchError('INVALID_REDIRECT_TARGET', error instanceof Error ? error.message : 'Invalid redirect target.');
+      }
       continue;
     }
 

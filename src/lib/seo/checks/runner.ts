@@ -1,5 +1,6 @@
-import "./all-checks";
-import { AuditIssue } from '../../audit/types';
+import './all-checks';
+import type { AuditIssue } from '../../audit/types';
+import { eventEmitter } from '../../audit/event-emitter';
 import { run as checkImages } from './images';
 import { run as checkIndexability } from './indexability';
 import { run as checkInternational } from './international';
@@ -16,114 +17,71 @@ import { run as checkOnPage } from './on-page';
 import { run as checkContent } from './content';
 import { run as checkLinks } from './links';
 
-import { eventEmitter } from '../../audit/event-emitter';
+type CheckRunner = (pageData: any, auditId?: string) => AuditIssue[];
+
+export const CHECKS: Array<{ id: string; title: string; run: CheckRunner }> = [
+  { id: 'images', title: 'Images', run: checkImages },
+  { id: 'indexability', title: 'Indexability', run: checkIndexability },
+  { id: 'international', title: 'International', run: checkInternational },
+  { id: 'local', title: 'Local', run: checkLocal },
+  { id: 'mobile', title: 'Mobile', run: checkMobile },
+  { id: 'performance', title: 'Performance', run: checkPerformance },
+  { id: 'robots', title: 'Robots', run: checkRobots },
+  { id: 'schema', title: 'Schema', run: checkSchema },
+  { id: 'security', title: 'Security', run: checkSecurity },
+  { id: 'sitemap', title: 'Sitemap', run: checkSitemap },
+  { id: 'social', title: 'Social', run: checkSocial },
+  { id: 'technical', title: 'Technical', run: checkTechnical },
+  { id: 'on-page', title: 'On-page', run: checkOnPage },
+  { id: 'content', title: 'Content', run: checkContent },
+  { id: 'links', title: 'Links', run: checkLinks },
+];
+
+export interface UnavailableAuditCheck {
+  checkId: string;
+  checkTitle: string;
+  internalDetails: string;
+}
+
+export interface SafeCheckRunResult {
+  issues: AuditIssue[];
+  unavailableChecks: UnavailableAuditCheck[];
+  completedChecks: number;
+}
+
+export function runCheckSetSafely(checks: Array<{ id: string; title: string; run: CheckRunner }>, pageData: any, auditId?: string): SafeCheckRunResult {
+  const issues: AuditIssue[] = [];
+  const unavailableChecks: UnavailableAuditCheck[] = [];
+  let completedChecks = 0;
+
+  for (const check of checks) {
+    if (auditId) eventEmitter.emitCheckStarted(auditId, check.title, pageData.url);
+    try {
+      const checkIssues = check.run(pageData, auditId) || [];
+      issues.push(...checkIssues);
+      completedChecks += 1;
+      if (auditId) {
+        checkIssues.forEach((issue) => eventEmitter.emitIssueFound(auditId, issue));
+        eventEmitter.emitCheckCompleted(auditId, check.title, pageData.url);
+      }
+    } catch (error) {
+      unavailableChecks.push({
+        checkId: check.id,
+        checkTitle: check.title,
+        internalDetails: error instanceof Error ? `${error.name}: ${error.message}` : String(error || 'Unknown check failure'),
+      });
+    }
+  }
+
+  return { issues, unavailableChecks, completedChecks };
+}
+
+export function runAllChecksSafely(pageData: any, auditId?: string): SafeCheckRunResult {
+  return runCheckSetSafely(CHECKS, pageData, auditId);
+}
 
 export function runAllChecks(pageData: any, auditId?: string): AuditIssue[] {
-  let issues: AuditIssue[] = [];
-  if (auditId) eventEmitter.emitCheckStarted(auditId, 'Images', pageData.url);
-  const issuesImages = checkImages(pageData, auditId);
-  if (auditId) {
-    issuesImages.forEach(issue => eventEmitter.emitIssueFound(auditId, issue));
-    eventEmitter.emitCheckCompleted(auditId, 'Images', pageData.url);
-  }
-  issues = issues.concat(issuesImages);
-  if (auditId) eventEmitter.emitCheckStarted(auditId, 'Indexability', pageData.url);
-  const issuesIndexability = checkIndexability(pageData, auditId);
-  if (auditId) {
-    issuesIndexability.forEach(issue => eventEmitter.emitIssueFound(auditId, issue));
-    eventEmitter.emitCheckCompleted(auditId, 'Indexability', pageData.url);
-  }
-  issues = issues.concat(issuesIndexability);
-  if (auditId) eventEmitter.emitCheckStarted(auditId, 'International', pageData.url);
-  const issuesInternational = checkInternational(pageData, auditId);
-  if (auditId) {
-    issuesInternational.forEach(issue => eventEmitter.emitIssueFound(auditId, issue));
-    eventEmitter.emitCheckCompleted(auditId, 'International', pageData.url);
-  }
-  issues = issues.concat(issuesInternational);
-  if (auditId) eventEmitter.emitCheckStarted(auditId, 'Local', pageData.url);
-  const issuesLocal = checkLocal(pageData, auditId);
-  if (auditId) {
-    issuesLocal.forEach(issue => eventEmitter.emitIssueFound(auditId, issue));
-    eventEmitter.emitCheckCompleted(auditId, 'Local', pageData.url);
-  }
-  issues = issues.concat(issuesLocal);
-  if (auditId) eventEmitter.emitCheckStarted(auditId, 'Mobile', pageData.url);
-  const issuesMobile = checkMobile(pageData, auditId);
-  if (auditId) {
-    issuesMobile.forEach(issue => eventEmitter.emitIssueFound(auditId, issue));
-    eventEmitter.emitCheckCompleted(auditId, 'Mobile', pageData.url);
-  }
-  issues = issues.concat(issuesMobile);
-  if (auditId) eventEmitter.emitCheckStarted(auditId, 'Performance', pageData.url);
-  const issuesPerformance = checkPerformance(pageData, auditId);
-  if (auditId) {
-    issuesPerformance.forEach(issue => eventEmitter.emitIssueFound(auditId, issue));
-    eventEmitter.emitCheckCompleted(auditId, 'Performance', pageData.url);
-  }
-  issues = issues.concat(issuesPerformance);
-  if (auditId) eventEmitter.emitCheckStarted(auditId, 'Robots', pageData.url);
-  const issuesRobots = checkRobots(pageData, auditId);
-  if (auditId) {
-    issuesRobots.forEach(issue => eventEmitter.emitIssueFound(auditId, issue));
-    eventEmitter.emitCheckCompleted(auditId, 'Robots', pageData.url);
-  }
-  issues = issues.concat(issuesRobots);
-  if (auditId) eventEmitter.emitCheckStarted(auditId, 'Schema', pageData.url);
-  const issuesSchema = checkSchema(pageData, auditId);
-  if (auditId) {
-    issuesSchema.forEach(issue => eventEmitter.emitIssueFound(auditId, issue));
-    eventEmitter.emitCheckCompleted(auditId, 'Schema', pageData.url);
-  }
-  issues = issues.concat(issuesSchema);
-  if (auditId) eventEmitter.emitCheckStarted(auditId, 'Security', pageData.url);
-  const issuesSecurity = checkSecurity(pageData, auditId);
-  if (auditId) {
-    issuesSecurity.forEach(issue => eventEmitter.emitIssueFound(auditId, issue));
-    eventEmitter.emitCheckCompleted(auditId, 'Security', pageData.url);
-  }
-  issues = issues.concat(issuesSecurity);
-  if (auditId) eventEmitter.emitCheckStarted(auditId, 'Sitemap', pageData.url);
-  const issuesSitemap = checkSitemap(pageData, auditId);
-  if (auditId) {
-    issuesSitemap.forEach(issue => eventEmitter.emitIssueFound(auditId, issue));
-    eventEmitter.emitCheckCompleted(auditId, 'Sitemap', pageData.url);
-  }
-  issues = issues.concat(issuesSitemap);
-  if (auditId) eventEmitter.emitCheckStarted(auditId, 'Social', pageData.url);
-  const issuesSocial = checkSocial(pageData, auditId);
-  if (auditId) {
-    issuesSocial.forEach(issue => eventEmitter.emitIssueFound(auditId, issue));
-    eventEmitter.emitCheckCompleted(auditId, 'Social', pageData.url);
-  }
-  issues = issues.concat(issuesSocial);
-  if (auditId) eventEmitter.emitCheckStarted(auditId, 'Technical', pageData.url);
-  const issuesTechnical = checkTechnical(pageData, auditId);
-  if (auditId) {
-    issuesTechnical.forEach(issue => eventEmitter.emitIssueFound(auditId, issue));
-    eventEmitter.emitCheckCompleted(auditId, 'Technical', pageData.url);
-  }
-  issues = issues.concat(issuesTechnical);
-  if (auditId) eventEmitter.emitCheckStarted(auditId, 'OnPage', pageData.url);
-  const issuesOnPage = checkOnPage(pageData, auditId);
-  if (auditId) {
-    issuesOnPage.forEach(issue => eventEmitter.emitIssueFound(auditId, issue));
-    eventEmitter.emitCheckCompleted(auditId, 'OnPage', pageData.url);
-  }
-  issues = issues.concat(issuesOnPage);
-  if (auditId) eventEmitter.emitCheckStarted(auditId, 'Content', pageData.url);
-  const issuesContent = checkContent(pageData, auditId);
-  if (auditId) {
-    issuesContent.forEach(issue => eventEmitter.emitIssueFound(auditId, issue));
-    eventEmitter.emitCheckCompleted(auditId, 'Content', pageData.url);
-  }
-  issues = issues.concat(issuesContent);
-  if (auditId) eventEmitter.emitCheckStarted(auditId, 'Links', pageData.url);
-  const issuesLinks = checkLinks(pageData, auditId);
-  if (auditId) {
-    issuesLinks.forEach(issue => eventEmitter.emitIssueFound(auditId, issue));
-    eventEmitter.emitCheckCompleted(auditId, 'Links', pageData.url);
-  }
-  issues = issues.concat(issuesLinks);
-  return issues;
+  return runAllChecksSafely(pageData, auditId).issues;
 }
+
+export const AUDIT_CHECK_COUNT = CHECKS.length;

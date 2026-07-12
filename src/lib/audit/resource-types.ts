@@ -10,7 +10,7 @@ export {
   type AuditMode,
 };
 
-export type AuditStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type AuditStatus = 'queued' | 'running' | 'completed' | 'completed_with_warnings' | 'failed' | 'cancelled';
 export type AuditSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 export type UserPlan = 'free' | 'paid' | 'agency' | 'admin';
 export type ProcessingTier = 'free' | 'paid' | 'agency' | 'admin';
@@ -59,6 +59,8 @@ export interface ResourceAuditDocument {
   lockedAt: string | null;
   leaseExpiresAt: string | null;
   usedHttpFallback?: boolean;
+  warningCount?: number;
+  failureCounts?: Record<string, number>;
 }
 
 export interface ResourceAuditEvent {
@@ -92,6 +94,17 @@ export interface ResourceAuditPage {
   openGraphImage?: string;
   themeColor?: string;
   screenshotUrl?: string;
+  fetchStatus?: 'success' | 'failed' | 'blocked';
+  failureCode?: string;
+  failureCategory?: string;
+  safeTitle?: string;
+  safeExplanation?: string;
+  suggestedAction?: string;
+  retryable?: boolean;
+  attemptCount?: number;
+  recoveredAfterRetry?: boolean;
+  sourceUrl?: string;
+  anchorText?: string;
   wordCount: number;
   crawlDepth: number;
   issueCount: number;
@@ -107,6 +120,11 @@ export interface ResourceAuditIssue {
   affectedUrl: string;
   evidence: string;
   recommendation: string;
+  checkId?: string;
+  failureCode?: string;
+  findingKey?: string;
+  sourceUrls?: string[];
+  affectedPageCount?: number;
   detectedAt: string;
 }
 

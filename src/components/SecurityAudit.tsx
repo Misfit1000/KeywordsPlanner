@@ -2,7 +2,7 @@ import { API_ROUTES } from '../lib/api/routes';
 import { getAuditAccessHeaders, getAuditStartHeaders } from '../lib/api/auth-headers';
 import { createAuditSubmitGuard } from '../lib/api/audit-submit-guard';
 import { safeJsonFetch } from '../lib/http/safe-json';
-import { normalizeDomainInput } from '../lib/seo/url-utils';
+import { AUDIT_TARGET_INPUT_PROPS, normalizeAuditTarget } from '../lib/url/normalize-audit-target';
 import React, { useRef, useState } from 'react';
 import { LiveAuditProgress } from './audit/LiveAuditProgress';
 import { ShieldCheck, ShieldAlert, AlertTriangle, Info, CheckCircle2, Loader2, Lock, Download, Printer } from 'lucide-react';
@@ -20,9 +20,12 @@ export default function SecurityAudit() {
 
   const startAudit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!url.trim()) return;
+    const normalized = normalizeAuditTarget(url);
+    if (!normalized.isValid) {
+      setError(normalized.error || 'Enter a valid public website or domain.');
+      return;
+    }
     if (!auditStartGuardRef.current.begin()) return;
-    let targetUrl = normalizeDomainInput(url);
     
     setLoading(true);
     setError(null);
@@ -33,7 +36,7 @@ export default function SecurityAudit() {
         method: 'POST',
         headers: await getAuditStartHeaders({ 'Content-Type': 'application/json' }),
         
-        body: JSON.stringify({ url: targetUrl, mode: 'quick', type: 'security', options: {} })
+        body: JSON.stringify({ url, mode: 'quick', type: 'security', options: {} })
       });
       const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
       if (!data.success) throw new Error(data.error);
@@ -55,9 +58,9 @@ export default function SecurityAudit() {
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
         <Panel className="p-5 sm:p-7">
-          <form onSubmit={startAudit} className="space-y-5">
+          <form onSubmit={startAudit} noValidate className="space-y-5">
             <FormField label="Website URL" htmlFor="security-url" hint="The audit engine follows safe public redirects and records only structured observations.">
-              <input id="security-url" type="url" required placeholder="https://example.com" value={url} onChange={(e) => setUrl(e.target.value)} className="suite-input" />
+              <input id="security-url" {...AUDIT_TARGET_INPUT_PROPS} value={url} onChange={(e) => setUrl(e.target.value)} className="suite-input" />
             </FormField>
             <button type="submit" disabled={loading || !url.trim()} className="trust-button w-full sm:w-auto">
               {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Lock className="h-5 w-5" />}

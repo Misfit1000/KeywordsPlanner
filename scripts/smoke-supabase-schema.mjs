@@ -8,6 +8,7 @@ const privatePoliciesPath = resolve('supabase/migrations/006_private_audit_read_
 const privatePoliciesSql = readFileSync(privatePoliciesPath, 'utf8');
 const historyMigrationSql = readFileSync(resolve('supabase/migrations/008_audit_history_comparison.sql'), 'utf8');
 const previewMigrationSql = readFileSync(resolve('supabase/migrations/009_audit_page_preview_metadata.sql'), 'utf8');
+const resilienceMigrationSql = readFileSync(resolve('supabase/migrations/010_audit_resilience_and_failures.sql'), 'utf8');
 
 for (const table of ['audits', 'audit_events', 'audit_pages', 'audit_issues', 'audit_reports']) {
   assert.match(sql, new RegExp(`create table if not exists public\\.${table}\\b`, 'i'), `${table} table is missing`);
@@ -39,6 +40,14 @@ for (const column of ['canonical_url', 'site_name', 'favicon_url', 'open_graph_i
   assert.match(previewMigrationSql, new RegExp(`add column if not exists ${column}\\b`, 'i'), `${column} preview metadata column is missing`);
 }
 assert.match(previewMigrationSql, /never require iframe embedding/i, 'preview migration must document the non-iframe contract');
+assert.match(resilienceMigrationSql, /completed_with_warnings/i, 'warning completion status is missing');
+for (const column of ['warning_count', 'failure_counts', 'fetch_status', 'failure_code', 'attempt_count', 'recovered_after_retry', 'finding_key', 'source_urls']) {
+  assert.match(resilienceMigrationSql, new RegExp(`add column if not exists ${column}\\b`, 'i'), `${column} resilience column is missing`);
+}
+assert.match(resilienceMigrationSql, /create table if not exists public\.audit_diagnostics\b/i, 'internal diagnostics table is missing');
+assert.match(resilienceMigrationSql, /alter table public\.audit_diagnostics enable row level security/i, 'diagnostics RLS is missing');
+assert.match(resilienceMigrationSql, /No anon or authenticated policy is created/i, 'service-role-only diagnostics boundary is undocumented');
+assert.equal(/alter publication supabase_realtime add table public\.audit_diagnostics/i.test(resilienceMigrationSql), false, 'internal diagnostics must not be published to browser realtime');
 for (const bannedTerm of ['fire' + 'base', 'fire' + 'store']) {
   assert.equal(sql.toLowerCase().includes(bannedTerm), false, `migration should not contain ${bannedTerm} references`);
 }

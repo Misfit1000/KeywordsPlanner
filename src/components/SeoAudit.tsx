@@ -9,6 +9,7 @@ import { FullAuditResult, AuditIssue } from '../lib/audit/types';
 import { useAuth } from '../contexts/AuthContext';
 import { FormField, Notice, PageHeader, Panel, SegmentedControl } from './ui/page-system';
 import { FindingRow, MetricCard } from './ui/visual-system';
+import { AUDIT_TARGET_INPUT_PROPS, normalizeAuditTarget } from '../lib/url/normalize-audit-target';
 
 export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
   const { user } = useAuth();
@@ -39,7 +40,11 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
 
   const startAudit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!url.trim()) return;
+    const normalized = normalizeAuditTarget(url);
+    if (!normalized.isValid) {
+      setError(normalized.error || 'Enter a valid public website or domain.');
+      return;
+    }
     if (!auditStartGuardRef.current.begin()) return;
     
     setLoading(true);
@@ -73,18 +78,18 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
 
   return (
     <div className="w-full space-y-9 animate-rise">
-      <PageHeader eyebrow="Start audit" icon={Activity} title="Audit a website" description="Run a live, worker-backed review of on-page SEO, technical delivery, search access, page health, and passive browser protections." />
+      <PageHeader eyebrow="Start audit" icon={Activity} title="Audit a website" description="Run a live review of on-page SEO, technical delivery, search access, page health, and passive browser protections." />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
         <Panel className="p-5 sm:p-7">
-          <form onSubmit={startAudit} className="space-y-6">
+          <form onSubmit={startAudit} noValidate className="space-y-6">
             <FormField label="Website URL" htmlFor="audit-url" hint="Use the public homepage or a specific page. Redirects and the final URL are recorded by the audit engine.">
               <div className="relative">
                 <Globe className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-                <input id="audit-url" type="url" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://example.com" className="suite-input pl-10" required />
+                <input id="audit-url" {...AUDIT_TARGET_INPUT_PROPS} value={url} onChange={e => setUrl(e.target.value)} className="suite-input pl-10" />
               </div>
             </FormField>
-            <FormField label="Audit type" hint="Unavailable modes stay locked to protect plan limits and worker capacity.">
+            <FormField label="Audit type" hint="Unavailable modes stay locked to protect plan limits and audit-engine capacity.">
               <SegmentedControl<'quick' | 'standard' | 'deep'>
                 label="Audit type"
                 value={mode}

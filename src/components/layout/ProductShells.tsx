@@ -108,8 +108,8 @@ export function WorkspaceShell({
   onLogout: () => void;
 }) {
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-50 flex h-[4.25rem] items-center border-b border-border/80 bg-card/92 px-4 backdrop-blur-xl md:px-6">
+    <div className="flex h-dvh min-h-0 flex-col overflow-hidden">
+      <header className="relative z-50 flex h-[4.25rem] shrink-0 items-center border-b border-border/80 bg-card/92 px-4 backdrop-blur-xl md:px-6">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <button type="button" onClick={onToggleSidebar} className="rounded-lg p-2.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={sidebarOpen ? 'Close navigation' : 'Open navigation'}><Menu className="h-5 w-5" /></button>
           <button type="button" onClick={onHome} className="rounded-lg" aria-label="SEOIntel home"><BrandMark /></button>
@@ -132,7 +132,7 @@ export function WorkspaceShell({
           )}
         </div>
       </header>
-      <div className="flex min-h-0 flex-1">{sidebar}<main className="min-w-0 flex-1"><div className="suite-page">{children}</div></main></div>
+      <div className="flex min-h-0 flex-1 overflow-hidden">{sidebar}<main className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain"><div className="suite-page">{children}</div></main></div>
     </div>
   );
 }

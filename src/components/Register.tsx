@@ -72,7 +72,7 @@ export default function Register({
           </span>
         </FormField>
 
-        <FormField label="Password" htmlFor="register-password" hint="Use at least 6 characters. Supabase Auth handles the account securely.">
+        <FormField label="Password" htmlFor="register-password" hint="Use at least 6 characters. Your password is handled by the secure account service.">
           <span className="relative block">
             <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
             <input

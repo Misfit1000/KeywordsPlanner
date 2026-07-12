@@ -1,7 +1,8 @@
 import type { ResourceAuditDocument, ResourceAuditIssue, ResourceAuditLiveData, ResourceAuditPage } from './resource-types';
 import { extractReportScores, type ReportScoreSnapshot } from './report-insights';
+import { isCompletedAuditStatus } from './audit-time';
 
-export type ChecklistStatus = 'not_started' | 'in_progress' | 'fixed' | 'ignored';
+export type ChecklistStatus = 'not_started' | 'in_progress' | 'fixed' | 'ignored' | 'reopened';
 export type IssueBucket = 'all' | 'seo' | 'technical' | 'security';
 
 export interface AuditHistoryEntry {
@@ -82,11 +83,19 @@ export function buildIssueInsight(issue: ResourceAuditIssue): IssueInsight {
   const affected = issue.affectedUrl ? ` on ${issue.affectedUrl}` : '';
   const recommendation = issue.recommendation || 'Review the page and apply the recommended SEOIntel fix.';
 
-  const why = {
+  let why = {
     seo: 'This can make the page harder to understand in search results and can reduce click quality.',
     technical: 'This can make the page harder for search engines to access, understand, or trust reliably.',
     security: 'This can reduce browser-side protection signals and client trust, even though SEOIntel only runs passive checks.',
   }[bucket];
+
+  const failureCode = String(issue.failureCode || '').toUpperCase();
+  const issueText = `${issue.title} ${issue.description}`.toLowerCase();
+  if (failureCode === 'HTTP_404' || /\b404\b|not found|4xx pages/.test(issueText)) {
+    why = 'Broken destinations create a poor visitor experience, waste internal crawl paths, prevent access to content, and can weaken the value passed through internal links. Sitemap entries and source links should be cleaned up.';
+  } else if (failureCode === 'NOINDEX_DETECTED' || /\bnoindex\b/.test(issueText)) {
+    why = 'The page is excluded from search indexing. That may be intentional, so review whether it appears in a sitemap, how prominently it is linked internally, and whether the page is meant to rank before changing the directive.';
+  }
 
   return {
     whatHappened: issue.description || `${issue.title}${affected}.`,
@@ -177,7 +186,7 @@ export function upsertAuditHistory(data: ResourceAuditLiveData) {
 export function findPreviousAudit(current: AuditHistoryEntry | null, history = readAuditHistory()) {
   if (!current) return null;
   return history
-    .filter((entry) => entry.auditId !== current.auditId && entry.normalizedUrl === current.normalizedUrl && entry.status === 'completed')
+    .filter((entry) => entry.auditId !== current.auditId && entry.normalizedUrl === current.normalizedUrl && isCompletedAuditStatus(entry.status))
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0] || null;
 }
 
@@ -211,7 +220,7 @@ export function scoreFromIssues(issues: Array<Pick<ResourceAuditIssue, 'severity
 
 export function scoreTrendForUrl(normalizedUrl: string, history = readAuditHistory()) {
   return history
-    .filter((entry) => entry.normalizedUrl === normalizedUrl && entry.status === 'completed')
+    .filter((entry) => entry.normalizedUrl === normalizedUrl && isCompletedAuditStatus(entry.status))
     .sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime())
     .slice(-6);
 }

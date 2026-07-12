@@ -14,12 +14,14 @@ export function startWorkerHealthServer(
 
   const server = http.createServer((req, res) => {
     const payload = {
-      ok: state.status !== 'failed' && state.status !== 'stopped',
-      workerId: state.workerId,
-      status: state.status,
+      ok: state.status !== 'stopped' && state.queuePollingStatus !== 'error' && state.databaseConnected && !state.maintenanceMode,
+      serviceStatus: state.maintenanceMode ? 'maintenance' : state.status === 'stopped' ? 'stopped' : 'online',
+      queuePollingStatus: state.queuePollingStatus,
+      databaseConnected: state.databaseConnected,
       lastSeenAt: state.lastSeenAt,
-      currentAuditId: state.currentAuditId,
-      runtime: state.runtime,
+      currentAudit: state.currentAuditId ? 'processing' : null,
+      lastCompletedAuditAt: state.lastCompletedAuditAt,
+      lastFatalWorkerError: Boolean(state.lastFatalWorkerError),
       supportedModes: state.supportedModes,
       deepAuditEnabled: state.deepAuditEnabled,
       planLimitsSummary: {

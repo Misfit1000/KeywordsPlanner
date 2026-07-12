@@ -52,7 +52,7 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOp
       {isOpen && <div onClick={onClose} className="fixed inset-0 z-40 bg-background/70 backdrop-blur-sm lg:hidden" />}
 
       {isOpen && (
-        <aside className="fixed left-0 top-[4.25rem] z-50 flex h-[calc(100vh-4.25rem)] w-[16rem] flex-col overflow-hidden border-r border-border bg-card lg:sticky">
+        <aside className="fixed left-0 top-[4.25rem] z-50 flex h-[calc(100dvh-4.25rem)] w-[16rem] flex-col overflow-hidden border-r border-border bg-card lg:relative lg:top-0 lg:h-full lg:shrink-0">
           <div className="border-b border-border p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -65,7 +65,7 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOp
             </div>
           </div>
 
-          <nav className="flex-1 space-y-4 overflow-y-auto p-3" aria-label="Main navigation">
+          <nav className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-3" aria-label="Main navigation">
             {filteredGroups.map((group) => (
               <div key={group.title}>
                 <div className="mb-2 px-2 text-xs font-semibold text-[var(--subtle-foreground)]">{group.title}</div>
@@ -100,7 +100,7 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOp
             ))}
           </nav>
 
-          <div className="border-t border-border p-4">
+          <div className="shrink-0 border-t border-border bg-card p-4">
             <button
               type="button"
               onClick={() => {

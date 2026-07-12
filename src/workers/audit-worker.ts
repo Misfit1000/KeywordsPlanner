@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url';
 import { fetchRobotsTxt, getSitemapUrlsFromRobots, isBlockedByRobots, parseRobotsTxt } from '../lib/seo/robots';
 import { fetchSitemap } from '../lib/seo/sitemap';
 import { isSameDomain, normalizeUrl, stripTrackingParams } from '../lib/seo/url-utils';
-import { runAllChecks } from '../lib/seo/checks/runner';
+import { AUDIT_CHECK_COUNT, runAllChecksSafely } from '../lib/seo/checks/runner';
 import { auditRepository } from '../lib/supabase/audit-repository';
 import { startWorkerHealthServer } from './audit-worker-health';
 import {
@@ -24,12 +24,20 @@ import {
 } from '../lib/audit/resource-types';
 import { AUDIT_LIMITS } from '../lib/audit/audit-config';
 import type { AuditIssue } from '../lib/audit/types';
-import { PublicFetchError, safePublicFetch, type SafePublicFetchOptions } from '../lib/security/safe-public-fetch';
+import { safePublicFetch, type SafePublicFetchOptions } from '../lib/security/safe-public-fetch';
 import { calculateTransparentAuditScore, toReportScoreRecord } from '../lib/audit/audit-scoring';
 import { AuditWriteBatch } from './audit-write-batch';
 import { HostRequestScheduler } from './host-request-scheduler';
+import {
+  aggregateFailureCounts,
+  classifyAuditFailure,
+  failureForCode,
+  failureForHttpStatus,
+  failureProgressMessage,
+  type AuditFailure,
+} from '../lib/audit/audit-failures';
 
-type QueueItem = { url: string; depth: number; discoveredFrom?: string };
+type QueueItem = { url: string; depth: number; discoveredFrom?: string; sourceUrls: string[]; anchorTexts: string[] };
 const NO_QUEUED_LOG_INTERVAL_MS = 30_000;
 
 type FetchedPage = {
@@ -43,6 +51,15 @@ type FetchedPage = {
   html: string;
   parsed: ParsedPageData | null;
 };
+
+type FetchAttemptResult = { page: FetchedPage; attemptCount: number; recoveredAfterRetry: boolean };
+
+class RetriedFetchError extends Error {
+  constructor(readonly original: unknown, readonly attemptCount: number) {
+    super(original instanceof Error ? original.message : String(original || 'Fetch failed'));
+    this.name = 'RetriedFetchError';
+  }
+}
 
 function nowIso() {
   return new Date().toISOString();
@@ -60,14 +77,19 @@ function toSeverity(value: string | undefined): AuditSeverity {
 }
 
 function mapAuditIssue(issue: AuditIssue, fallbackUrl: string): Omit<ResourceAuditIssue, 'id' | 'detectedAt'> {
+  const affectedUrl = issue.affectedUrl || fallbackUrl;
   return {
     severity: toSeverity(issue.severity),
     category: String(issue.category || 'seo'),
     title: issue.title || 'Audit issue',
     description: issue.description || issue.title || 'Audit issue detected.',
-    affectedUrl: issue.affectedUrl || fallbackUrl,
+    affectedUrl,
     evidence: issue.evidence || issue.element || '',
     recommendation: issue.recommendation || 'Review this item and update the affected page.',
+    checkId: issue.id,
+    findingKey: `${issue.id}|${affectedUrl}`.toLowerCase(),
+    sourceUrls: [],
+    affectedPageCount: 1,
   };
 }
 
@@ -132,6 +154,16 @@ function workerFetchOptions(timeoutMs: number): SafePublicFetchOptions {
 
 async function fetchHtmlPage(url: string, timeoutMs: number): Promise<FetchedPage> {
   const response = await safePublicFetch(url, workerFetchOptions(timeoutMs));
+  let parsed: ParsedPageData | null = null;
+  if (response.body) {
+    try {
+      parsed = parseHtml(response.body, response.finalUrl);
+    } catch (error) {
+      const parseError = new Error(error instanceof Error ? error.message : 'HTML parsing failed.');
+      (parseError as Error & { code: string }).code = 'INVALID_HTML_RESPONSE';
+      throw parseError;
+    }
+  }
   return {
     url,
     finalUrl: response.finalUrl,
@@ -141,8 +173,37 @@ async function fetchHtmlPage(url: string, timeoutMs: number): Promise<FetchedPag
     headers: response.headers,
     contentType: response.contentType,
     html: response.body,
-    parsed: response.body ? parseHtml(response.body, response.finalUrl) : null,
+    parsed,
   };
+}
+
+function shouldRetryStatus(status: number) {
+  return status === 429 || status === 502 || status === 503 || status === 504;
+}
+
+async function fetchPageWithRetry(
+  url: string,
+  timeoutMs: number,
+  scheduler: HostRequestScheduler,
+  maxAttempts = 2,
+): Promise<FetchAttemptResult> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const page = await scheduler.schedule(url, () => fetchHtmlPage(url, timeoutMs));
+      if (shouldRetryStatus(page.statusCode) && attempt < maxAttempts) {
+        await wait(200 * attempt);
+        continue;
+      }
+      return { page, attemptCount: attempt, recoveredAfterRetry: attempt > 1 };
+    } catch (error) {
+      lastError = error;
+      const failure = classifyAuditFailure(error, { affectedUrl: url, attemptCount: attempt });
+      if (!failure.retryable || attempt >= maxAttempts) throw new RetriedFetchError(error, attempt);
+      await wait(200 * attempt);
+    }
+  }
+  throw new RetriedFetchError(lastError, maxAttempts);
 }
 
 async function ensureNotCancelled(auditId: string) {
@@ -163,10 +224,17 @@ function normalizeCrawlUrl(input: string, base?: string) {
 async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteBatch) {
   const config = getAuditProfileForDocument(audit);
   const startUrl = normalizeCrawlUrl(audit.normalizedUrl) || audit.normalizedUrl;
-  const queue: QueueItem[] = [{ url: startUrl, depth: 0 }];
+  const rootQueueItem: QueueItem = { url: startUrl, depth: 0, sourceUrls: [], anchorTexts: [] };
+  const queue: QueueItem[] = [rootQueueItem];
+  const queueItems = new Map<string, QueueItem>([[startUrl, rootQueueItem]]);
   const scheduled = new Set<string>([startUrl]);
   const visited = new Set<string>();
   const pages: ResourceAuditPage[] = [];
+  const failures: AuditFailure[] = [];
+  const unavailableChecks: string[] = [];
+  const announcedFailureCodes = new Set<string>();
+  let analysedPages = 0;
+  let completedChecks = 0;
   const workerStart = nowIso();
   const requestScheduler = new HostRequestScheduler(Math.min(2, config.concurrency), 150);
   const auditDeadline = Date.now() + Math.min(10 * 60_000, Math.max(45_000, config.pageLimit * config.timeoutMs));
@@ -178,12 +246,102 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
   ) => writer.writeProgress(patch, event, options);
   const addIssue = (issue: Omit<ResourceAuditIssue, 'id' | 'detectedAt'>) => writer.addIssue(issue);
 
-  async function enqueuePage(url: string, depth: number, discoveredFrom: string) {
+  const recordFailure = async (failure: AuditFailure, item: QueueItem, storePage = true) => {
+    failures.push(failure);
+    const counts = aggregateFailureCounts(failures);
+    const severity: AuditSeverity = failure.code === 'CHECK_UNAVAILABLE' || failure.code === 'AUDIT_DEADLINE_EXCEEDED'
+      ? 'info'
+      : failure.category === 'tls' || failure.code === 'HTTP_403' || failure.code === 'HTTP_404' || failure.code.startsWith('HTTP_5') || failure.category === 'dns'
+        ? 'high'
+        : 'medium';
+
+    await auditRepository.addInternalDiagnostic({
+      auditId: audit.id,
+      affectedUrl: failure.affectedUrl,
+      failureCode: failure.code,
+      phase: failure.category,
+      attemptCount: failure.attemptCount,
+      requestDurationMs: null,
+      workerId: audit.lockedBy,
+      internalDetails: failure.internalDetails,
+    });
+
+    await addIssue({
+      severity,
+      category: failure.category === 'http' || failure.category === 'redirect' ? 'technical' : failure.category,
+      title: failure.safeTitle,
+      description: failure.safeExplanation,
+      affectedUrl: failure.affectedUrl,
+      evidence: failure.httpStatus ? `HTTP status ${failure.httpStatus}` : 'The audit could not collect usable page evidence.',
+      recommendation: failure.suggestedAction,
+      checkId: `failure:${failure.code.toLowerCase()}`,
+      failureCode: failure.code,
+      findingKey: `${failure.code}|${failure.affectedUrl}`.toLowerCase(),
+      sourceUrls: item.sourceUrls,
+      affectedPageCount: Math.max(1, item.sourceUrls.length),
+    });
+
+    if (storePage) {
+      const pageRecord = await writer.addPage({
+        url: failure.affectedUrl,
+        statusCode: failure.httpStatus || 0,
+        responseTimeMs: 0,
+        pageSizeBytes: 0,
+        title: '', metaDescription: '', h1: '', canonicalUrl: '', siteName: '', faviconUrl: '', openGraphImage: '', themeColor: '', screenshotUrl: '',
+        fetchStatus: failure.code === 'ROBOTS_BLOCKED' ? 'blocked' : 'failed',
+        failureCode: failure.code,
+        failureCategory: failure.category,
+        safeTitle: failure.safeTitle,
+        safeExplanation: failure.safeExplanation,
+        suggestedAction: failure.suggestedAction,
+        retryable: failure.retryable,
+        attemptCount: failure.attemptCount,
+        recoveredAfterRetry: failure.recoveredAfterRetry,
+        sourceUrl: item.sourceUrls[0] || item.discoveredFrom,
+        anchorText: item.anchorTexts[0] || '',
+        wordCount: 0,
+        crawlDepth: item.depth,
+        issueCount: 1,
+        crawledAt: nowIso(),
+      });
+      pages.push(pageRecord);
+    }
+
+    if (!announcedFailureCodes.has(failure.code)) {
+      announcedFailureCodes.add(failure.code);
+      await writer.addEvent({
+        type: 'page_warning',
+        message: failureProgressMessage(failure, 1),
+        affectedUrl: failure.affectedUrl,
+        category: failure.category,
+        severity,
+        data: { safeTitle: failure.safeTitle, suggestedAction: failure.suggestedAction },
+      });
+    }
+    await writeProgress({ warningCount: failures.length, failureCounts: counts });
+  };
+
+  async function enqueuePage(url: string, depth: number, discoveredFrom: string, anchorText = '') {
     const cleanUrl = normalizeCrawlUrl(url, discoveredFrom);
-    if (!cleanUrl || scheduled.size >= config.pageLimit || scheduled.has(cleanUrl)) return false;
+    if (!cleanUrl) return false;
+    const existing = queueItems.get(cleanUrl);
+    if (existing) {
+      if (!existing.sourceUrls.includes(discoveredFrom)) existing.sourceUrls.push(discoveredFrom);
+      if (anchorText && !existing.anchorTexts.includes(anchorText)) existing.anchorTexts.push(anchorText);
+      return false;
+    }
+    if (scheduled.size >= config.pageLimit || scheduled.has(cleanUrl)) return false;
     if (!isSameDomain(cleanUrl, audit.normalizedUrl)) return false;
     scheduled.add(cleanUrl);
-    queue.push({ url: cleanUrl, depth, discoveredFrom });
+    const item: QueueItem = {
+      url: cleanUrl,
+      depth,
+      discoveredFrom,
+      sourceUrls: [discoveredFrom],
+      anchorTexts: anchorText ? [anchorText] : [],
+    };
+    queueItems.set(cleanUrl, item);
+    queue.push(item);
     await writer.addEvent({
       type: 'page_discovered',
       message: `Discovered ${cleanUrl}`,
@@ -197,13 +355,13 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
   await writeProgress({
     status: 'running',
     progress: 5,
-    currentPhase: 'Validating URL',
+    currentPhase: 'Preparing your audit',
     currentUrl: audit.normalizedUrl,
     currentCheck: 'URL normalization',
-  }, { type: 'audit_started', message: 'Audit worker started' }, { force: true });
+  }, { type: 'audit_started', message: 'Audit started' }, { force: true });
   await writer.addEvent({
     type: 'url_normalized',
-    message: `Normalized ${audit.submittedInput} to ${audit.normalizedUrl}`,
+    message: `Website address confirmed as ${audit.normalizedUrl}`,
     affectedUrl: audit.normalizedUrl,
     progress: 8,
   });
@@ -213,19 +371,19 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
   const origin = new URL(audit.normalizedUrl).origin;
   await writeProgress({
     progress: 10,
-    currentPhase: 'Checking robots.txt',
+    currentPhase: 'Discovering pages',
     currentUrl: new URL('/robots.txt', origin).toString(),
     currentCheck: 'robots.txt',
-  }, { type: 'robots_fetching', message: 'Fetching robots.txt' });
+  }, { type: 'robots_fetching', message: 'Checking search engine access rules' });
   const robotsTxt = await fetchRobotsTxt(origin, workerFetchOptions(config.timeoutMs));
   const robotsRules = robotsTxt ? parseRobotsTxt(robotsTxt) : null;
 
   await writeProgress({
     progress: 14,
-    currentPhase: 'Checking sitemap',
+    currentPhase: 'Discovering pages',
     currentUrl: new URL('/sitemap.xml', origin).toString(),
     currentCheck: 'sitemap.xml',
-  }, { type: 'sitemap_fetching', message: 'Fetching sitemap URLs' });
+  }, { type: 'sitemap_fetching', message: 'Looking for sitemap URLs' });
 
   const sitemapCandidates = [
     ...getSitemapUrlsFromRobots(robotsTxt),
@@ -256,9 +414,9 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
 
   await writeProgress({
     progress: 20,
-    currentPhase: 'Crawling pages',
+    currentPhase: 'Checking page content',
     pagesDiscovered: scheduled.size,
-    checksTotal: 0,
+    checksTotal: Math.max(1, scheduled.size) * (AUDIT_CHECK_COUNT + 1),
     checksCompleted: 0,
   });
 
@@ -275,15 +433,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
     visited.add(currentUrl);
 
     if (robotsRules && isBlockedByRobots(currentUrl, robotsRules)) {
-      await addIssue({
-        severity: 'medium',
-        category: 'crawlability',
-        title: 'Page blocked by robots.txt',
-        description: 'The crawler skipped this URL because robots.txt disallows it.',
-        affectedUrl: currentUrl,
-        evidence: 'robots.txt disallow rule matched the page path',
-        recommendation: 'Confirm this page should be blocked from crawlers, or update robots.txt.',
-      });
+      await recordFailure(failureForCode('ROBOTS_BLOCKED', { affectedUrl: currentUrl }), item);
       return;
     }
 
@@ -291,59 +441,59 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
     const crawlProgress = 20 + Math.floor((visited.size / Math.max(visited.size + queue.length, 1)) * 35);
     await writeProgress({
       progress: Math.min(55, crawlProgress),
-      currentPhase: 'Crawling pages',
+      currentPhase: 'Checking page content',
       currentUrl,
-      currentCheck: 'Fetching HTML',
+      currentCheck: 'Loading page content',
       pagesDiscovered: scheduled.size,
-      pagesCrawled: pages.length,
-    }, { type: 'page_crawling', message: `Fetching ${currentUrl}` });
+      pagesCrawled: analysedPages,
+    }, { type: 'page_crawling', message: `Checking ${currentUrl}` });
 
-    let fetched: FetchedPage;
+    let fetchResult: FetchAttemptResult;
     try {
-      fetched = await requestScheduler.schedule(currentUrl, () => fetchHtmlPage(currentUrl, config.timeoutMs));
-    } catch (error: any) {
-      const publicFetchError = error instanceof PublicFetchError ? error : null;
-      if (publicFetchError?.code === 'RESPONSE_TOO_LARGE' || publicFetchError?.code === 'UNSUPPORTED_CONTENT_TYPE') {
-        await addIssue({
-          severity: 'medium',
-          category: publicFetchError.code === 'RESPONSE_TOO_LARGE' ? 'performance' : 'technical',
-          title: publicFetchError.code === 'RESPONSE_TOO_LARGE' ? 'HTML response exceeded the configured analysis limit' : 'Unsupported page content type',
-          description: publicFetchError.message,
-          affectedUrl: currentUrl,
-          evidence: publicFetchError.code,
-          recommendation: publicFetchError.code === 'RESPONSE_TOO_LARGE' ? 'Reduce the HTML response size and rerun the audit.' : 'Audit an HTML page rather than a binary or unsupported resource.',
-        });
+      fetchResult = await fetchPageWithRetry(currentUrl, config.timeoutMs, requestScheduler);
+    } catch (error) {
+      const retried = error instanceof RetriedFetchError ? error : new RetriedFetchError(error, 1);
+      const primaryFailure = classifyAuditFailure(retried.original, { affectedUrl: currentUrl, attemptCount: retried.attemptCount });
+      const canTryHttp = currentUrl.startsWith('https://')
+        && ['TLS_CERTIFICATE_INVALID', 'CONNECTION_REFUSED', 'HTTPS_UNAVAILABLE'].includes(primaryFailure.code);
+      if (!canTryHttp) {
+        await recordFailure(primaryFailure, item);
         return;
       }
-      if (publicFetchError?.code === 'PRIVATE_NETWORK_TARGET' || publicFetchError?.code === 'UNSUPPORTED_PORT' || publicFetchError?.code === 'EMBEDDED_CREDENTIALS') {
-        throw publicFetchError;
-      }
-      if (currentUrl.startsWith('https://')) {
-        const httpUrl = currentUrl.replace(/^https:\/\//, 'http://');
-        await addIssue({
-          severity: 'high',
-          category: 'security',
-          title: 'HTTPS failed or unavailable',
-          description: 'The HTTPS request failed and the worker attempted HTTP fallback once.',
-          affectedUrl: currentUrl,
-          evidence: error?.message || 'HTTPS fetch failed',
-          recommendation: 'Fix HTTPS availability and redirect HTTP traffic to HTTPS.',
-        });
+      const httpUrl = currentUrl.replace(/^https:\/\//, 'http://');
+      try {
+        fetchResult = await fetchPageWithRetry(httpUrl, config.timeoutMs, requestScheduler, 1);
+        await recordFailure({
+          ...primaryFailure,
+          recoveredAfterRetry: true,
+          safeExplanation: `${primaryFailure.safeExplanation} HTTPS failed, but the page was available over HTTP. The audit continued using the insecure version.`,
+        }, item, false);
         await writeProgress({ usedHttpFallback: true });
-        fetched = await requestScheduler.schedule(httpUrl, () => fetchHtmlPage(httpUrl, config.timeoutMs));
-      } else {
-        await addIssue({
-          severity: 'medium',
-          category: 'crawlability',
-          title: 'Page fetch failed',
-          description: 'The worker could not fetch this public page.',
-          affectedUrl: currentUrl,
-          evidence: error?.message || 'Fetch failed',
-          recommendation: 'Check server availability, redirects, and response timeout.',
-        });
+      } catch {
+        await recordFailure(primaryFailure, item);
         return;
       }
     }
+
+    const fetched = fetchResult.page;
+    if (fetched.statusCode >= 400) {
+      await recordFailure(failureForHttpStatus(fetched.statusCode, {
+        affectedUrl: fetched.finalUrl,
+        attemptCount: fetchResult.attemptCount,
+        recoveredAfterRetry: fetchResult.recoveredAfterRetry,
+        internalDetails: `HTTP ${fetched.statusCode}`,
+      }), item);
+      return;
+    }
+    if (!fetched.html.trim()) {
+      await recordFailure(failureForCode('EMPTY_RESPONSE', {
+        affectedUrl: fetched.finalUrl,
+        attemptCount: fetchResult.attemptCount,
+        recoveredAfterRetry: fetchResult.recoveredAfterRetry,
+      }), item);
+      return;
+    }
+    completedChecks += 1;
 
     if (!audit.finalUrl) {
       await writeProgress({ finalUrl: fetched.finalUrl });
@@ -370,20 +520,27 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
     await ensureNotCancelled(audit.id);
     const analysisStartedAt = Date.now();
     await writeProgress({
-      currentPhase: 'Running SEO checks',
+      currentPhase: 'Reviewing technical signals',
       currentUrl: fetched.finalUrl,
       currentCheck: 'SEO checks',
       progress: 55 + Math.floor((pages.length / Math.max(scheduled.size, 1)) * 20),
     }, { type: 'check_started', message: `Running SEO checks for ${fetched.finalUrl}` });
 
-    const seoIssues = fetched.parsed
-      ? runAllChecks(flatPageData)
-        .filter((issue) => isSeoIssueAllowedForProfile(config, issue))
-        .map((issue) => mapAuditIssue(issue, fetched.finalUrl))
-      : [];
+    const checkRun = fetched.parsed ? runAllChecksSafely(flatPageData) : { issues: [], unavailableChecks: [], completedChecks: 0 };
+    const seoIssues = checkRun.issues
+      .filter((issue) => isSeoIssueAllowedForProfile(config, issue))
+      .map((issue) => mapAuditIssue(issue, fetched.finalUrl));
     for (const issue of seoIssues) {
       await ensureNotCancelled(audit.id);
       await addIssue(issue);
+    }
+    completedChecks += checkRun.completedChecks;
+    for (const unavailable of checkRun.unavailableChecks) {
+      unavailableChecks.push(`${unavailable.checkTitle} on ${fetched.finalUrl}`);
+      await recordFailure(failureForCode('CHECK_UNAVAILABLE', {
+        affectedUrl: fetched.finalUrl,
+        internalDetails: `${unavailable.checkId}: ${unavailable.internalDetails}`,
+      }), item, false);
     }
     await writer.addEvent({
       type: 'check_completed',
@@ -395,12 +552,22 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
 
     await ensureNotCancelled(audit.id);
     await writeProgress({
-      currentPhase: 'Running passive security checks',
+      currentPhase: 'Reviewing passive security signals',
       currentUrl: fetched.finalUrl,
       currentCheck: 'Passive security checks',
       progress: 75 + Math.floor((pages.length / Math.max(scheduled.size, 1)) * 15),
     }, { type: 'check_started', message: `Running passive security checks for ${fetched.finalUrl}` });
-    const securityIssues = buildSecurityIssues(fetched);
+    let securityIssues: Omit<ResourceAuditIssue, 'id' | 'detectedAt'>[] = [];
+    try {
+      securityIssues = buildSecurityIssues(fetched);
+      completedChecks += 1;
+    } catch (error) {
+      unavailableChecks.push(`Passive security checks on ${fetched.finalUrl}`);
+      await recordFailure(failureForCode('CHECK_UNAVAILABLE', {
+        affectedUrl: fetched.finalUrl,
+        internalDetails: error instanceof Error ? error.message : String(error || 'Security check failure'),
+      }), item, false);
+    }
     for (const issue of securityIssues) {
       await ensureNotCancelled(audit.id);
       await addIssue(issue);
@@ -428,29 +595,42 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
       openGraphImage: fetched.parsed?.ogImage || '',
       themeColor: fetched.parsed?.themeColor || '',
       screenshotUrl: '',
+      fetchStatus: 'success',
+      failureCode: undefined,
+      failureCategory: undefined,
+      safeTitle: undefined,
+      safeExplanation: undefined,
+      suggestedAction: undefined,
+      retryable: false,
+      attemptCount: fetchResult.attemptCount,
+      recoveredAfterRetry: fetchResult.recoveredAfterRetry,
+      sourceUrl: item.discoveredFrom,
+      anchorText: '',
       wordCount: fetched.parsed?.wordCount || 0,
       crawlDepth: item.depth,
       issueCount: seoIssues.length + securityIssues.length,
       crawledAt: nowIso(),
     });
     pages.push(pageRecord);
+    analysedPages += 1;
 
     await writeProgress({
-      currentPhase: 'Crawling pages',
+      currentPhase: 'Checking page content',
       currentUrl: fetched.finalUrl,
       currentCheck: 'Page crawled',
-      pagesCrawled: pages.length,
+      pagesCrawled: analysedPages,
+      checksTotal: Math.max(1, scheduled.size) * (AUDIT_CHECK_COUNT + 1),
+      checksCompleted: completedChecks,
       progress: Math.min(90, 20 + Math.floor((pages.length / Math.max(scheduled.size, 1)) * 70)),
     }, {
       type: 'page_crawled',
-      message: `Crawled ${fetched.finalUrl}`,
+      message: `Page analysed: ${fetched.finalUrl}`,
       data: { responseTimeMs: fetched.responseTimeMs, statusCode: fetched.statusCode },
     });
 
     if (fetched.parsed) {
       for (const link of fetched.parsed.internalLinks) {
-        if (scheduled.size >= config.pageLimit) break;
-        await enqueuePage(link.href, item.depth + 1, fetched.finalUrl);
+        await enqueuePage(link.href, item.depth + 1, fetched.finalUrl, link.text);
       }
     }
   }
@@ -496,19 +676,59 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
   }
 
   if (durationLimitReached) {
-    await addIssue({
-      severity: 'info',
-      category: 'audit-coverage',
-      title: 'Audit time budget reached',
-      description: 'The audit stopped scheduling new pages after reaching its resource-safe time budget.',
+    await recordFailure(failureForCode('AUDIT_DEADLINE_EXCEEDED', {
       affectedUrl: audit.normalizedUrl,
-      evidence: `Stored ${pages.length} completed page checks before the time budget ended.`,
-      recommendation: 'Review the completed evidence or run a narrower audit scope.',
+      internalDetails: `Analysed ${analysedPages} pages before the deadline.`,
+    }), { url: audit.normalizedUrl, depth: 0, sourceUrls: [], anchorTexts: [] }, false);
+  }
+
+  const groupedFailures = new Map<string, AuditFailure[]>();
+  for (const failure of failures) groupedFailures.set(failure.code, [...(groupedFailures.get(failure.code) || []), failure]);
+  for (const grouped of groupedFailures.values()) {
+    const sample = grouped[0];
+    await writer.addEvent({
+      type: 'warning_summary',
+      message: failureProgressMessage(sample, grouped.length),
+      affectedUrl: sample.affectedUrl,
+      category: sample.category,
+      severity: sample.code === 'CHECK_UNAVAILABLE' || sample.code === 'AUDIT_DEADLINE_EXCEEDED' ? 'info' : 'medium',
+      data: {
+        count: grouped.length,
+        safeTitle: sample.safeTitle,
+        affectedUrls: grouped.map((failure) => failure.affectedUrl).filter(Boolean).slice(0, 100),
+      },
     });
   }
 
   await writer.flush();
   const issues = await auditRepository.getIssues(audit.id);
+  if (analysedPages === 0) {
+    const primaryFailure = failures[0] || failureForCode('UNKNOWN_TARGET_FAILURE', { affectedUrl: audit.normalizedUrl });
+    const completedAt = nowIso();
+    await writeProgress({
+      status: 'failed',
+      progress: 100,
+      currentPhase: 'Audit could not collect usable evidence',
+      currentUrl: null,
+      currentCheck: null,
+      pagesCrawled: 0,
+      checksTotal: Math.max(1, scheduled.size) * (AUDIT_CHECK_COUNT + 1),
+      checksCompleted: completedChecks,
+      warningCount: failures.length,
+      failureCounts: aggregateFailureCounts(failures),
+      error: `${primaryFailure.safeTitle}. ${primaryFailure.safeExplanation}`,
+      completedAt,
+      lockedBy: null,
+      lockedAt: null,
+      leaseExpiresAt: null,
+    }, {
+      type: 'audit_failed',
+      message: `${primaryFailure.safeTitle}. No page returned usable evidence, so the audit stopped safely.`,
+      affectedUrl: primaryFailure.affectedUrl,
+      progress: 100,
+    }, { force: true });
+    return;
+  }
   const categoryCounts: Record<string, number> = issues.reduce((acc: Record<string, number>, issue) => {
     const key = String(issue.category || 'other').toLowerCase();
     acc[key] = (acc[key] || 0) + 1;
@@ -535,6 +755,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
     pages,
     unavailableChecks: {
       mobile: ['Browser-rendered Core Web Vitals and device interaction metrics were not collected.'],
+      technical: unavailableChecks,
     },
     limitations: [
       `${config.label} limited the crawl to at most ${config.pageLimit} pages.`,
@@ -546,14 +767,14 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
 
   await writeProgress({
     progress: 92,
-    currentPhase: 'Scoring',
+    currentPhase: 'Preparing your report',
     currentUrl: null,
     currentCheck: 'Score calculation',
   }, { type: 'score_updated', message: `Overall score updated to ${overallScore}`, data: { overallScore } });
 
   await writeProgress({
     progress: 95,
-    currentPhase: 'Building report',
+    currentPhase: 'Preparing your report',
     currentCheck: 'Final report',
   }, { type: 'report_building', message: 'Building final report' });
 
@@ -562,6 +783,14 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
       ...toReportScoreRecord(transparentScore),
       pageTypeCounts,
       issueCategoryCounts: categoryCounts,
+      warningSummary: aggregateFailureCounts(failures),
+      coverage: {
+        pagesDiscovered: scheduled.size,
+        pagesAnalysed: analysedPages,
+        pagesFailed: pages.filter((page) => page.fetchStatus === 'failed').length,
+        pagesBlocked: pages.filter((page) => page.fetchStatus === 'blocked').length,
+        coveragePercent: Math.round((analysedPages / Math.max(1, scheduled.size)) * 100),
+      },
       deepAudit: config.deepSitemapExpansion ? {
         sitemapExpansion: true,
         pageCoverageLimit: config.pageLimit,
@@ -569,7 +798,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
         issueClusters: Object.keys(categoryCounts).length,
       } : null,
     },
-    summary: `${config.label}: audited ${pages.length} page${pages.length === 1 ? '' : 's'} and found ${issues.length} issue${issues.length === 1 ? '' : 's'}.`,
+    summary: `${config.label}: analysed ${analysedPages} page${analysedPages === 1 ? '' : 's'}, recorded ${failures.length} warning${failures.length === 1 ? '' : 's'}, and found ${issues.length} issue${issues.length === 1 ? '' : 's'}.`,
     topIssues: [...issues].sort((a, b) => {
       const weights = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
       return weights[b.severity] - weights[a.severity];
@@ -585,22 +814,27 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
   await auditRepository.setFinalReport(audit.id, report);
 
   const completedAt = nowIso();
+  const completedStatus = failures.length ? 'completed_with_warnings' : 'completed';
   await writeProgress({
-    status: 'completed',
+    status: completedStatus,
     progress: 100,
-    currentPhase: 'Completed',
+    currentPhase: failures.length ? 'Report ready with warnings' : 'Report ready',
     currentUrl: null,
     currentCheck: null,
-    pagesCrawled: pages.length,
-    checksTotal: pages.length * 2,
-    checksCompleted: pages.length * 2,
+    pagesCrawled: analysedPages,
+    checksTotal: Math.max(1, scheduled.size) * (AUDIT_CHECK_COUNT + 1),
+    checksCompleted: completedChecks,
+    warningCount: failures.length,
+    failureCounts: aggregateFailureCounts(failures),
     completedAt,
     lockedBy: null,
     lockedAt: null,
     leaseExpiresAt: null,
   }, {
-    type: 'audit_completed',
-    message: `Audit completed in ${Math.max(1, Math.round((Date.now() - new Date(workerStart).getTime()) / 1000))}s`,
+    type: failures.length ? 'audit_completed_with_warnings' : 'audit_completed',
+    message: failures.length
+      ? `Report generated with ${failures.length} warning${failures.length === 1 ? '' : 's'}.`
+      : `Audit completed in ${Math.max(1, Math.round((Date.now() - new Date(workerStart).getTime()) / 1000))}s`,
     progress: 100,
   }, { force: true });
 }
@@ -617,7 +851,7 @@ async function processAudit(audit: ResourceAuditDocument) {
   }
 }
 
-async function writeWorkerHeartbeat(state: AuditWorkerRuntimeState, patch?: Partial<Pick<AuditWorkerRuntimeState, 'status' | 'currentAuditId'>>) {
+async function writeWorkerHeartbeat(state: AuditWorkerRuntimeState, patch?: Partial<AuditWorkerRuntimeState>) {
   if (patch) updateWorkerState(state, patch);
   await auditRepository.upsertWorkerHeartbeat(buildWorkerHeartbeat(state));
 }
@@ -667,11 +901,18 @@ export async function runOneAudit(
     const latest = await auditRepository.getAudit(audit.id);
     if (latest?.status === 'cancelled') {
       console.log(`Audit ${audit.id} cancelled`);
-    } else if (latest?.status === 'completed') {
-      console.log(`Audit ${audit.id} completed`);
+    } else if (latest?.status === 'completed' || latest?.status === 'completed_with_warnings') {
+      console.log(`Audit ${audit.id} ${latest.status}`);
     }
     if (runtimeState) {
-      await writeWorkerHeartbeat(runtimeState, { status: 'idle', currentAuditId: null });
+      await writeWorkerHeartbeat(runtimeState, {
+        status: 'idle',
+        currentAuditId: null,
+        queuePollingStatus: 'active',
+        databaseConnected: true,
+        lastCompletedAuditId: latest?.status === 'completed' || latest?.status === 'completed_with_warnings' ? audit.id : runtimeState.lastCompletedAuditId,
+        lastCompletedAuditAt: latest?.status === 'completed' || latest?.status === 'completed_with_warnings' ? nowIso() : runtimeState.lastCompletedAuditAt,
+      });
     }
   } catch (error: any) {
     if (error?.message === 'AUDIT_CANCELLED') {
@@ -682,11 +923,26 @@ export async function runOneAudit(
       }
       return true;
     }
-    const message = error?.message || 'Unknown audit worker error';
+    const failure = classifyAuditFailure(error, { affectedUrl: audit.currentUrl || audit.normalizedUrl });
+    const safeMessage = `${failure.safeTitle}. ${failure.safeExplanation}`;
+    try {
+      await auditRepository.addInternalDiagnostic({
+        auditId: audit.id,
+        affectedUrl: failure.affectedUrl,
+        failureCode: failure.code,
+        phase: 'audit',
+        attemptCount: failure.attemptCount,
+        workerId,
+        internalDetails: failure.internalDetails,
+      });
+    } catch (diagnosticError) {
+      console.error(`Audit ${audit.id} diagnostic storage failed: ${diagnosticError instanceof Error ? diagnosticError.message : String(diagnosticError)}`);
+    }
     await auditRepository.updateAudit(audit.id, {
       status: 'failed',
-      error: message,
-      currentPhase: 'Failed',
+      progress: 100,
+      error: safeMessage,
+      currentPhase: 'Audit could not collect usable evidence',
       completedAt: nowIso(),
       lockedBy: null,
       lockedAt: null,
@@ -694,13 +950,13 @@ export async function runOneAudit(
     });
     await auditRepository.appendEvent(audit.id, {
       type: 'audit_failed',
-      message,
-      progress: (await auditRepository.getAudit(audit.id))?.progress,
+      message: failure.safeTitle,
+      affectedUrl: failure.affectedUrl,
+      progress: 100,
     });
-    console.error(`Audit ${audit.id} failed: ${message}`);
+    console.error(`Audit ${audit.id} failed [${failure.code}]: ${failure.internalDetails}`);
     if (runtimeState) {
-      await writeWorkerHeartbeat(runtimeState, { status: 'failed', currentAuditId: audit.id });
-      await writeWorkerHeartbeat(runtimeState, { status: 'idle', currentAuditId: null });
+      await writeWorkerHeartbeat(runtimeState, { status: 'idle', currentAuditId: null, queuePollingStatus: 'active', databaseConnected: true });
     }
   } finally {
     stopLeaseRefresher();
@@ -751,14 +1007,19 @@ export async function runAuditWorkerLoop() {
 
   workerReady = true;
   while (!shutdownRequested) {
-    await writeWorkerHeartbeat(state, { status: 'idle', currentAuditId: null });
-    const claimed = await runOneAudit(config.workerId, state);
-    if (!claimed) {
-      await wait(config.pollIntervalMs);
+    try {
+      await writeWorkerHeartbeat(state, { status: 'idle', currentAuditId: null, queuePollingStatus: 'active', databaseConnected: true, lastFatalWorkerError: null });
+      const claimed = await runOneAudit(config.workerId, state);
+      if (!claimed) await wait(config.pollIntervalMs);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error || 'Worker polling failure');
+      updateWorkerState(state, { status: 'idle', currentAuditId: null, queuePollingStatus: 'error', databaseConnected: false, lastFatalWorkerError: detail });
+      console.error(`Worker queue polling failed: ${detail}`);
+      await wait(Math.max(config.pollIntervalMs, 2_000));
     }
   }
 
-  await writeWorkerHeartbeat(state, { status: 'stopped', currentAuditId: null });
+  await writeWorkerHeartbeat(state, { status: 'stopped', currentAuditId: null, queuePollingStatus: 'stopped' });
   healthServer?.close();
 }
 

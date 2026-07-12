@@ -43,6 +43,7 @@ import {
 import type { AuditHistoryPage, ResourceAuditIssue, ResourceAuditLiveData, ResourceAuditPage } from '../lib/audit/resource-types';
 import { downloadAuditExport } from '../lib/http/download';
 import { safeJsonFetch } from '../lib/http/safe-json';
+import { isCompletedAuditStatus } from '../lib/audit/audit-time';
 import {
   AuditGrade,
   CategoryGradeCard,
@@ -228,7 +229,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
   const selectedHistory = history.find((entry) => entry.auditId === selectedId) || null;
   const groupedSites = useMemo(() => new Set(history.map((entry) => entry.normalizedUrl)).size, [history]);
   const scores = useMemo(() => extractReportScores(reportData?.finalReport?.scores), [reportData]);
-  const overallScore = scores.overall ?? (selectedHistory?.status === 'completed' ? selectedHistory.score : null);
+  const overallScore = scores.overall ?? (isCompletedAuditStatus(selectedHistory?.status) ? selectedHistory?.score ?? null : null);
   const scoreIsFinal = scores.overall != null;
   const issues = reportData?.latestIssues || selectedHistory?.topIssues || [];
   const pages = reportData?.latestPages || [];
@@ -327,7 +328,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
         icon={FileText}
         title={viewCopy.title}
         description={viewCopy.description}
-        actions={selectedHistory ? <StatusBadge tone={selectedHistory.status === 'completed' ? 'success' : 'warning'}>{selectedHistory.status}</StatusBadge> : undefined}
+        actions={selectedHistory ? <StatusBadge tone={isCompletedAuditStatus(selectedHistory.status) ? 'success' : 'warning'}>{selectedHistory.status.replace(/_/g, ' ')}</StatusBadge> : undefined}
       />
 
       <div id="report-history" className="scroll-mt-28">
@@ -347,11 +348,11 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
           </div>
           <div className="p-5 md:p-6">
             <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-              <AuditGrade score={overallScore} detail={scoreIsFinal ? 'Final audit engine score' : selectedHistory?.status === 'completed' ? 'Estimated from stored issue counts; final score unavailable' : `No final score: audit ${selectedHistory?.status || 'not completed'}`} />
+              <AuditGrade score={overallScore} detail={scoreIsFinal ? 'Final audit engine score' : isCompletedAuditStatus(selectedHistory?.status) ? 'Estimated from stored issue counts; final score unavailable' : `No final score: audit ${selectedHistory?.status || 'not completed'}`} />
               <div className="flex flex-wrap gap-2 no-print">
                 <button type="button" onClick={copyReportLink} className="quiet-button"><Share2 className="h-4 w-4" /> Copy link</button>
                 <button type="button" onClick={() => window.print()} className="quiet-button"><Printer className="h-4 w-4" /> Print</button>
-                <button type="button" onClick={() => handleAuditExport('pdf')} disabled={Boolean(actionLoading) || selectedHistory?.status !== 'completed'} className="trust-button">
+                <button type="button" onClick={() => handleAuditExport('pdf')} disabled={Boolean(actionLoading) || !isCompletedAuditStatus(selectedHistory?.status)} className="trust-button">
                   {actionLoading === 'pdf' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Download PDF
                 </button>
               </div>
@@ -465,7 +466,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
             )}
 
             {section.id === 'performance' && <p className="rounded-lg border border-border bg-muted/25 p-3 text-xs leading-5 text-muted-foreground">These are audit-time response and payload observations, not Google Core Web Vitals field data.</p>}
-            {section.id === 'mobile' && <p className="rounded-lg border border-border bg-muted/25 p-3 text-xs leading-5 text-muted-foreground">The current worker does not produce a mobile usability score or field-device metrics. Any collected viewport findings are listed below; otherwise this section remains explicitly unmeasured.</p>}
+            {section.id === 'mobile' && <p className="rounded-lg border border-border bg-muted/25 p-3 text-xs leading-5 text-muted-foreground">The current audit engine does not produce a mobile usability score or field-device metrics. Any collected viewport findings are listed below; otherwise this section remains explicitly unmeasured.</p>}
             {section.id === 'security' && <p className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-3 text-xs leading-5 text-muted-foreground">SEOIntel checks public HTTPS and browser protection signals only. It does not scan ports, submit attack payloads, brute-force credentials, or attempt exploitation.</p>}
 
             {sectionFindings.length ? (
@@ -554,7 +555,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
             <div>
               <div className="flex items-center gap-3"><Printer className="h-5 w-5 text-indigo-600" /><h3 className="font-semibold">Client report</h3></div>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">Structured PDF for entitled completed audits, or the browser print layout.</p>
-              <div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => handleAuditExport('pdf')} disabled={Boolean(actionLoading) || selectedHistory?.status !== 'completed'} className="trust-button px-3 py-2">PDF</button><button type="button" onClick={() => window.print()} className="quiet-button px-3 py-2">Print</button></div>
+              <div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => handleAuditExport('pdf')} disabled={Boolean(actionLoading) || !isCompletedAuditStatus(selectedHistory?.status)} className="trust-button px-3 py-2">PDF</button><button type="button" onClick={() => window.print()} className="quiet-button px-3 py-2">Print</button></div>
             </div>
           </div>
         </SurfaceCard>

@@ -488,7 +488,7 @@ export function AuditStageTimeline({
   status,
 }: {
   progress: number;
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  status: 'queued' | 'running' | 'completed' | 'completed_with_warnings' | 'failed' | 'cancelled';
 }) {
   const stages = [
     { label: 'Prepare', threshold: 5 },
@@ -513,7 +513,7 @@ export function AuditStageTimeline({
         <div className="absolute left-[8%] right-[8%] top-3 hidden h-0.5 bg-border sm:block" />
         {stages.map((stage, index) => {
           const previousThreshold = index === 0 ? 0 : stages[index - 1].threshold;
-          const isDone = status === 'completed' || safeProgress >= stage.threshold;
+          const isDone = status === 'completed' || status === 'completed_with_warnings' || safeProgress >= stage.threshold;
           const isActive = !isDone && status === 'running' && safeProgress >= previousThreshold;
           const isStopped = status === 'failed' || status === 'cancelled';
           return (

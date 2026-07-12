@@ -24058,96 +24058,130 @@ var init_http_hardening = __esm({
   }
 });
 
-// src/lib/seo/url-utils.ts
-function isPrivateHostname(hostname) {
-  const lower = hostname.toLowerCase();
-  if (lower === "localhost" || lower.endsWith(".local")) return true;
-  if (/^10\./.test(lower)) return true;
-  if (/^127\./.test(lower)) return true;
-  if (/^169\.254\./.test(lower)) return true;
-  if (/^192\.168\./.test(lower)) return true;
-  if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(lower)) return true;
-  if (lower === "::1" || lower.startsWith("fc") || lower.startsWith("fd")) return true;
-  return false;
-}
-function hasLikelyRegistrableHost(hostname) {
-  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname)) return true;
-  if (!hostname || hostname.startsWith(".") || hostname.endsWith(".")) return false;
-  if (!hostname.includes(".")) return false;
-  const labels = hostname.split(".");
-  const tld = labels[labels.length - 1];
-  return labels.every(Boolean) && /^[a-z0-9-]+$/i.test(tld) && tld.length >= 2;
-}
-function normalizeUserUrl(input) {
-  const trimmed = input.trim();
-  if (!trimmed) {
-    return {
-      input: trimmed,
-      normalizedUrl: "",
-      origin: "",
-      hostname: "",
-      protocol: "https:",
-      pathname: "",
-      isValid: false,
-      error: "URL is required"
-    };
+// src/lib/url/normalize-audit-target.ts
+function cleanAuditInput(value) {
+  let cleaned = String(value || "").replace(/[\s\u00a0\u2000-\u200b\u2028\u2029\u202f\u205f\u3000\ufeff]+/gu, " ").trim();
+  const pairs = [['"', '"'], ["'", "'"], ["\u201C", "\u201D"], ["\u2018", "\u2019"]];
+  for (const [open, close] of pairs) {
+    if (cleaned.startsWith(open) && cleaned.endsWith(close) && cleaned.length > 1) {
+      cleaned = cleaned.slice(open.length, -close.length).trim();
+      break;
+    }
   }
-  if (BLOCKED_PROTOCOLS.some((protocol) => trimmed.toLowerCase().startsWith(protocol))) {
-    return {
-      input: trimmed,
-      normalizedUrl: "",
-      origin: "",
-      hostname: "",
-      protocol: "https:",
-      pathname: "",
-      isValid: false,
-      error: "Only HTTP and HTTPS URLs are supported"
-    };
+  return cleaned;
+}
+function ipv4Number(address) {
+  const parts = address.split(".").map(Number);
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return null;
+  return (parts[0] << 24 >>> 0) + (parts[1] << 16) + (parts[2] << 8) + parts[3] >>> 0;
+}
+function inIpv4Cidr(address, network, prefix) {
+  const value = ipv4Number(address);
+  const base = ipv4Number(network);
+  if (value == null || base == null) return false;
+  const mask = prefix === 0 ? 0 : 4294967295 << 32 - prefix >>> 0;
+  return (value & mask) === (base & mask);
+}
+function isClearlyPrivateAuditHostname(hostname) {
+  const value = hostname.toLowerCase().replace(/^\[|\]$/g, "").split("%")[0];
+  if (value === "localhost" || value.endsWith(".localhost") || value.endsWith(".local") || value.endsWith(".internal") || value.endsWith(".lan")) return true;
+  const mapped = value.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1];
+  if (mapped) return isClearlyPrivateAuditHostname(mapped);
+  if (ipv4Number(value) != null) {
+    return [
+      ["0.0.0.0", 8],
+      ["10.0.0.0", 8],
+      ["100.64.0.0", 10],
+      ["127.0.0.0", 8],
+      ["169.254.0.0", 16],
+      ["172.16.0.0", 12],
+      ["192.0.0.0", 24],
+      ["192.0.2.0", 24],
+      ["192.168.0.0", 16],
+      ["198.18.0.0", 15],
+      ["198.51.100.0", 24],
+      ["203.0.113.0", 24],
+      ["224.0.0.0", 4],
+      ["240.0.0.0", 4]
+    ].some(([network, prefix]) => inIpv4Cidr(value, String(network), Number(prefix)));
   }
-  let withProtocol = trimmed;
-  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
-    withProtocol = `https://${trimmed}`;
+  return value === "::" || value === "::1" || /^(?:fc|fd)/.test(value) || /^fe[89ab]/.test(value) || /^ff/.test(value) || /^2001:db8(?:[:]|$)/.test(value);
+}
+function hasPublicDomainShape(hostname) {
+  if (ipv4Number(hostname) != null || hostname.includes(":")) return true;
+  if (!hostname || hostname.startsWith(".") || hostname.endsWith(".") || !hostname.includes(".")) return false;
+  return hostname.split(".").every((label) => label.length > 0 && label.length <= 63 && /^[a-z0-9-]+$/i.test(label) && !label.startsWith("-") && !label.endsWith("-"));
+}
+function invalid(input, error, errorCode) {
+  return { input, ...EMPTY_RESULT, error, errorCode };
+}
+function normalizeAuditTarget(rawInput, options = {}) {
+  const input = cleanAuditInput(rawInput);
+  if (!input) return invalid(input, "Enter a valid public website or domain.", "REQUIRED");
+  const explicitScheme = input.match(/^([a-z][a-z0-9+.-]*):/i)?.[1]?.toLowerCase();
+  if (explicitScheme && explicitScheme !== "http" && explicitScheme !== "https") {
+    return invalid(input, "Only public HTTP and HTTPS websites can be audited.", "UNSUPPORTED_SCHEME");
   }
   try {
-    const parsed = new URL(withProtocol);
+    const parsed = new URL(explicitScheme ? input : `https://${input}`);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      throw new Error("Only HTTP and HTTPS URLs are supported");
+      return invalid(input, "Only public HTTP and HTTPS websites can be audited.", "UNSUPPORTED_SCHEME");
     }
-    if (!hasLikelyRegistrableHost(parsed.hostname)) {
-      throw new Error("Enter a valid public domain");
+    if (parsed.username || parsed.password) {
+      return invalid(input, "Website addresses containing usernames or passwords cannot be audited.", "EMBEDDED_CREDENTIALS");
     }
-    if (typeof process !== "undefined" && process.env.NODE_ENV === "production" && isPrivateHostname(parsed.hostname)) {
-      throw new Error("Private and localhost targets are not allowed in production");
+    parsed.hostname = parsed.hostname.toLowerCase();
+    if (!hasPublicDomainShape(parsed.hostname)) {
+      return invalid(input, "The domain name could not be understood.", "INVALID_DOMAIN");
     }
+    if (!options.allowPrivateForTesting && isClearlyPrivateAuditHostname(parsed.hostname)) {
+      return invalid(input, "This address points to a private network and cannot be audited.", "PRIVATE_NETWORK");
+    }
+    if (parsed.protocol === "https:" && parsed.port === "443" || parsed.protocol === "http:" && parsed.port === "80") parsed.port = "";
     parsed.hash = "";
-    parsed.username = "";
-    parsed.password = "";
     return {
-      input: trimmed,
-      normalizedUrl: parsed.href,
+      input,
+      normalizedUrl: parsed.toString(),
       origin: parsed.origin,
       hostname: parsed.hostname,
       protocol: parsed.protocol,
       pathname: parsed.pathname,
       isValid: true
     };
-  } catch (error) {
-    return {
-      input: trimmed,
+  } catch {
+    return invalid(input, "The domain name could not be understood.", "INVALID_DOMAIN");
+  }
+}
+var EMPTY_RESULT;
+var init_normalize_audit_target = __esm({
+  "src/lib/url/normalize-audit-target.ts"() {
+    EMPTY_RESULT = {
       normalizedUrl: "",
       origin: "",
       hostname: "",
       protocol: "https:",
       pathname: "",
-      isValid: false,
-      error: error.message || "Invalid URL"
+      isValid: false
     };
   }
+});
+
+// src/lib/seo/url-utils.ts
+function normalizeUserUrl(input, options) {
+  return normalizeAuditTarget(input, options);
 }
-var BLOCKED_PROTOCOLS;
 var init_url_utils = __esm({
   "src/lib/seo/url-utils.ts"() {
-    BLOCKED_PROTOCOLS = ["javascript:", "data:", "file:", "ftp:"];
+    init_normalize_audit_target();
+  }
+});
+
+// src/lib/audit/audit-time.ts
+function isCompletedAuditStatus(status) {
+  return status === "completed" || status === "completed_with_warnings";
+}
+var init_audit_time = __esm({
+  "src/lib/audit/audit-time.ts"() {
   }
 });
 
@@ -46171,7 +46205,13 @@ function toWorkerHeartbeat(row) {
     version: String(value.version || "unknown"),
     runtime: value.runtime || void 0,
     supportedModes: Array.isArray(value.supportedModes) ? value.supportedModes : void 0,
-    deepAuditEnabled: typeof value.deepAuditEnabled === "boolean" ? value.deepAuditEnabled : void 0
+    deepAuditEnabled: typeof value.deepAuditEnabled === "boolean" ? value.deepAuditEnabled : void 0,
+    queuePollingStatus: value.queuePollingStatus || void 0,
+    databaseConnected: typeof value.databaseConnected === "boolean" ? value.databaseConnected : void 0,
+    lastCompletedAuditId: value.lastCompletedAuditId ?? null,
+    lastCompletedAuditAt: value.lastCompletedAuditAt ?? null,
+    lastFatalWorkerError: value.lastFatalWorkerError ?? null,
+    maintenanceMode: Boolean(value.maintenanceMode)
   };
 }
 function assertNoError(error, action) {
@@ -46239,7 +46279,9 @@ function toAuditDocument(row) {
     lockedBy: row.locked_by ?? null,
     lockedAt: row.locked_at ?? null,
     leaseExpiresAt: row.lease_expires_at ?? null,
-    usedHttpFallback: row.used_http_fallback ?? void 0
+    usedHttpFallback: row.used_http_fallback ?? void 0,
+    warningCount: row.warning_count ?? 0,
+    failureCounts: row.failure_counts ?? {}
   };
 }
 function auditToRow(audit) {
@@ -46331,6 +46373,8 @@ function auditPatchToRow(patch) {
   if ("lockedAt" in patch) row.locked_at = patch.lockedAt;
   if ("leaseExpiresAt" in patch) row.lease_expires_at = patch.leaseExpiresAt;
   if ("usedHttpFallback" in patch) row.used_http_fallback = patch.usedHttpFallback;
+  if ("warningCount" in patch) row.warning_count = patch.warningCount;
+  if ("failureCounts" in patch) row.failure_counts = patch.failureCounts;
   return row;
 }
 function toAuditEvent(row) {
@@ -46384,6 +46428,17 @@ function toAuditPage(row) {
     openGraphImage: row.open_graph_image ?? "",
     themeColor: row.theme_color ?? "",
     screenshotUrl: row.screenshot_url ?? "",
+    fetchStatus: row.fetch_status ?? "success",
+    failureCode: row.failure_code ?? void 0,
+    failureCategory: row.failure_category ?? void 0,
+    safeTitle: row.safe_title ?? void 0,
+    safeExplanation: row.safe_explanation ?? void 0,
+    suggestedAction: row.suggested_action ?? void 0,
+    retryable: row.retryable ?? false,
+    attemptCount: row.attempt_count ?? 1,
+    recoveredAfterRetry: row.recovered_after_retry ?? false,
+    sourceUrl: row.source_url ?? void 0,
+    anchorText: row.anchor_text ?? void 0,
     wordCount: row.word_count ?? 0,
     crawlDepth: row.crawl_depth ?? 0,
     issueCount: row.issue_count ?? 0,
@@ -46407,6 +46462,17 @@ function pageToRow(auditId, page) {
     open_graph_image: page.openGraphImage ?? "",
     theme_color: page.themeColor ?? "",
     screenshot_url: page.screenshotUrl ?? "",
+    fetch_status: page.fetchStatus ?? "success",
+    failure_code: page.failureCode ?? null,
+    failure_category: page.failureCategory ?? null,
+    safe_title: page.safeTitle ?? null,
+    safe_explanation: page.safeExplanation ?? null,
+    suggested_action: page.suggestedAction ?? null,
+    retryable: page.retryable ?? false,
+    attempt_count: page.attemptCount ?? 1,
+    recovered_after_retry: page.recoveredAfterRetry ?? false,
+    source_url: page.sourceUrl ?? null,
+    anchor_text: page.anchorText ?? null,
     word_count: page.wordCount,
     crawl_depth: page.crawlDepth,
     issue_count: page.issueCount,
@@ -46415,7 +46481,7 @@ function pageToRow(auditId, page) {
 }
 function pageToLegacyRow(auditId, page) {
   return Object.fromEntries(
-    Object.entries(pageToRow(auditId, page)).filter(([column]) => !PREVIEW_METADATA_COLUMNS.has(column))
+    Object.entries(pageToRow(auditId, page)).filter(([column]) => !PREVIEW_METADATA_COLUMNS.has(column) && !RESILIENCE_PAGE_COLUMNS.has(column))
   );
 }
 function isMissingPreviewMetadataColumn(error) {
@@ -46425,7 +46491,7 @@ function isMissingPreviewMetadataColumn(error) {
     "details" in error ? String(error.details) : "",
     "hint" in error ? String(error.hint) : ""
   ].join(" ").toLowerCase();
-  return Array.from(PREVIEW_METADATA_COLUMNS).some((column) => details.includes(column));
+  return [...PREVIEW_METADATA_COLUMNS, ...RESILIENCE_PAGE_COLUMNS].some((column) => details.includes(column));
 }
 async function upsertAuditPages(client, auditId, pages) {
   const result = await client.from("audit_pages").upsert(pages.map((page) => pageToRow(auditId, page)), { onConflict: "id" });
@@ -46446,6 +46512,11 @@ function toAuditIssue(row) {
     affectedUrl: row.affected_url,
     evidence: row.evidence ?? "",
     recommendation: row.recommendation ?? "",
+    checkId: row.check_id ?? void 0,
+    failureCode: row.failure_code ?? void 0,
+    findingKey: row.finding_key ?? void 0,
+    sourceUrls: Array.isArray(row.source_urls) ? row.source_urls : [],
+    affectedPageCount: row.affected_page_count ?? 1,
     detectedAt: row.detected_at
   };
 }
@@ -46460,8 +46531,31 @@ function issueToRow(auditId, issue) {
     affected_url: issue.affectedUrl,
     evidence: issue.evidence,
     recommendation: issue.recommendation,
+    check_id: issue.checkId ?? null,
+    failure_code: issue.failureCode ?? null,
+    finding_key: issue.findingKey ?? null,
+    source_urls: issue.sourceUrls ?? [],
+    affected_page_count: issue.affectedPageCount ?? 1,
     detected_at: issue.detectedAt
   };
+}
+function issueToLegacyRow(auditId, issue) {
+  return Object.fromEntries(Object.entries(issueToRow(auditId, issue)).filter(([column]) => !RESILIENCE_ISSUE_COLUMNS.has(column)));
+}
+function errorText(error) {
+  if (!error || typeof error !== "object") return String(error || "");
+  return ["message", "details", "hint"].map((key) => key in error ? String(error[key]) : "").join(" ").toLowerCase();
+}
+function isMissingResilienceSchema(error) {
+  const text = errorText(error);
+  return [...RESILIENCE_PAGE_COLUMNS, ...RESILIENCE_ISSUE_COLUMNS, "warning_count", "failure_counts", "audit_diagnostics"].some((column) => text.includes(column)) || /violates check constraint.*status/i.test(text);
+}
+async function insertAuditIssues(client, auditId, issues) {
+  const result = await client.from("audit_issues").insert(issues.map((issue) => issueToRow(auditId, issue)));
+  if (!result.error) return;
+  if (!isMissingResilienceSchema(result.error)) assertNoError(result.error, "Append audit issues");
+  const legacy = await client.from("audit_issues").insert(issues.map((issue) => issueToLegacyRow(auditId, issue)));
+  assertNoError(legacy.error, "Append audit issues without resilience metadata");
 }
 function toAuditReport(row) {
   if (!row) return null;
@@ -46500,7 +46594,7 @@ function comparisonIssueKey(issue) {
   }
   return `${issue.category}|${issue.title}|${path}`.toLowerCase().replace(/\s+/g, " ").trim();
 }
-var PREVIEW_METADATA_COLUMNS, memory, auditRepository;
+var PREVIEW_METADATA_COLUMNS, RESILIENCE_PAGE_COLUMNS, RESILIENCE_ISSUE_COLUMNS, memory, auditRepository;
 var init_audit_repository = __esm({
   "src/lib/supabase/audit-repository.ts"() {
     init_resource_types();
@@ -46513,12 +46607,27 @@ var init_audit_repository = __esm({
       "theme_color",
       "screenshot_url"
     ]);
+    RESILIENCE_PAGE_COLUMNS = /* @__PURE__ */ new Set([
+      "fetch_status",
+      "failure_code",
+      "failure_category",
+      "safe_title",
+      "safe_explanation",
+      "suggested_action",
+      "retryable",
+      "attempt_count",
+      "recovered_after_retry",
+      "source_url",
+      "anchor_text"
+    ]);
+    RESILIENCE_ISSUE_COLUMNS = /* @__PURE__ */ new Set(["check_id", "failure_code", "finding_key", "source_urls", "affected_page_count"]);
     memory = {
       audits: /* @__PURE__ */ new Map(),
       events: /* @__PURE__ */ new Map(),
       pages: /* @__PURE__ */ new Map(),
       issues: /* @__PURE__ */ new Map(),
-      reports: /* @__PURE__ */ new Map()
+      reports: /* @__PURE__ */ new Map(),
+      diagnostics: /* @__PURE__ */ new Map()
     };
     auditRepository = {
       isSupabaseEnabled() {
@@ -46541,7 +46650,13 @@ var init_audit_repository = __esm({
           version: heartbeat.version || "unknown",
           runtime: heartbeat.runtime,
           supportedModes: heartbeat.supportedModes,
-          deepAuditEnabled: heartbeat.deepAuditEnabled
+          deepAuditEnabled: heartbeat.deepAuditEnabled,
+          queuePollingStatus: heartbeat.queuePollingStatus,
+          databaseConnected: heartbeat.databaseConnected,
+          lastCompletedAuditId: heartbeat.lastCompletedAuditId,
+          lastCompletedAuditAt: heartbeat.lastCompletedAuditAt,
+          lastFatalWorkerError: heartbeat.lastFatalWorkerError,
+          maintenanceMode: heartbeat.maintenanceMode
         };
         const { error } = await client.from("platform_settings").upsert(
           {
@@ -46565,6 +46680,28 @@ var init_audit_repository = __esm({
         const { data, error } = await client.from("audits").select("id,status,submitted_input,normalized_url,current_phase,locked_by,lease_expires_at,plan,requested_mode,effective_mode,queue_priority,processing_tier,error,created_at,updated_at").order("created_at", { ascending: false }).limit(limit);
         assertNoError(error, "Get latest audit diagnostics");
         return data ?? [];
+      },
+      async addInternalDiagnostic(input) {
+        const diagnostic = { ...input, createdAt: input.createdAt || nowIso() };
+        const client = getSupabaseAdminClient();
+        if (client) {
+          const result = await client.from("audit_diagnostics").insert({
+            audit_id: diagnostic.auditId,
+            affected_url: diagnostic.affectedUrl,
+            failure_code: diagnostic.failureCode,
+            phase: diagnostic.phase,
+            attempt_count: diagnostic.attemptCount,
+            request_duration_ms: diagnostic.requestDurationMs ?? null,
+            worker_id: diagnostic.workerId ?? null,
+            internal_details: diagnostic.internalDetails,
+            created_at: diagnostic.createdAt
+          });
+          if (result.error && !isMissingResilienceSchema(result.error)) assertNoError(result.error, "Store internal audit diagnostic");
+          return diagnostic;
+        }
+        const current = memory.diagnostics.get(input.auditId) ?? [];
+        memory.diagnostics.set(input.auditId, [...current, diagnostic].slice(-500));
+        return diagnostic;
       },
       async createAuditJob(input) {
         const id = randomUUID();
@@ -46615,7 +46752,9 @@ var init_audit_repository = __esm({
           error: null,
           lockedBy: null,
           lockedAt: null,
-          leaseExpiresAt: null
+          leaseExpiresAt: null,
+          warningCount: 0,
+          failureCounts: {}
         };
         const client = getSupabaseAdminClient();
         if (client) {
@@ -46691,8 +46830,17 @@ var init_audit_repository = __esm({
         const update = { ...patch, updatedAt: nowIso() };
         const client = getSupabaseAdminClient();
         if (client) {
-          const { error } = await client.from("audits").update(auditPatchToRow(update)).eq("id", id);
-          assertNoError(error, "Update audit job");
+          const result = await client.from("audits").update(auditPatchToRow(update)).eq("id", id);
+          if (result.error && isMissingResilienceSchema(result.error)) {
+            const legacyPatch = { ...update };
+            delete legacyPatch.warningCount;
+            delete legacyPatch.failureCounts;
+            if (legacyPatch.status === "completed_with_warnings") legacyPatch.status = "completed";
+            const legacyResult = await client.from("audits").update(auditPatchToRow(legacyPatch)).eq("id", id);
+            assertNoError(legacyResult.error, "Update audit job without resilience metadata");
+            return;
+          }
+          assertNoError(result.error, "Update audit job");
           return;
         }
         const current = memory.audits.get(id);
@@ -46862,6 +47010,11 @@ var init_audit_repository = __esm({
           affectedUrl: issue.affectedUrl,
           evidence: issue.evidence,
           recommendation: issue.recommendation,
+          checkId: issue.checkId,
+          failureCode: issue.failureCode,
+          findingKey: issue.findingKey,
+          sourceUrls: issue.sourceUrls,
+          affectedPageCount: issue.affectedPageCount,
           detectedAt: issue.detectedAt || nowIso()
         };
         const client = getSupabaseAdminClient();
@@ -46871,8 +47024,7 @@ var init_audit_repository = __esm({
           if ((countResult.count ?? 0) >= AUDIT_LIMITS.maxIssues) {
             return null;
           }
-          const { error } = await client.from("audit_issues").insert(issueToRow(auditId, fullIssue));
-          assertNoError(error, "Add audit issue");
+          await insertAuditIssues(client, auditId, [fullIssue]);
         } else {
           const issues2 = memory.issues.get(auditId) ?? [];
           if (issues2.length >= AUDIT_LIMITS.maxIssues) {
@@ -46916,6 +47068,11 @@ var init_audit_repository = __esm({
           affectedUrl: issue.affectedUrl,
           evidence: issue.evidence,
           recommendation: issue.recommendation,
+          checkId: issue.checkId,
+          failureCode: issue.failureCode,
+          findingKey: issue.findingKey,
+          sourceUrls: issue.sourceUrls,
+          affectedPageCount: issue.affectedPageCount,
           detectedAt: issue.detectedAt || nowIso()
         }));
         const client = getSupabaseAdminClient();
@@ -46926,8 +47083,7 @@ var init_audit_repository = __esm({
           stored = fullIssues.slice(0, Math.max(0, AUDIT_LIMITS.maxIssues - (countResult.count ?? 0)));
           if (stored.length) {
             await withTransientRetry("Append audit issue batch", async () => {
-              const { error } = await client.from("audit_issues").insert(stored.map((issue) => issueToRow(auditId, issue)));
-              assertNoError(error, "Append audit issue batch");
+              await insertAuditIssues(client, auditId, stored);
             });
           }
           const severityRows = await client.from("audit_issues").select("severity").eq("audit_id", auditId).limit(AUDIT_LIMITS.maxIssues);
@@ -47146,7 +47302,7 @@ var init_audit_repository = __esm({
           ...next,
           status: "running",
           progress: Math.max(next.progress, 1),
-          currentPhase: "Audit worker started",
+          currentPhase: next.status === "running" ? "Recovering stale audit" : "Audit worker started",
           lockedBy: workerId,
           lockedAt: timestamp,
           leaseExpiresAt,
@@ -47155,6 +47311,10 @@ var init_audit_repository = __esm({
           updatedAt: timestamp
         };
         memory.audits.set(next.id, claimed);
+        if (next.status === "running") {
+          await this.prepareStaleAuditRetry(next.id, workerId);
+          return this.getAuditJob(next.id);
+        }
         return claimed;
       },
       async claimNextQueuedAudit(workerId, workerRuntime) {
@@ -59854,7 +60014,9 @@ function auditStartResponseData(audit, extras = {}) {
 }
 async function startQueuedAudit(req, res, defaultMode = "quick") {
   const { url, mode = defaultMode, projectId = null } = req.body || {};
-  const normalized = normalizeUserUrl(String(url || ""));
+  const normalized = normalizeUserUrl(String(url || ""), {
+    allowPrivateForTesting: process.env.SEOINTEL_ALLOW_PRIVATE_TEST_TARGETS === "true"
+  });
   if (!normalized.isValid) {
     return res.status(400).json({ success: false, error: normalized.error || "Invalid URL" });
   }
@@ -59939,6 +60101,7 @@ var init_index = __esm({
   "src/api/index.ts"() {
     import_express2 = __toESM(require_express2(), 1);
     init_url_utils();
+    init_audit_time();
     init_generator();
     init_clustering();
     init_content_brief();
@@ -60048,7 +60211,8 @@ var init_index = __esm({
       try {
         return startQueuedAudit(req, res, "quick");
       } catch (error) {
-        res.status(500).json({ success: false, error: error.message || "Internal Server Error" });
+        console.error("Audit status lookup failed", error);
+        res.status(500).json({ success: false, error: "The audit status is temporarily unavailable. Please try again." });
       }
     }));
     apiRouter.get("/audit/events/:id", asyncJsonRoute((req, res) => {
@@ -60100,7 +60264,8 @@ var init_index = __esm({
         if (!await canAccessAudit(req, liveData.audit)) return res.status(404).json({ success: false, error: "Audit not found" });
         res.json({ success: true, data: liveData });
       } catch (error) {
-        res.status(500).json({ success: false, error: error.message || "Internal Server Error" });
+        console.error("Audit result lookup failed", error);
+        res.status(500).json({ success: false, error: "The audit result is temporarily unavailable. Please try again." });
       }
     }));
     apiRouter.post("/audit/cancel/:id", asyncJsonRoute(async (req, res) => {
@@ -60123,7 +60288,7 @@ var init_index = __esm({
     apiRouter.get("/audits/history", asyncJsonRoute(async (req, res) => {
       const requester = await getRequester(req);
       if (!requester.userId) return res.status(401).json({ success: false, error: "Authentication required." });
-      const allowedStatuses = /* @__PURE__ */ new Set(["queued", "running", "completed", "failed", "cancelled"]);
+      const allowedStatuses = /* @__PURE__ */ new Set(["queued", "running", "completed", "completed_with_warnings", "failed", "cancelled"]);
       const requestedStatus = String(req.query.status || "");
       const status = allowedStatuses.has(requestedStatus) ? requestedStatus : void 0;
       const hostname = String(req.query.hostname || "").trim().toLowerCase().slice(0, 253) || void 0;
@@ -60158,7 +60323,7 @@ var init_index = __esm({
       if (!liveData.audit) return res.status(404).json({ success: false, error: "Audit not found" });
       if (!await canAccessAudit(req, liveData.audit)) return res.status(404).json({ success: false, error: "Audit not found" });
       if (format === "pdf") {
-        if (liveData.audit.status !== "completed") {
+        if (!isCompletedAuditStatus(liveData.audit.status)) {
           return res.status(409).json({ success: false, error: "PDF export is available after the audit completes." });
         }
         const profile = getAuditProfileForDocument(liveData.audit);

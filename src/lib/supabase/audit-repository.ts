@@ -31,6 +31,12 @@ export interface WorkerHeartbeat {
   runtime?: string;
   supportedModes?: string[];
   deepAuditEnabled?: boolean;
+  queuePollingStatus?: 'starting' | 'active' | 'error' | 'stopped';
+  databaseConnected?: boolean;
+  lastCompletedAuditId?: string | null;
+  lastCompletedAuditAt?: string | null;
+  lastFatalWorkerError?: string | null;
+  maintenanceMode?: boolean;
 }
 
 export interface AuditDiagnosticRow {
@@ -49,6 +55,18 @@ export interface AuditDiagnosticRow {
   error: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface AuditInternalDiagnostic {
+  auditId: string;
+  affectedUrl: string;
+  failureCode: string;
+  phase: string;
+  attemptCount: number;
+  requestDurationMs?: number | null;
+  workerId?: string | null;
+  internalDetails: string;
+  createdAt?: string;
 }
 
 function nowIso() {
@@ -93,6 +111,12 @@ function toWorkerHeartbeat(row: DbRow): WorkerHeartbeat {
     runtime: value.runtime || undefined,
     supportedModes: Array.isArray(value.supportedModes) ? value.supportedModes : undefined,
     deepAuditEnabled: typeof value.deepAuditEnabled === 'boolean' ? value.deepAuditEnabled : undefined,
+    queuePollingStatus: value.queuePollingStatus || undefined,
+    databaseConnected: typeof value.databaseConnected === 'boolean' ? value.databaseConnected : undefined,
+    lastCompletedAuditId: value.lastCompletedAuditId ?? null,
+    lastCompletedAuditAt: value.lastCompletedAuditAt ?? null,
+    lastFatalWorkerError: value.lastFatalWorkerError ?? null,
+    maintenanceMode: Boolean(value.maintenanceMode),
   };
 }
 
@@ -164,6 +188,8 @@ function toAuditDocument(row: DbRow | null | undefined): ResourceAuditDocument |
     lockedAt: row.locked_at ?? null,
     leaseExpiresAt: row.lease_expires_at ?? null,
     usedHttpFallback: row.used_http_fallback ?? undefined,
+    warningCount: row.warning_count ?? 0,
+    failureCounts: row.failure_counts ?? {},
   };
 }
 
@@ -257,6 +283,8 @@ function auditPatchToRow(patch: Partial<ResourceAuditDocument>) {
   if ('lockedAt' in patch) row.locked_at = patch.lockedAt;
   if ('leaseExpiresAt' in patch) row.lease_expires_at = patch.leaseExpiresAt;
   if ('usedHttpFallback' in patch) row.used_http_fallback = patch.usedHttpFallback;
+  if ('warningCount' in patch) row.warning_count = patch.warningCount;
+  if ('failureCounts' in patch) row.failure_counts = patch.failureCounts;
   return row;
 }
 
@@ -313,6 +341,17 @@ function toAuditPage(row: DbRow): ResourceAuditPage {
     openGraphImage: row.open_graph_image ?? '',
     themeColor: row.theme_color ?? '',
     screenshotUrl: row.screenshot_url ?? '',
+    fetchStatus: row.fetch_status ?? 'success',
+    failureCode: row.failure_code ?? undefined,
+    failureCategory: row.failure_category ?? undefined,
+    safeTitle: row.safe_title ?? undefined,
+    safeExplanation: row.safe_explanation ?? undefined,
+    suggestedAction: row.suggested_action ?? undefined,
+    retryable: row.retryable ?? false,
+    attemptCount: row.attempt_count ?? 1,
+    recoveredAfterRetry: row.recovered_after_retry ?? false,
+    sourceUrl: row.source_url ?? undefined,
+    anchorText: row.anchor_text ?? undefined,
     wordCount: row.word_count ?? 0,
     crawlDepth: row.crawl_depth ?? 0,
     issueCount: row.issue_count ?? 0,
@@ -337,6 +376,17 @@ function pageToRow(auditId: string, page: ResourceAuditPage) {
     open_graph_image: page.openGraphImage ?? '',
     theme_color: page.themeColor ?? '',
     screenshot_url: page.screenshotUrl ?? '',
+    fetch_status: page.fetchStatus ?? 'success',
+    failure_code: page.failureCode ?? null,
+    failure_category: page.failureCategory ?? null,
+    safe_title: page.safeTitle ?? null,
+    safe_explanation: page.safeExplanation ?? null,
+    suggested_action: page.suggestedAction ?? null,
+    retryable: page.retryable ?? false,
+    attempt_count: page.attemptCount ?? 1,
+    recovered_after_retry: page.recoveredAfterRetry ?? false,
+    source_url: page.sourceUrl ?? null,
+    anchor_text: page.anchorText ?? null,
     word_count: page.wordCount,
     crawl_depth: page.crawlDepth,
     issue_count: page.issueCount,
@@ -353,9 +403,14 @@ const PREVIEW_METADATA_COLUMNS = new Set([
   'screenshot_url',
 ]);
 
+const RESILIENCE_PAGE_COLUMNS = new Set([
+  'fetch_status', 'failure_code', 'failure_category', 'safe_title', 'safe_explanation',
+  'suggested_action', 'retryable', 'attempt_count', 'recovered_after_retry', 'source_url', 'anchor_text',
+]);
+
 function pageToLegacyRow(auditId: string, page: ResourceAuditPage) {
   return Object.fromEntries(
-    Object.entries(pageToRow(auditId, page)).filter(([column]) => !PREVIEW_METADATA_COLUMNS.has(column)),
+    Object.entries(pageToRow(auditId, page)).filter(([column]) => !PREVIEW_METADATA_COLUMNS.has(column) && !RESILIENCE_PAGE_COLUMNS.has(column)),
   );
 }
 
@@ -366,7 +421,7 @@ function isMissingPreviewMetadataColumn(error: unknown) {
     'details' in error ? String(error.details) : '',
     'hint' in error ? String(error.hint) : '',
   ].join(' ').toLowerCase();
-  return Array.from(PREVIEW_METADATA_COLUMNS).some((column) => details.includes(column));
+  return [...PREVIEW_METADATA_COLUMNS, ...RESILIENCE_PAGE_COLUMNS].some((column) => details.includes(column));
 }
 
 async function upsertAuditPages(
@@ -399,6 +454,11 @@ function toAuditIssue(row: DbRow): ResourceAuditIssue {
     affectedUrl: row.affected_url,
     evidence: row.evidence ?? '',
     recommendation: row.recommendation ?? '',
+    checkId: row.check_id ?? undefined,
+    failureCode: row.failure_code ?? undefined,
+    findingKey: row.finding_key ?? undefined,
+    sourceUrls: Array.isArray(row.source_urls) ? row.source_urls : [],
+    affectedPageCount: row.affected_page_count ?? 1,
     detectedAt: row.detected_at,
   };
 }
@@ -414,8 +474,42 @@ function issueToRow(auditId: string, issue: ResourceAuditIssue) {
     affected_url: issue.affectedUrl,
     evidence: issue.evidence,
     recommendation: issue.recommendation,
+    check_id: issue.checkId ?? null,
+    failure_code: issue.failureCode ?? null,
+    finding_key: issue.findingKey ?? null,
+    source_urls: issue.sourceUrls ?? [],
+    affected_page_count: issue.affectedPageCount ?? 1,
     detected_at: issue.detectedAt,
   };
+}
+
+const RESILIENCE_ISSUE_COLUMNS = new Set(['check_id', 'failure_code', 'finding_key', 'source_urls', 'affected_page_count']);
+
+function issueToLegacyRow(auditId: string, issue: ResourceAuditIssue) {
+  return Object.fromEntries(Object.entries(issueToRow(auditId, issue)).filter(([column]) => !RESILIENCE_ISSUE_COLUMNS.has(column)));
+}
+
+function errorText(error: unknown) {
+  if (!error || typeof error !== 'object') return String(error || '');
+  return ['message', 'details', 'hint'].map((key) => key in error ? String((error as DbRow)[key]) : '').join(' ').toLowerCase();
+}
+
+function isMissingResilienceSchema(error: unknown) {
+  const text = errorText(error);
+  return [...RESILIENCE_PAGE_COLUMNS, ...RESILIENCE_ISSUE_COLUMNS, 'warning_count', 'failure_counts', 'audit_diagnostics']
+    .some((column) => text.includes(column)) || /violates check constraint.*status/i.test(text);
+}
+
+async function insertAuditIssues(
+  client: NonNullable<ReturnType<typeof getSupabaseAdminClient>>,
+  auditId: string,
+  issues: ResourceAuditIssue[],
+) {
+  const result = await client.from('audit_issues').insert(issues.map((issue) => issueToRow(auditId, issue)));
+  if (!result.error) return;
+  if (!isMissingResilienceSchema(result.error)) assertNoError(result.error, 'Append audit issues');
+  const legacy = await client.from('audit_issues').insert(issues.map((issue) => issueToLegacyRow(auditId, issue)));
+  assertNoError(legacy.error, 'Append audit issues without resilience metadata');
 }
 
 function toAuditReport(row: DbRow | null | undefined): ResourceAuditReport | null {
@@ -465,6 +559,7 @@ const memory = {
   pages: new Map<string, ResourceAuditPage[]>(),
   issues: new Map<string, ResourceAuditIssue[]>(),
   reports: new Map<string, ResourceAuditReport>(),
+  diagnostics: new Map<string, AuditInternalDiagnostic[]>(),
 };
 
 export const auditRepository = {
@@ -492,6 +587,12 @@ export const auditRepository = {
       runtime: heartbeat.runtime,
       supportedModes: heartbeat.supportedModes,
       deepAuditEnabled: heartbeat.deepAuditEnabled,
+      queuePollingStatus: heartbeat.queuePollingStatus,
+      databaseConnected: heartbeat.databaseConnected,
+      lastCompletedAuditId: heartbeat.lastCompletedAuditId,
+      lastCompletedAuditAt: heartbeat.lastCompletedAuditAt,
+      lastFatalWorkerError: heartbeat.lastFatalWorkerError,
+      maintenanceMode: heartbeat.maintenanceMode,
     };
 
     const { error } = await client
@@ -528,6 +629,29 @@ export const auditRepository = {
       .limit(limit);
     assertNoError(error, 'Get latest audit diagnostics');
     return (data ?? []) as AuditDiagnosticRow[];
+  },
+
+  async addInternalDiagnostic(input: AuditInternalDiagnostic) {
+    const diagnostic = { ...input, createdAt: input.createdAt || nowIso() };
+    const client = getSupabaseAdminClient();
+    if (client) {
+      const result = await client.from('audit_diagnostics').insert({
+        audit_id: diagnostic.auditId,
+        affected_url: diagnostic.affectedUrl,
+        failure_code: diagnostic.failureCode,
+        phase: diagnostic.phase,
+        attempt_count: diagnostic.attemptCount,
+        request_duration_ms: diagnostic.requestDurationMs ?? null,
+        worker_id: diagnostic.workerId ?? null,
+        internal_details: diagnostic.internalDetails,
+        created_at: diagnostic.createdAt,
+      });
+      if (result.error && !isMissingResilienceSchema(result.error)) assertNoError(result.error, 'Store internal audit diagnostic');
+      return diagnostic;
+    }
+    const current = memory.diagnostics.get(input.auditId) ?? [];
+    memory.diagnostics.set(input.auditId, [...current, diagnostic].slice(-500));
+    return diagnostic;
   },
 
   async createAuditJob(input: {
@@ -595,6 +719,8 @@ export const auditRepository = {
       lockedBy: null,
       lockedAt: null,
       leaseExpiresAt: null,
+      warningCount: 0,
+      failureCounts: {},
     };
 
     const client = getSupabaseAdminClient();
@@ -708,8 +834,17 @@ export const auditRepository = {
     const update = { ...patch, updatedAt: nowIso() };
     const client = getSupabaseAdminClient();
     if (client) {
-      const { error } = await client.from('audits').update(auditPatchToRow(update)).eq('id', id);
-      assertNoError(error, 'Update audit job');
+      const result = await client.from('audits').update(auditPatchToRow(update)).eq('id', id);
+      if (result.error && isMissingResilienceSchema(result.error)) {
+        const legacyPatch = { ...update };
+        delete legacyPatch.warningCount;
+        delete legacyPatch.failureCounts;
+        if (legacyPatch.status === 'completed_with_warnings') legacyPatch.status = 'completed';
+        const legacyResult = await client.from('audits').update(auditPatchToRow(legacyPatch)).eq('id', id);
+        assertNoError(legacyResult.error, 'Update audit job without resilience metadata');
+        return;
+      }
+      assertNoError(result.error, 'Update audit job');
       return;
     }
     const current = memory.audits.get(id);
@@ -902,6 +1037,11 @@ export const auditRepository = {
       affectedUrl: issue.affectedUrl,
       evidence: issue.evidence,
       recommendation: issue.recommendation,
+      checkId: issue.checkId,
+      failureCode: issue.failureCode,
+      findingKey: issue.findingKey,
+      sourceUrls: issue.sourceUrls,
+      affectedPageCount: issue.affectedPageCount,
       detectedAt: issue.detectedAt || nowIso(),
     };
 
@@ -916,8 +1056,7 @@ export const auditRepository = {
         return null;
       }
 
-      const { error } = await client.from('audit_issues').insert(issueToRow(auditId, fullIssue));
-      assertNoError(error, 'Add audit issue');
+      await insertAuditIssues(client, auditId, [fullIssue]);
     } else {
       const issues = memory.issues.get(auditId) ?? [];
       if (issues.length >= AUDIT_LIMITS.maxIssues) {
@@ -966,6 +1105,11 @@ export const auditRepository = {
       affectedUrl: issue.affectedUrl,
       evidence: issue.evidence,
       recommendation: issue.recommendation,
+      checkId: issue.checkId,
+      failureCode: issue.failureCode,
+      findingKey: issue.findingKey,
+      sourceUrls: issue.sourceUrls,
+      affectedPageCount: issue.affectedPageCount,
       detectedAt: issue.detectedAt || nowIso(),
     }));
     const client = getSupabaseAdminClient();
@@ -976,8 +1120,7 @@ export const auditRepository = {
       stored = fullIssues.slice(0, Math.max(0, AUDIT_LIMITS.maxIssues - (countResult.count ?? 0)));
       if (stored.length) {
         await withTransientRetry('Append audit issue batch', async () => {
-          const { error } = await client.from('audit_issues').insert(stored.map((issue) => issueToRow(auditId, issue)));
-          assertNoError(error, 'Append audit issue batch');
+          await insertAuditIssues(client, auditId, stored);
         });
       }
       const severityRows = await client.from('audit_issues').select('severity').eq('audit_id', auditId).limit(AUDIT_LIMITS.maxIssues);
@@ -1271,7 +1414,7 @@ export const auditRepository = {
       ...next,
       status: 'running' as const,
       progress: Math.max(next.progress, 1),
-      currentPhase: 'Audit worker started',
+      currentPhase: next.status === 'running' ? 'Recovering stale audit' : 'Audit worker started',
       lockedBy: workerId,
       lockedAt: timestamp,
       leaseExpiresAt,
@@ -1280,6 +1423,10 @@ export const auditRepository = {
       updatedAt: timestamp,
     };
     memory.audits.set(next.id, claimed);
+    if (next.status === 'running') {
+      await this.prepareStaleAuditRetry(next.id, workerId);
+      return this.getAuditJob(next.id);
+    }
     return claimed;
   },
 

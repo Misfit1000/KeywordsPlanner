@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { createAuditSubmitGuard } from '../lib/api/audit-submit-guard';
+import { AUDIT_TARGET_INPUT_PROPS, normalizeAuditTarget } from '../lib/url/normalize-audit-target';
 import {
   CategoryScoreBar,
   FeatureProofCard,
@@ -218,7 +219,7 @@ const suiteFeatures: Array<{
     icon: Layers,
     eyebrow: 'Roadmap',
     title: 'Competitor Compare',
-    description: 'Competitor analysis remains a roadmap area until background worker support is available.',
+    description: 'Competitor analysis remains a roadmap area until background audit-engine support is available.',
     status: 'Coming soon',
     points: ['No serverless scan loops', 'Background audit processing', 'Clear expectation setting'],
     cta: 'Open dashboard',
@@ -403,13 +404,13 @@ const planCards: Array<{
     cta: 'Explore dashboard',
     action: 'dashboard',
     featured: true,
-    note: 'Uses the same worker-backed architecture with higher plan limits.',
+    note: 'Uses the same dedicated audit engine with higher plan limits.',
   },
   {
     title: 'Agency / Admin',
     price: 'Scale',
     description: 'For managing many sites and monitoring the audit engine.',
-    features: ['Agency deep-ready scans when the worker supports them', 'Admin queue visibility', 'User and plan controls', 'Audit diagnostics'],
+    features: ['Agency deep-ready scans when the audit engine supports them', 'Admin queue visibility', 'User and plan controls', 'Audit diagnostics'],
     cta: 'Open reports',
     action: 'reports',
     note: 'Built around the current admin and plan behavior.',
@@ -477,8 +478,8 @@ const faqs = [
     answer: 'Paid users unlock standard full audits with larger page limits, higher queue priority, richer report sections, and export-friendly summaries.',
   },
   {
-    question: 'Why is deep audit limited by worker capability?',
-    answer: 'Deep audits need always-on audit engine capacity. SEOIntel does not run long crawler loops inside Vercel API routes.',
+    question: 'Why is deep audit limited by audit-engine capacity?',
+    answer: 'Deep audits need always-on processing capacity. SEOIntel runs long scans in a dedicated audit engine so the website remains responsive.',
   },
   {
     question: 'Can I import ranking or backlink data?',
@@ -489,15 +490,24 @@ const faqs = [
 export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigate }: Props) {
   const [url, setUrl] = useState('');
   const [starting, setStarting] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
   const auditStartGuardRef = useRef(createAuditSubmitGuard());
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!url.trim() || !auditStartGuardRef.current.begin()) return;
+    const normalized = normalizeAuditTarget(url);
+    if (!normalized.isValid) {
+      setAuditError(normalized.error || 'Enter a valid public website or domain.');
+      return;
+    }
+    if (!auditStartGuardRef.current.begin()) return;
 
     setStarting(true);
+    setAuditError(null);
     try {
       await onStartAudit(url);
+    } catch (error) {
+      setAuditError(error instanceof Error ? error.message : 'The audit could not be started.');
     } finally {
       auditStartGuardRef.current.end();
       setStarting(false);
@@ -512,7 +522,7 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
         <div className="section-shell relative py-12 sm:py-16 lg:py-20">
           <div className="grid items-center gap-12 lg:grid-cols-[0.82fr_1.18fr] xl:gap-16">
             <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="min-w-0">
-              <StatusBadge tone="success">Worker-backed live audits</StatusBadge>
+              <StatusBadge tone="success">Dedicated live audit engine</StatusBadge>
               <h1 className="mt-6 max-w-2xl text-4xl font-bold leading-[1.08] sm:text-5xl lg:text-[3.55rem]">
                 Find SEO issues. Fix what matters.
               </h1>
@@ -520,17 +530,18 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
                 Audit on-page SEO, technical delivery, performance observations, and passive browser security in one clear, prioritized report.
               </p>
 
-              <form id="start-audit" onSubmit={handleSubmit} className="mt-8 flex max-w-xl flex-col gap-2 rounded-xl border border-border bg-card p-2 shadow-[0_12px_32px_-22px_rgba(49,104,245,0.55)] sm:flex-row" aria-label="Start a free website audit">
+              <form id="start-audit" onSubmit={handleSubmit} noValidate className="mt-8 flex max-w-xl flex-col gap-2 rounded-xl border border-border bg-card p-2 shadow-[0_12px_32px_-22px_rgba(49,104,245,0.55)] sm:flex-row" aria-label="Start a free website audit">
                 <label className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2">
                   <Globe className="h-5 w-5 shrink-0 text-muted-foreground" />
                   <span className="sr-only">Website URL</span>
-                  <input type="text" inputMode="url" autoComplete="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="Enter your website URL" className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-[var(--subtle-foreground)]" required />
+                  <input {...AUDIT_TARGET_INPUT_PROPS} autoComplete="url" value={url} onChange={(event) => setUrl(event.target.value)} className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-[var(--subtle-foreground)]" />
                 </label>
                 <button type="submit" disabled={starting || !url.trim()} className="trust-button min-w-40 px-5">
                   {starting ? 'Starting audit...' : 'Audit my website'}
                   {!starting && <ArrowRight className="h-4 w-4" />}
                 </button>
               </form>
+              {auditError && <p className="mt-3 max-w-xl text-sm font-medium text-red-600" role="alert">{auditError}</p>}
 
               <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3 text-sm text-muted-foreground">
                 <span className="inline-flex items-center gap-2"><CreditCard className="h-4 w-4 text-emerald-600" /> No credit card</span>
@@ -703,14 +714,14 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
       <section className="section-shell py-16 md:py-20">
         <SectionHeader
           eyebrow="How it works"
-          title="The audit stays live without running crawler loops inside Vercel requests."
-          description="Vercel handles the frontend and lightweight API routes. The separate audit engine performs the scan and writes progress so users can see what is happening."
+          title="The audit stays live while the website remains responsive."
+          description="A separate audit engine performs the scan and writes progress so users can see what is happening without tying up the website request."
         />
         <div className="mt-10 grid gap-4 md:grid-cols-4">
           {[
             { title: 'Enter a URL', text: 'Start with any public website URL.', icon: Globe },
             { title: 'Queue the audit', text: 'The request creates a safe job instead of crawling inside the page request.', icon: Layers },
-            { title: 'Scan in the audit engine', text: 'The worker checks pages and writes live progress events.', icon: Activity },
+            { title: 'Scan in the audit engine', text: 'The audit engine checks pages and writes live progress events.', icon: Activity },
             { title: 'Review the report', text: 'See top fixes, previews, and technical details when needed.', icon: FileText },
           ].map((step, index) => {
             const StepIcon = step.icon;
@@ -1170,7 +1181,7 @@ function SerpRankingDataPanel() {
 function PricingComparisonTable() {
   const rows = [
     ['Audit type', 'Quick audit', 'Full standard audit', 'Deep-ready workflow'],
-    ['Page limit', '5 pages', '25 pages', '75 agency / 100 admin when worker supports deep audit'],
+    ['Page limit', '5 pages', '25 pages', '75 agency / 100 admin when the audit engine supports deep audit'],
     ['Daily audits', '3', '25', '100 agency / 1000 admin'],
     ['Monthly audits', '30', '500', '3000 agency / 100000 admin'],
     ['Live progress', 'Yes', 'Yes', 'Yes'],

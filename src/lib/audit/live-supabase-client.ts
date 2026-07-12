@@ -69,6 +69,8 @@ function toAuditDocument(row: DbRow | null | undefined): ResourceAuditDocument |
     lockedAt: row.locked_at ?? null,
     leaseExpiresAt: row.lease_expires_at ?? null,
     usedHttpFallback: row.used_http_fallback ?? undefined,
+    warningCount: row.warning_count ?? 0,
+    failureCounts: row.failure_counts ?? {},
   };
 }
 
@@ -106,6 +108,17 @@ function toAuditPage(row: DbRow): ResourceAuditPage {
     openGraphImage: row.open_graph_image ?? '',
     themeColor: row.theme_color ?? '',
     screenshotUrl: row.screenshot_url ?? '',
+    fetchStatus: row.fetch_status ?? 'success',
+    failureCode: row.failure_code ?? undefined,
+    failureCategory: row.failure_category ?? undefined,
+    safeTitle: row.safe_title ?? undefined,
+    safeExplanation: row.safe_explanation ?? undefined,
+    suggestedAction: row.suggested_action ?? undefined,
+    retryable: row.retryable ?? false,
+    attemptCount: row.attempt_count ?? 1,
+    recoveredAfterRetry: row.recovered_after_retry ?? false,
+    sourceUrl: row.source_url ?? undefined,
+    anchorText: row.anchor_text ?? undefined,
     wordCount: row.word_count ?? 0,
     crawlDepth: row.crawl_depth ?? 0,
     issueCount: row.issue_count ?? 0,
@@ -123,6 +136,11 @@ function toAuditIssue(row: DbRow): ResourceAuditIssue {
     affectedUrl: row.affected_url,
     evidence: row.evidence ?? '',
     recommendation: row.recommendation ?? '',
+    checkId: row.check_id ?? undefined,
+    failureCode: row.failure_code ?? undefined,
+    findingKey: row.finding_key ?? undefined,
+    sourceUrls: Array.isArray(row.source_urls) ? row.source_urls : [],
+    affectedPageCount: row.affected_page_count ?? 1,
     detectedAt: row.detected_at,
   };
 }
@@ -214,7 +232,7 @@ export function subscribeToAuditLiveData(
       callback,
       onError,
       onConnectionChange,
-      'Supabase browser env vars are missing, so live updates are using HTTP polling.',
+      'Live updates are using automatic refresh.',
     );
   }
 
@@ -234,7 +252,7 @@ export function subscribeToAuditLiveData(
   onConnectionChange?.({
     transport: 'websocket',
     status: 'connecting',
-    message: 'Opening Supabase Realtime WebSocket for this audit.',
+    message: 'Opening live updates for this audit.',
   });
 
   const emitLiveData = () => {
@@ -314,40 +332,40 @@ export function subscribeToAuditLiveData(
         onConnectionChange?.({
           transport: 'websocket',
           status: 'connected',
-          message: 'Supabase Realtime WebSocket is connected.',
+          message: 'Live updates are connected.',
           lastUpdateAt: Date.now(),
         });
       }
       if (status === 'CHANNEL_ERROR') {
         websocketConnected = false;
-        onError?.(new Error('Supabase Realtime channel error'));
+        onError?.(new Error('Live updates are reconnecting.'));
         onConnectionChange?.({
           transport: 'websocket',
           status: 'error',
-          message: 'Supabase Realtime channel error. Falling back to HTTP polling.',
+          message: 'Live updates are reconnecting with automatic refresh.',
           lastUpdateAt: Date.now(),
         });
-        startPollingFallback('Supabase Realtime channel failed, so live updates are using HTTP polling.');
+        startPollingFallback('Live updates are using automatic refresh while the connection recovers.');
       }
       if (status === 'TIMED_OUT') {
         websocketConnected = false;
         onConnectionChange?.({
           transport: 'websocket',
           status: 'reconnecting',
-          message: 'Supabase Realtime timed out. Falling back to HTTP polling while it reconnects.',
+          message: 'Live updates timed out and are reconnecting with automatic refresh.',
           lastUpdateAt: Date.now(),
         });
-        startPollingFallback('Supabase Realtime timed out, so live updates are using HTTP polling.');
+        startPollingFallback('Live updates are using automatic refresh while the connection recovers.');
       }
       if (status === 'CLOSED' && !closed) {
         websocketConnected = false;
         onConnectionChange?.({
           transport: 'websocket',
           status: 'closed',
-          message: 'Supabase Realtime channel closed. Falling back to HTTP polling.',
+          message: 'Live updates disconnected and are reconnecting with automatic refresh.',
           lastUpdateAt: Date.now(),
         });
-        startPollingFallback('Supabase Realtime closed, so live updates are using HTTP polling.');
+        startPollingFallback('Live updates are using automatic refresh while the connection recovers.');
       }
     });
 

@@ -10,6 +10,7 @@ import { AuditResult } from '../lib/audit/types';
 import { useAuth } from '../contexts/AuthContext';
 import { SitePreviewSection } from './ui/visual-system';
 import { FormField, Notice, PageHeader, PageSection, Panel, SegmentedControl } from './ui/page-system';
+import { AUDIT_TARGET_INPUT_PROPS, normalizeAuditTarget } from '../lib/url/normalize-audit-target';
 
 export default function WebsiteAnalyzer() {
   const { user } = useAuth();
@@ -44,7 +45,11 @@ export default function WebsiteAnalyzer() {
 
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!url.trim()) return;
+    const normalized = normalizeAuditTarget(url);
+    if (!normalized.isValid) {
+      setError(normalized.error || 'Enter a valid public website or domain.');
+      return;
+    }
     if (!auditStartGuardRef.current.begin()) return;
 
     setLoading(true);
@@ -109,10 +114,10 @@ export default function WebsiteAnalyzer() {
       <PageHeader eyebrow="Website health" icon={Globe} title="Website scan" description="Review page delivery, redirects, response signals, search access, and the fixes that matter most." />
 
       <Panel className="p-5 sm:p-7">
-        <form onSubmit={handleAnalyze} className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+        <form onSubmit={handleAnalyze} noValidate className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_auto]">
             <FormField label="Website URL" htmlFor="website-scan-url">
-              <div className="relative"><Globe className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" /><input id="website-scan-url" type="url" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://example.com" className="suite-input pl-10" required /></div>
+              <div className="relative"><Globe className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" /><input id="website-scan-url" {...AUDIT_TARGET_INPUT_PROPS} value={url} onChange={e => setUrl(e.target.value)} className="suite-input pl-10" /></div>
             </FormField>
             <FormField label="Scan type">
               <SegmentedControl<'quick' | 'standard' | 'deep'> label="Scan type" value={mode} onChange={setMode} options={[{ value: 'quick', label: 'Quick' }, { value: 'standard', label: 'Full', disabled: !canUseStandard }, { value: 'deep', label: 'Deep', disabled: !canUseDeep }]} />

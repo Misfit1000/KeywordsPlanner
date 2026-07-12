@@ -50,16 +50,16 @@ export default function Settings() {
         <div className="space-y-10">
           <PageSection id="scan-preferences" title="Audit preferences" description="Local defaults for starting an audit. Server-enforced plan limits always take priority.">
             <Panel className="grid gap-5 p-5 sm:p-6 md:grid-cols-2">
-              <FormField label="Preferred full-audit page limit" htmlFor="max-pages" hint="Your active plan and worker capability may apply a lower limit.">
+              <FormField label="Preferred full-audit page limit" htmlFor="max-pages" hint="Your active plan and audit-engine capacity may apply a lower limit.">
                 <input id="max-pages" type="number" min={1} max={500} value={preferences.maxPages} onChange={(event) => setPreferences((value) => ({ ...value, maxPages: Number(event.target.value) }))} className="suite-input" />
               </FormField>
-              <FormField label="Audit engine label" htmlFor="engine-name" hint="Used only as a local display preference; it does not change worker identity.">
+              <FormField label="Audit engine label" htmlFor="engine-name" hint="Used only as a local display preference; it does not change the deployed engine identity.">
                 <input id="engine-name" type="text" value={preferences.engineName} onChange={(event) => setPreferences((value) => ({ ...value, engineName: event.target.value }))} className="suite-input" />
               </FormField>
             </Panel>
           </PageSection>
 
-          <PageSection id="account-plan" title="Account and plan" description="Usage, entitlements, and role changes are managed by the existing Supabase plan system.">
+          <PageSection id="account-plan" title="Account and plan" description="Review your current usage, plan access, and account role.">
             <Panel className="p-5 sm:p-6"><Notice tone="info">Open the Overview page to see current daily and monthly usage. Plan upgrades are shown only when a billing or administrator path is configured.</Notice></Panel>
           </PageSection>
 

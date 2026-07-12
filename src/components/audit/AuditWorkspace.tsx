@@ -4,7 +4,8 @@ import { NavLink } from 'react-router';
 import { auditWorkspacePath, type AuditWorkspaceSection } from '../../app/routes';
 import { API_ROUTES } from '../../lib/api/routes';
 import { getAuditAccessHeaders } from '../../lib/api/auth-headers';
-import { buildIssueInsight } from '../../lib/audit/client-insights';
+import { readChecklist, writeChecklist, type ChecklistStatus } from '../../lib/audit/client-insights';
+import { isCompletedAuditStatus } from '../../lib/audit/audit-time';
 import { classifyReportSection, extractReportScores, observedPageMetrics } from '../../lib/audit/report-insights';
 import type { AuditComparison, AuditHistoryPage, ResourceAuditIssue } from '../../lib/audit/resource-types';
 import { downloadAuditExport } from '../../lib/http/download';
@@ -12,6 +13,7 @@ import { safeJsonFetch } from '../../lib/http/safe-json';
 import { EmptyState, MetricCard, RadialScoreGauge, SeverityDistribution, SitePreviewSection, StatusBadge, SurfaceCard } from '../ui/visual-system';
 import { Notice, PageHeader } from '../ui/page-system';
 import { AuditWorkspaceProvider, useAuditWorkspace } from './AuditWorkspaceContext';
+import FindingWorkspace from './FindingWorkspace';
 
 const sections: Array<{ id: AuditWorkspaceSection; label: string }> = [
   { id: 'overview', label: 'Overview' },
@@ -33,26 +35,6 @@ const reportSectionForRoute: Partial<Record<AuditWorkspaceSection, ReturnType<ty
   security: 'security',
 };
 
-function FindingCard({ issue }: { issue: ResourceAuditIssue }) {
-  const insight = buildIssueInsight(issue);
-  return (
-    <SurfaceCard className="h-full p-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <StatusBadge tone={issue.severity === 'critical' ? 'danger' : issue.severity === 'high' || issue.severity === 'medium' ? 'warning' : 'neutral'}>{issue.severity} priority</StatusBadge>
-        <StatusBadge tone="accent">{issue.category}</StatusBadge>
-      </div>
-      <h3 className="mt-4 text-lg font-semibold">{issue.title}</h3>
-      <p className="mt-1 break-all text-xs text-muted-foreground">{issue.affectedUrl}</p>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <div className="rounded-lg border border-border bg-muted/25 p-3"><div className="text-xs font-semibold">What happened</div><p className="mt-1 text-sm leading-6 text-muted-foreground">{issue.description}</p></div>
-        <div className="rounded-lg border border-border bg-muted/25 p-3"><div className="text-xs font-semibold">Why it matters</div><p className="mt-1 text-sm leading-6 text-muted-foreground">{insight.whyItMatters}</p></div>
-        <div className="rounded-lg border border-border bg-muted/25 p-3 sm:col-span-2"><div className="text-xs font-semibold">How to fix it</div><p className="mt-1 text-sm leading-6 text-muted-foreground">{issue.recommendation}</p></div>
-      </div>
-      {issue.evidence && <details className="mt-3 rounded-lg border border-border px-3 py-2 text-sm"><summary className="cursor-pointer font-semibold">Technical evidence</summary><p className="mt-2 break-words text-muted-foreground">{issue.evidence}</p></details>}
-    </SurfaceCard>
-  );
-}
-
 function ComparisonPanel() {
   const { auditId, data } = useAuditWorkspace();
   const [history, setHistory] = useState<AuditHistoryPage | null>(null);
@@ -64,12 +46,13 @@ function ComparisonPanel() {
   useEffect(() => {
     if (!hostname) return;
     getAuditAccessHeaders()
-      .then((headers) => safeJsonFetch<any>(`${API_ROUTES.auditHistory}?hostname=${encodeURIComponent(hostname)}&status=completed&limit=50`, { headers }))
+      .then((headers) => safeJsonFetch<any>(`${API_ROUTES.auditHistory}?hostname=${encodeURIComponent(hostname)}&limit=50`, { headers }))
       .then((response) => {
         if (!response.success) return;
         const next = (response.data.data || response.data) as AuditHistoryPage;
-        setHistory(next);
-        setBaselineId(next.items.find((item) => item.audit.id !== auditId)?.audit.id || '');
+        const completedItems = next.items.filter((item) => isCompletedAuditStatus(item.audit.status));
+        setHistory({ ...next, items: completedItems });
+        setBaselineId(completedItems.find((item) => item.audit.id !== auditId)?.audit.id || '');
       })
       .catch(() => undefined);
   }, [auditId, hostname]);
@@ -90,7 +73,7 @@ function ComparisonPanel() {
   return (
     <SurfaceCard className="p-5 md:p-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div><h2 className="text-xl font-semibold">Compare with an earlier audit</h2><p className="mt-1 text-sm text-muted-foreground">See new, resolved, and persistent findings from stored Supabase results.</p></div>
+        <div><h2 className="text-xl font-semibold">Compare with an earlier audit</h2><p className="mt-1 text-sm text-muted-foreground">See new, resolved, and persistent findings from your stored audit history.</p></div>
         <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
           <select className="suite-input min-w-64" value={baselineId} onChange={(event) => setBaselineId(event.target.value)}>
             {history.items.filter((item) => item.audit.id !== auditId).map((item) => <option key={item.audit.id} value={item.audit.id}>{new Date(item.audit.createdAt).toLocaleString()} · {item.audit.effectiveMode}</option>)}
@@ -114,10 +97,18 @@ function AuditWorkspaceContent({ section }: { section: AuditWorkspaceSection }) 
   const scores = extractReportScores(data.finalReport?.scores);
   const metrics = observedPageMetrics(data.latestPages);
   const firstPage = data.latestPages[0];
+  const [checklist, setChecklist] = useState<Record<string, ChecklistStatus>>(() => readChecklist(auditId));
   const issues = useMemo(() => {
     const target = reportSectionForRoute[section];
     return target ? data.latestIssues.filter((issue) => classifyReportSection(issue) === target) : data.latestIssues;
   }, [data.latestIssues, section]);
+  const updateChecklist = (signature: string, status: ChecklistStatus) => {
+    setChecklist((current) => {
+      const next = { ...current, [signature]: status };
+      writeChecklist(auditId, next);
+      return next;
+    });
+  };
 
   if (loading) return <SurfaceCard className="flex items-center gap-3 p-6"><Loader2 className="h-5 w-5 animate-spin text-accent" /> Loading stored audit evidence...</SurfaceCard>;
   if (error) return <Notice tone="danger" title="Audit workspace could not load">{error}</Notice>;
@@ -125,7 +116,7 @@ function AuditWorkspaceContent({ section }: { section: AuditWorkspaceSection }) 
 
   return (
     <div className="w-full space-y-6 animate-rise">
-      <PageHeader eyebrow="Audit workspace" icon={Search} title={audit.hostname} description={`${audit.effectiveMode} audit · ${audit.pagesCrawled} pages checked · ${audit.status === 'completed' ? 'stored report' : connection.message}`} actions={<StatusBadge tone={audit.status === 'completed' ? 'success' : audit.status === 'failed' ? 'danger' : 'warning'}>{audit.status}</StatusBadge>} />
+      <PageHeader eyebrow="Audit workspace" icon={Search} title={audit.hostname} description={`${audit.effectiveMode} audit · ${audit.pagesCrawled} pages checked · ${isCompletedAuditStatus(audit.status) ? 'stored report' : connection.message}`} actions={<StatusBadge tone={isCompletedAuditStatus(audit.status) ? 'success' : audit.status === 'failed' ? 'danger' : 'warning'}>{audit.status.replace(/_/g, ' ')}</StatusBadge>} />
       <nav className="no-scrollbar flex gap-1 overflow-x-auto rounded-lg border border-border bg-card p-1" aria-label="Audit sections">
         {sections.map((item) => <NavLink key={item.id} to={auditWorkspacePath(auditId, item.id)} className={({ isActive }) => `shrink-0 rounded-md px-3 py-2 text-sm font-semibold transition-colors ${isActive ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>{item.label}</NavLink>)}
       </nav>
@@ -158,14 +149,14 @@ function AuditWorkspaceContent({ section }: { section: AuditWorkspaceSection }) 
           themeColor={firstPage.themeColor}
         />}
         <ComparisonPanel />
-        <section><h2 className="text-xl font-semibold">Top fixes first</h2><p className="mt-1 text-sm text-muted-foreground">Start with the highest-priority measured findings.</p><div className="mt-4 grid gap-4 xl:grid-cols-2">{data.latestIssues.slice().sort((a, b) => ['critical','high','medium','low','info'].indexOf(a.severity) - ['critical','high','medium','low','info'].indexOf(b.severity)).slice(0, 8).map((issue) => <FindingCard key={issue.id} issue={issue} />)}</div></section>
+        <FindingWorkspace issues={data.latestIssues} statuses={checklist} onStatusChange={updateChecklist} />
       </>}
 
       {section === 'pages' && <SurfaceCard className="overflow-hidden p-0"><div className="border-b border-border p-5"><h2 className="text-xl font-semibold">Pages checked</h2><p className="mt-1 text-sm text-muted-foreground">Actual page summaries stored by the audit engine.</p></div><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-muted/35 text-xs text-muted-foreground"><tr><th className="p-3">URL</th><th className="p-3">Status</th><th className="p-3">Response</th><th className="p-3">Size</th><th className="p-3">Findings</th></tr></thead><tbody>{data.latestPages.map((page) => <tr key={page.id} className="border-t border-border"><td className="max-w-xl p-3"><div className="truncate font-semibold">{page.title || 'Untitled page'}</div><div className="truncate text-xs text-muted-foreground">{page.url}</div></td><td className="p-3 tabular-nums">{page.statusCode}</td><td className="p-3 tabular-nums">{page.responseTimeMs} ms</td><td className="p-3 tabular-nums">{Math.round(page.pageSizeBytes / 1024)} KB</td><td className="p-3 tabular-nums">{page.issueCount}</td></tr>)}</tbody></table></div></SurfaceCard>}
 
-      {section !== 'overview' && section !== 'pages' && <section><div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-2xl font-semibold">{sections.find((item) => item.id === section)?.label}</h2><p className="mt-1 text-sm text-muted-foreground">Measured findings for this audit section. Technical evidence stays available inside each card.</p></div>{section === 'security' && <StatusBadge tone="accent">Passive observations only</StatusBadge>}</div>{issues.length ? <div className="mt-5 grid gap-4 xl:grid-cols-2">{issues.map((issue) => <FindingCard key={issue.id} issue={issue} />)}</div> : <SurfaceCard className="mt-5 p-6"><EmptyState icon={CheckCircle2} title="No stored findings in this section" description="This only reflects checks the audit engine measured; unavailable data is not invented." /></SurfaceCard>}</section>}
+      {section !== 'overview' && section !== 'pages' && <section><div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-2xl font-semibold">{sections.find((item) => item.id === section)?.label}</h2><p className="mt-1 text-sm text-muted-foreground">Measured findings for this audit section. Open a row for evidence and next steps.</p></div>{section === 'security' && <StatusBadge tone="accent">Passive observations only</StatusBadge>}</div>{issues.length ? <div className="mt-5"><FindingWorkspace issues={issues} statuses={checklist} onStatusChange={updateChecklist} /></div> : <SurfaceCard className="mt-5 p-6"><EmptyState icon={CheckCircle2} title="No stored findings in this section" description="This only reflects checks the audit engine measured; unavailable data is not invented." /></SurfaceCard>}</section>}
 
-      <div className="flex flex-wrap gap-2 border-t border-border pt-5"><button type="button" className="trust-button" onClick={() => downloadAuditExport(auditId, 'pdf')} disabled={audit.status !== 'completed'}><FileDown className="h-4 w-4" /> Download PDF</button><button type="button" className="quiet-button" onClick={() => downloadAuditExport(auditId, 'json')}><FileDown className="h-4 w-4" /> Export JSON</button></div>
+      <div className="flex flex-wrap gap-2 border-t border-border pt-5"><button type="button" className="trust-button" onClick={() => downloadAuditExport(auditId, 'pdf')} disabled={!isCompletedAuditStatus(audit.status)}><FileDown className="h-4 w-4" /> Download PDF</button><button type="button" className="quiet-button" onClick={() => downloadAuditExport(auditId, 'json')}><FileDown className="h-4 w-4" /> Export JSON</button></div>
     </div>
   );
 }
