@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Activity, AlertTriangle, BookOpen, Database, Loader2, RefreshCw, Search, Settings, ShieldAlert, SlidersHorizontal, Users, Wifi } from 'lucide-react';
+import { Activity, AlertTriangle, BarChart3, BookOpen, CheckCircle2, Clock3, Database, Gauge, Loader2, RefreshCw, Search, Settings, ShieldAlert, SlidersHorizontal, Users, Wifi, XCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import {
   getAdminActions,
@@ -63,6 +63,12 @@ export default function AdminDashboard() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<AdminTab>(tabFromPath);
 
+  useEffect(() => {
+    const syncTab = () => setActiveTab(tabFromPath());
+    window.addEventListener('popstate', syncTab);
+    return () => window.removeEventListener('popstate', syncTab);
+  }, []);
+
   if (!user || user.role !== 'admin') {
     return (
       <div className="mx-auto w-full max-w-3xl space-y-8 py-16">
@@ -78,17 +84,18 @@ export default function AdminDashboard() {
   };
 
   return (
-    <div className="space-y-8 animate-rise">
-      <PageHeader eyebrow="Operations" icon={Activity} title="Admin operations" description="Manage users, plans, audits, publishing, audit engine health, and safe platform settings from measured platform data." />
+    <div className="space-y-7 animate-rise">
+      <PageHeader eyebrow="Operations" icon={Activity} title="Admin control center" description="Monitor the audit platform, manage access and plans, recover queued work, and publish reviewed guidance." metadata={<><span className="suite-chip"><ShieldAlert className="h-3.5 w-3.5" /> Server-verified admin</span><span className="suite-chip">{tabs.find((tab) => tab.id === activeTab)?.label}</span></>} />
 
-      <UiPanel className="flex max-w-full flex-wrap gap-2 p-2" as="nav">
+      <UiPanel className="sticky top-[5rem] z-20 flex max-w-full gap-1 overflow-x-auto p-1.5" as="nav">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           return (
             <button
               key={tab.id}
               onClick={() => switchTab(tab.id)}
-              className={`flex min-h-10 items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
+              aria-current={activeTab === tab.id ? 'page' : undefined}
+              className={`flex min-h-10 shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
                 activeTab === tab.id ? 'bg-accent text-accent-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
               }`}
             >
@@ -153,24 +160,43 @@ function AdminOverview() {
       running: auditRows.filter((item: any) => item.status === 'running').length,
       failed: auditRows.filter((item: any) => item.status === 'failed').length,
       completed: auditRows.filter((item: any) => item.status === 'completed').length,
+      successRate: auditRows.length ? Math.round((auditRows.filter((item: any) => item.status === 'completed').length / auditRows.length) * 100) : 0,
     };
   }, [users.data, audits.data]);
 
   if (users.loading || audits.loading || workers.loading) return <Loading />;
+  const error = users.error || audits.error || workers.error || actions.error;
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Metric label="Total users" value={stats.totalUsers} />
-        <Metric label="Free/Paid/Agency" value={`${stats.freeUsers}/${stats.paidUsers}/${stats.agencyUsers}`} />
-        <Metric label="Waiting/Checking" value={`${stats.queued}/${stats.running}`} />
-        <Metric label="Failed/Completed" value={`${stats.failed}/${stats.completed}`} />
+      {error && <Notice tone="danger" title="Some admin data could not be loaded">{error}</Notice>}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric icon={Users} label="Total users" value={stats.totalUsers} detail={`${stats.paidUsers + stats.agencyUsers} paid or agency`} />
+        <Metric icon={Clock3} label="Active queue" value={stats.queued + stats.running} detail={`${stats.queued} waiting, ${stats.running} checking`} tone="warning" />
+        <Metric icon={CheckCircle2} label="Completed audits" value={stats.completed} detail={`${stats.successRate}% of recent audits`} tone="success" />
+        <Metric icon={XCircle} label="Failed audits" value={stats.failed} detail={stats.failed ? 'Review and retry failed jobs' : 'No failed audits in this view'} tone={stats.failed ? 'danger' : 'success'} />
       </div>
-      <div className="grid lg:grid-cols-2 gap-4">
-        <Panel title="Audit engine heartbeat">
+      <div className="grid gap-4 xl:grid-cols-[0.92fr_1.08fr]">
+        <Panel title="Audit distribution" description="Recent jobs by lifecycle state." icon={BarChart3}>
+          <div className="space-y-4">
+            {[
+              ['Completed', stats.completed, 'bg-emerald-500'],
+              ['Waiting', stats.queued, 'bg-blue-500'],
+              ['Checking', stats.running, 'bg-violet-500'],
+              ['Failed', stats.failed, 'bg-red-500'],
+            ].map(([label, value, color]) => {
+              const total = Math.max(1, stats.completed + stats.queued + stats.running + stats.failed);
+              return <div key={String(label)}><div className="mb-1.5 flex items-center justify-between text-sm"><span className="text-muted-foreground">{label}</span><span className="font-semibold">{value}</span></div><div className="h-2 overflow-hidden rounded-full bg-muted"><div className={`h-full rounded-full transition-all duration-700 ${color}`} style={{ width: `${Math.max(Number(value) ? 4 : 0, (Number(value) / total) * 100)}%` }} /></div></div>;
+            })}
+          </div>
+          <div className="mt-5 grid grid-cols-3 gap-2 border-t border-border pt-4 text-center text-xs"><div><div className="text-lg font-semibold">{stats.freeUsers}</div><div className="text-muted-foreground">Free</div></div><div><div className="text-lg font-semibold">{stats.paidUsers}</div><div className="text-muted-foreground">Paid</div></div><div><div className="text-lg font-semibold">{stats.agencyUsers}</div><div className="text-muted-foreground">Agency</div></div></div>
+        </Panel>
+        <Panel title="Audit engine heartbeat" description="Current Render worker registrations and freshness." icon={Wifi} action={<button type="button" onClick={workers.refresh} className="quiet-button min-h-9 px-3 py-1.5 text-xs"><RefreshCw className="h-3.5 w-3.5" /> Refresh</button>}>
           {(workers.data || []).length ? (workers.data || []).map((worker: any) => <WorkerRow key={worker.id} worker={worker} />) : <Empty text="No audit engine heartbeat found." />}
         </Panel>
-        <Panel title="Latest admin actions">
+      </div>
+      <div>
+        <Panel title="Latest admin actions" description="Recent privileged changes for operational traceability." icon={ShieldAlert} action={<button type="button" onClick={actions.refresh} className="quiet-button min-h-9 px-3 py-1.5 text-xs"><RefreshCw className="h-3.5 w-3.5" /> Refresh</button>}>
           {(actions.data || []).length ? <SimpleTable rows={actions.data || []} columns={['action', 'targetType', 'targetId', 'createdAt']} /> : <Empty text="No admin actions logged yet." />}
         </Panel>
       </div>
@@ -181,36 +207,58 @@ function AdminOverview() {
 function AdminUsers({ adminUserId }: { adminUserId: string }) {
   const users = useAdminData(() => getAllUsers(), []);
   const [search, setSearch] = useState('');
-  const rows = (users.data || []).filter((item: any) => String(item.email || '').toLowerCase().includes(search.toLowerCase()));
+  const [planFilter, setPlanFilter] = useState('all');
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
+  const [message, setMessage] = useState('');
+  const rows = (users.data || []).filter((item: any) => {
+    const matchesSearch = `${item.email || ''} ${item.username || ''} ${item.displayName || ''}`.toLowerCase().includes(search.toLowerCase());
+    return matchesSearch && (planFilter === 'all' || item.plan === planFilter) && (roleFilter === 'all' || item.role === roleFilter);
+  });
 
   const updateUser = async (id: string, patch: any) => {
-    await updateUserAdminFields(id, patch, adminUserId);
-    users.refresh();
+    setUpdatingId(id);
+    setMutationError(null);
+    setMessage('');
+    try {
+      await updateUserAdminFields(id, patch, adminUserId);
+      setMessage('User access updated.');
+      users.refresh();
+    } catch (error) {
+      setMutationError(error instanceof Error ? error.message : 'User update failed.');
+    } finally {
+      setUpdatingId(null);
+    }
   };
 
   return (
-    <Panel title="Users">
-      <div className="relative max-w-sm mb-4">
-        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by email" className="w-full bg-background border border-border rounded-xl pl-9 pr-3 py-2" />
+    <Panel title="User management" description="Manage server-backed roles, plans, subscription state, and audit quotas." icon={Users} action={<span className="suite-chip">{rows.length} shown</span>}>
+      {(users.error || mutationError) && <Notice tone="danger" className="mb-4">{users.error || mutationError}</Notice>}
+      {message && <Notice tone="success" className="mb-4">{message}</Notice>}
+      <div className="mb-4 grid gap-3 md:grid-cols-[minmax(240px,1fr)_180px_180px]">
+        <label className="relative block"><span className="sr-only">Search users</span><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search email, username, or name" className="suite-input pl-9" /></label>
+        <label><span className="sr-only">Filter by role</span><select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="suite-input"><option value="all">All roles</option><option value="member">Member</option><option value="staff">Staff</option><option value="admin">Admin</option></select></label>
+        <label><span className="sr-only">Filter by plan</span><select value={planFilter} onChange={(event) => setPlanFilter(event.target.value)} className="suite-input"><option value="all">All plans</option>{['free', 'paid', 'agency', 'admin'].map((plan) => <option key={plan} value={plan}>{plan}</option>)}</select></label>
       </div>
       {users.loading ? <Loading /> : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-left text-muted-foreground border-b border-border">
-              <tr><th className="p-3">Email</th><th className="p-3">Role</th><th className="p-3">Plan</th><th className="p-3">Status</th><th className="p-3">Quota</th><th className="p-3">Actions</th></tr>
+        <div className="max-w-full overflow-x-auto rounded-lg border border-border">
+          <table className="suite-table min-w-[900px]">
+            <thead>
+              <tr><th>User</th><th>Role</th><th>Plan</th><th>Subscription</th><th>Quota use</th><th>Action</th></tr>
             </thead>
-            <tbody className="divide-y divide-border">
+            <tbody>
               {rows.map((item: any) => (
                 <tr key={item.id}>
-                  <td className="p-3">{item.email || item.id}</td>
-                  <td className="p-3"><Select value={item.role || 'user'} options={['user', 'support', 'admin']} onChange={(role) => updateUser(item.id, { role })} /></td>
-                  <td className="p-3"><Select value={item.plan || 'free'} options={['free', 'paid', 'agency', 'admin']} onChange={(plan) => updateUser(item.id, { plan, subscription_status: plan === 'free' ? 'inactive' : 'active' })} /></td>
-                  <td className="p-3"><Select value={item.subscriptionStatus || 'inactive'} options={['inactive', 'trialing', 'active', 'past_due', 'cancelled']} onChange={(subscription_status) => updateUser(item.id, { subscription_status })} /></td>
-                  <td className="p-3">{item.auditQuotaUsedDaily || 0} daily / {item.auditQuotaUsedMonthly || 0} monthly</td>
-                  <td className="p-3"><button onClick={() => updateUser(item.id, { resetQuotas: true })} className="px-3 py-1.5 rounded-lg border border-border hover:bg-muted">Reset quotas</button></td>
+                  <td><div className="font-semibold">{item.displayName || item.username || item.email || 'Unnamed user'}{item.id === adminUserId && <span className="ml-2 text-xs font-medium text-accent">You</span>}</div><div className="mt-1 max-w-[260px] truncate text-xs text-muted-foreground">{item.email || item.id}</div></td>
+                  <td><Select value={item.role || 'member'} options={['member', 'staff', 'admin']} disabled={updatingId === item.id || item.id === adminUserId} onChange={(role) => updateUser(item.id, { role })} /></td>
+                  <td><Select value={item.plan || 'free'} options={['free', 'paid', 'agency', 'admin']} disabled={updatingId === item.id} onChange={(plan) => updateUser(item.id, { plan, subscription_status: plan === 'free' ? 'inactive' : 'active' })} /></td>
+                  <td><Select value={item.subscriptionStatus || 'inactive'} options={['inactive', 'trialing', 'active', 'past_due', 'cancelled']} disabled={updatingId === item.id} onChange={(subscription_status) => updateUser(item.id, { subscription_status })} /></td>
+                  <td><div className="font-medium">{item.auditQuotaUsedDaily || 0} daily</div><div className="text-xs text-muted-foreground">{item.auditQuotaUsedMonthly || 0} monthly</div></td>
+                  <td><button disabled={updatingId === item.id} onClick={() => updateUser(item.id, { resetQuotas: true })} className="quiet-button min-h-9 px-3 py-1.5 text-xs">{updatingId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Reset quota</button></td>
                 </tr>
               ))}
+              {!rows.length && <tr><td colSpan={6}><Empty text="No users match these filters." /></td></tr>}
             </tbody>
           </table>
         </div>
@@ -221,10 +269,15 @@ function AdminUsers({ adminUserId }: { adminUserId: string }) {
 
 function AdminAudits({ adminUserId }: { adminUserId: string }) {
   const audits = useAdminData(() => getAdminAudits(100), []);
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState('all');
+  const rows = (audits.data || []).filter((item: any) => (status === 'all' || item.status === status) && `${item.normalizedUrl || ''} ${item.id || ''}`.toLowerCase().includes(query.toLowerCase()));
   if (audits.loading) return <Loading />;
   return (
-    <Panel title="Latest audits">
-      <AuditTable rows={audits.data || []} adminUserId={adminUserId} refresh={audits.refresh} />
+    <Panel title="Audit jobs" description="Inspect recent jobs, change queue priority, retry failures, or recover stale leases." icon={Database} action={<button type="button" onClick={audits.refresh} className="quiet-button min-h-9 px-3 py-1.5 text-xs"><RefreshCw className="h-3.5 w-3.5" /> Refresh</button>}>
+      {audits.error && <Notice tone="danger" className="mb-4">{audits.error}</Notice>}
+      <div className="mb-4 grid gap-3 md:grid-cols-[minmax(240px,1fr)_200px]"><label className="relative"><span className="sr-only">Search audit jobs</span><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search URL or audit ID" className="suite-input pl-9" /></label><select value={status} onChange={(event) => setStatus(event.target.value)} className="suite-input"><option value="all">All statuses</option>{['queued', 'running', 'completed', 'failed', 'cancelled'].map((item) => <option key={item} value={item}>{item}</option>)}</select></div>
+      <AuditTable rows={rows} adminUserId={adminUserId} refresh={audits.refresh} />
     </Panel>
   );
 }
@@ -237,51 +290,67 @@ function AdminQueue({ adminUserId }: { adminUserId: string }) {
 
   if (audits.loading) return <Loading />;
   return (
-    <Panel title="Priority queue">
+    <Panel title="Priority queue" description="Only active jobs, sorted by queue priority and creation time." icon={SlidersHorizontal} action={<button type="button" onClick={audits.refresh} className="quiet-button min-h-9 px-3 py-1.5 text-xs"><RefreshCw className="h-3.5 w-3.5" /> Refresh</button>}>
+      {audits.error && <Notice tone="danger" className="mb-4">{audits.error}</Notice>}
       <AuditTable rows={rows} adminUserId={adminUserId} refresh={audits.refresh} />
     </Panel>
   );
 }
 
 function AuditTable({ rows, adminUserId, refresh }: { rows: any[]; adminUserId: string; refresh: () => void }) {
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const updateAudit = async (id: string, patch: any) => {
-    await updateAuditAdminAction(id, patch, adminUserId);
-    refresh();
+    setUpdatingId(id);
+    setError(null);
+    try {
+      await updateAuditAdminAction(id, patch, adminUserId);
+      refresh();
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : 'Audit update failed.');
+    } finally {
+      setUpdatingId(null);
+    }
   };
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead className="text-left text-muted-foreground border-b border-border">
-          <tr><th className="p-3">URL</th><th className="p-3">Status</th><th className="p-3">Plan</th><th className="p-3">Mode</th><th className="p-3">Priority</th><th className="p-3">Lock</th><th className="p-3">Actions</th></tr>
+    <div>
+      {error && <Notice tone="danger" className="mb-4">{error}</Notice>}
+      <div className="max-w-full overflow-x-auto rounded-lg border border-border">
+      <table className="suite-table min-w-[980px]">
+        <thead>
+          <tr><th>URL and phase</th><th>Status</th><th>Plan</th><th>Mode</th><th>Priority</th><th>Lease</th><th>Actions</th></tr>
         </thead>
-        <tbody className="divide-y divide-border">
+        <tbody>
           {rows.map((item) => (
             <tr key={item.id}>
-              <td className="p-3 max-w-sm break-all">
-                <div className="font-medium">{item.normalizedUrl}</div>
+              <td className="max-w-sm break-all">
+                <div className="font-semibold">{item.normalizedUrl}</div>
                 {duplicateAuditWarning(item, rows) && (
                   <div className="mt-1 text-xs text-yellow-600 flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3 shrink-0" />
+                    <AlertTriangle className="h-3 w-3 shrink-0" />
                     {duplicateAuditWarning(item, rows)}
                   </div>
                 )}
                 <div className="text-xs text-muted-foreground">{item.error || item.currentPhase}</div>
               </td>
-              <td className="p-3 capitalize">{item.status}</td>
-              <td className="p-3 capitalize">{item.plan || 'free'}</td>
-              <td className="p-3">{item.effectiveMode || item.requestedMode || 'quick'}</td>
-              <td className="p-3"><input type="number" defaultValue={item.queuePriority || 10} className="w-20 bg-background border border-border rounded-lg px-2 py-1" onBlur={(event) => updateAudit(item.id, { queuePriority: Number(event.currentTarget.value) })} /></td>
-              <td className="p-3 text-xs">{item.lockedBy || 'none'}<br />{item.leaseExpiresAt || ''}</td>
-              <td className="p-3 flex flex-wrap gap-2">
-                {['queued', 'running'].includes(item.status) && <button onClick={() => updateAudit(item.id, { status: 'cancelled', currentPhase: 'Cancelled by admin', lockedBy: null, lockedAt: null, leaseExpiresAt: null })} className="px-2 py-1 rounded border border-border hover:bg-muted">Cancel</button>}
-                {item.status === 'failed' && <button onClick={() => updateAudit(item.id, { status: 'queued', currentPhase: 'Retry queued', error: null, lockedBy: null, lockedAt: null, leaseExpiresAt: null })} className="px-2 py-1 rounded border border-border hover:bg-muted">Retry</button>}
-                {item.leaseExpiresAt && new Date(item.leaseExpiresAt).getTime() < Date.now() && <button onClick={() => updateAudit(item.id, { status: 'queued', currentPhase: 'Recovered by admin', lockedBy: null, lockedAt: null, leaseExpiresAt: null })} className="px-2 py-1 rounded border border-border hover:bg-muted">Recover stale</button>}
+              <td><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(item.status)}`}>{item.status}</span></td>
+              <td className="capitalize">{item.plan || 'free'}</td>
+              <td>{item.effectiveMode || item.requestedMode || 'quick'}</td>
+              <td><input type="number" defaultValue={item.queuePriority || 10} disabled={updatingId === item.id} className="w-20 rounded-lg border border-border bg-background px-2 py-1.5" onBlur={(event) => updateAudit(item.id, { queuePriority: Number(event.currentTarget.value) })} /></td>
+              <td className="text-xs"><div className="max-w-[150px] truncate">{item.lockedBy || 'Not locked'}</div><div className="mt-1 text-muted-foreground">{item.leaseExpiresAt ? new Date(item.leaseExpiresAt).toLocaleString() : 'No lease'}</div></td>
+              <td><div className="flex flex-wrap gap-2">
+                {updatingId === item.id && <Loader2 className="h-4 w-4 animate-spin text-accent" />}
+                {['queued', 'running'].includes(item.status) && <button disabled={updatingId === item.id} onClick={() => window.confirm('Cancel this audit job?') && updateAudit(item.id, { status: 'cancelled', currentPhase: 'Cancelled by admin', lockedBy: null, lockedAt: null, leaseExpiresAt: null })} className="quiet-button min-h-8 px-2.5 py-1 text-xs text-red-600">Cancel</button>}
+                {item.status === 'failed' && <button disabled={updatingId === item.id} onClick={() => updateAudit(item.id, { status: 'queued', currentPhase: 'Retry queued', error: null, lockedBy: null, lockedAt: null, leaseExpiresAt: null })} className="quiet-button min-h-8 px-2.5 py-1 text-xs">Retry</button>}
+                {item.leaseExpiresAt && new Date(item.leaseExpiresAt).getTime() < Date.now() && <button disabled={updatingId === item.id} onClick={() => updateAudit(item.id, { status: 'queued', currentPhase: 'Recovered by admin', lockedBy: null, lockedAt: null, leaseExpiresAt: null })} className="quiet-button min-h-8 px-2.5 py-1 text-xs">Recover</button>}
+              </div>
               </td>
             </tr>
           ))}
           {!rows.length && <tr><td colSpan={7}><Empty text="No audits found." /></td></tr>}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -290,11 +359,10 @@ function AdminWorkers() {
   const workers = useAdminData(() => getAdminWorkers(), []);
   if (workers.loading) return <Loading />;
   return (
-    <Panel title="Audit engine">
+    <Panel title="Audit engine health" description="Worker heartbeat, runtime, active job, supported modes, and last contact." icon={Wifi} action={<button type="button" onClick={workers.refresh} className="quiet-button min-h-9 px-3 py-1.5 text-xs"><RefreshCw className="h-3.5 w-3.5" /> Refresh</button>}>
+      {workers.error && <Notice tone="danger" className="mb-4">{workers.error}</Notice>}
       {(workers.data || []).length ? (workers.data || []).map((worker: any) => <WorkerRow key={worker.id} worker={worker} />) : <Empty text="No audit engine heartbeat rows found." />}
-      <div className="mt-4 text-sm text-muted-foreground">
-        Render Free Web Service can sleep. Add an uptime monitor pinging only https://seointel-audit-worker.onrender.com/health every 10 minutes. Do not ping the homepage or audit start routes.
-      </div>
+      <Notice tone="info" className="mt-4">Render Free Web Service can sleep. Uptime monitors must ping only <code>https://seointel-audit-worker.onrender.com/health</code>, never the homepage or audit start routes.</Notice>
     </Panel>
   );
 }
@@ -302,53 +370,79 @@ function AdminWorkers() {
 function AdminSettings() {
   const settings = useAdminData(() => getPlatformSettings(), []);
   const [draft, setDraft] = useState<any>({});
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (settings.data) setDraft(settings.data);
   }, [settings.data]);
 
   const save = async () => {
-    await updatePlatformSettings(draft);
-    settings.refresh();
+    setSaving(true);
+    setError(null);
+    setMessage('');
+    try {
+      await updatePlatformSettings(draft);
+      setMessage('Platform settings saved.');
+      settings.refresh();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Settings could not be saved.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (settings.loading) return <Loading />;
   return (
-    <Panel title="Safe platform settings">
+    <Panel title="Platform settings" description="Safe operational controls stored in Supabase. Sensitive keys remain environment variables." icon={Settings}>
+      {(settings.error || error) && <Notice tone="danger" className="mb-4">{settings.error || error}</Notice>}
+      {message && <Notice tone="success" className="mb-4">{message}</Notice>}
       <div className="grid md:grid-cols-2 gap-4">
         <Field label="Platform name" value={draft.platformName || ''} onChange={(platformName) => setDraft({ ...draft, platformName })} />
         <Field label="Support email" value={draft.supportEmail || ''} onChange={(supportEmail) => setDraft({ ...draft, supportEmail })} />
         <Field label="Queue fairness paid burst" value={String(draft.value?.queueFairnessPaidBurst ?? 5)} onChange={(value) => setDraft({ ...draft, value: { ...(draft.value || {}), queueFairnessPaidBurst: Number(value) } })} />
-        <Field label="Guest audit enabled" value={String(draft.value?.guestAuditEnabled ?? true)} onChange={(value) => setDraft({ ...draft, value: { ...(draft.value || {}), guestAuditEnabled: value === 'true' } })} />
+        <label className="block text-sm"><span className="font-semibold">Guest audit access</span><select value={String(draft.value?.guestAuditEnabled ?? true)} onChange={(event) => setDraft({ ...draft, value: { ...(draft.value || {}), guestAuditEnabled: event.target.value === 'true' } })} className="suite-input mt-2"><option value="true">Enabled</option><option value="false">Disabled</option></select></label>
       </div>
-      <button onClick={save} className="mt-4 px-4 py-2 rounded-xl bg-accent text-accent-foreground font-semibold">Save settings</button>
+      <button onClick={save} disabled={saving} className="trust-button mt-5">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Settings className="h-4 w-4" />} Save settings</button>
     </Panel>
   );
 }
 
 function AdminPlans({ adminUserId }: { adminUserId: string }) {
   const plans = useAdminData(() => getPlanLimits(), []);
-  const update = async (plan: string, key: string, value: any) => {
-    await updatePlanLimit(plan, { [key]: value }, adminUserId);
-    plans.refresh();
+  const [updatingPlan, setUpdatingPlan] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const update = async (plan: string, key: string, value: number) => {
+    setUpdatingPlan(plan);
+    setError(null);
+    try {
+      await updatePlanLimit(plan, { [key]: value }, adminUserId);
+      plans.refresh();
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : 'Plan limit update failed.');
+    } finally {
+      setUpdatingPlan(null);
+    }
   };
   if (plans.loading) return <Loading />;
   return (
-    <Panel title="Plan limits">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="text-left text-muted-foreground border-b border-border">
-            <tr><th className="p-3">Plan</th><th className="p-3">Daily</th><th className="p-3">Monthly</th><th className="p-3">Quick/Standard/Deep pages</th><th className="p-3">Priority</th><th className="p-3">Features</th></tr>
-          </thead>
-          <tbody className="divide-y divide-border">
+    <Panel title="Plan limits" description="Edit audit quotas, page limits, and queue priority using current supported plan fields." icon={Gauge} action={<button type="button" onClick={plans.refresh} className="quiet-button min-h-9 px-3 py-1.5 text-xs"><RefreshCw className="h-3.5 w-3.5" /> Refresh</button>}>
+      {(plans.error || error) && <Notice tone="danger" className="mb-4">{plans.error || error}</Notice>}
+      <div className="max-w-full overflow-x-auto rounded-lg border border-border">
+        <table className="suite-table min-w-[1040px]">
+          <thead><tr><th>Plan</th><th>Daily</th><th>Monthly</th><th>Quick pages</th><th>Standard pages</th><th>Deep pages</th><th>Priority</th><th>Features</th></tr></thead>
+          <tbody>
             {(plans.data || []).map((plan: any) => (
               <tr key={plan.plan}>
-                <td className="p-3 font-semibold capitalize">{plan.label || plan.plan}</td>
-                <td className="p-3"><NumberInput value={plan.dailyAudits} onBlur={(value) => update(plan.plan, 'dailyAudits', value)} /></td>
-                <td className="p-3"><NumberInput value={plan.monthlyAudits} onBlur={(value) => update(plan.plan, 'monthlyAudits', value)} /></td>
-                <td className="p-3">{plan.maxPagesQuick}/{plan.maxPagesStandard}/{plan.maxPagesDeep}</td>
-                <td className="p-3"><NumberInput value={plan.priority} onBlur={(value) => update(plan.plan, 'priority', value)} /></td>
-                <td className="p-3 text-xs">PDF {String(plan.pdfEnabled)} · White-label {String(plan.whiteLabelEnabled)} · API {String(plan.apiEnabled)}</td>
+                <td className="font-semibold capitalize">{updatingPlan === plan.plan && <Loader2 className="mr-2 inline h-3.5 w-3.5 animate-spin text-accent" />}{plan.label || plan.plan}</td>
+                <td><NumberInput value={plan.dailyAudits} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'dailyAudits', value)} /></td>
+                <td><NumberInput value={plan.monthlyAudits} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'monthlyAudits', value)} /></td>
+                <td><NumberInput value={plan.maxPagesQuick} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'maxPagesQuick', value)} /></td>
+                <td><NumberInput value={plan.maxPagesStandard} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'maxPagesStandard', value)} /></td>
+                <td><NumberInput value={plan.maxPagesDeep} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'maxPagesDeep', value)} /></td>
+                <td><NumberInput value={plan.priority} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'priority', value)} /></td>
+                <td className="text-xs"><span className="block">PDF: {plan.pdfEnabled ? 'Yes' : 'No'}</span><span className="block text-muted-foreground">White label: {plan.whiteLabelEnabled ? 'Yes' : 'No'} / API: {plan.apiEnabled ? 'Yes' : 'No'}</span></td>
               </tr>
             ))}
           </tbody>
@@ -363,25 +457,26 @@ function WorkerRow({ worker }: { worker: any }) {
   const lastSeen = value.lastSeenAt || worker.updatedAt;
   const stale = lastSeen ? Date.now() - new Date(lastSeen).getTime() > 90_000 : true;
   return (
-    <div className="rounded-xl border border-border p-4 mb-3">
+    <div className="mb-3 rounded-xl border border-border bg-background/60 p-4">
       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
-          <div className="font-semibold">{value.workerId || worker.id}</div>
-          <div className="text-sm text-muted-foreground">status={value.status || 'unknown'} runtime={value.runtime || 'unknown'} currentAuditId={value.currentAuditId || 'none'}</div>
+          <div className="flex items-center gap-2 font-semibold"><span className={`h-2.5 w-2.5 rounded-full ${stale ? 'bg-amber-500' : 'bg-emerald-500'}`} />{value.workerId || worker.id}</div>
+          <div className="mt-1 text-sm text-muted-foreground">Runtime: {value.runtime || 'unknown'} / Active audit: {value.currentAuditId || 'none'}</div>
         </div>
         <div className={`text-sm font-semibold ${stale ? 'text-yellow-600' : 'text-green-600'}`}>{stale ? 'Stale or sleeping' : 'Healthy'}</div>
       </div>
-      <div className="text-xs text-muted-foreground mt-2">lastSeenAt: {lastSeen || 'never'} · supportedModes: {(value.supportedModes || []).join(', ') || 'unknown'}</div>
+      <div className="mt-3 grid gap-2 border-t border-border pt-3 text-xs text-muted-foreground sm:grid-cols-2"><span>Last contact: {lastSeen ? new Date(lastSeen).toLocaleString() : 'Never'}</span><span>Modes: {(value.supportedModes || []).join(', ') || 'Unknown'}</span></div>
     </div>
   );
 }
 
-function Metric({ label, value }: { label: string; value: React.ReactNode }) {
-  return <div className="bg-card border border-border rounded-xl p-4"><div className="text-sm text-muted-foreground">{label}</div><div className="text-2xl font-bold">{value}</div></div>;
+function Metric({ icon: Icon, label, value, detail, tone = 'accent' }: { icon: any; label: string; value: React.ReactNode; detail: string; tone?: 'accent' | 'success' | 'warning' | 'danger' }) {
+  const tones = { accent: 'bg-blue-500/10 text-blue-600', success: 'bg-emerald-500/10 text-emerald-600', warning: 'bg-amber-500/10 text-amber-600', danger: 'bg-red-500/10 text-red-600' };
+  return <div className="admin-stat"><div className="flex items-start justify-between gap-3"><div><div className="text-sm text-muted-foreground">{label}</div><div className="mt-2 text-3xl font-semibold">{value}</div></div><span className={`flex h-10 w-10 items-center justify-center rounded-lg ${tones[tone]}`}><Icon className="h-5 w-5" /></span></div><div className="mt-3 text-xs text-muted-foreground">{detail}</div></div>;
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
-  return <section className="bg-card border border-border rounded-xl p-5"><h2 className="text-xl font-bold mb-4">{title}</h2>{children}</section>;
+function Panel({ title, description, icon: Icon, action, children }: { title: string; description?: string; icon?: any; action?: React.ReactNode; children: React.ReactNode }) {
+  return <section className="suite-panel p-4 sm:p-5"><div className="mb-5 flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-start sm:justify-between"><div className="flex min-w-0 gap-3">{Icon && <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent"><Icon className="h-5 w-5" /></span>}<div><h2 className="text-lg font-semibold">{title}</h2>{description && <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p>}</div></div>{action && <div className="shrink-0">{action}</div>}</div>{children}</section>;
 }
 
 function Empty({ text }: { text: string }) {
@@ -392,25 +487,32 @@ function Loading() {
   return <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-accent" /></div>;
 }
 
-function Select({ value, options, onChange }: { value: string; options: string[]; onChange: (value: string) => void }) {
-  return <select value={value} onChange={(event) => onChange(event.target.value)} className="bg-background border border-border rounded-lg px-2 py-1">{options.map((option) => <option key={option} value={option}>{option}</option>)}</select>;
+function Select({ value, options, onChange, disabled = false }: { value: string; options: string[]; onChange: (value: string) => void; disabled?: boolean }) {
+  return <select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} className="rounded-lg border border-border bg-background px-2.5 py-1.5 capitalize disabled:opacity-50">{options.map((option) => <option key={option} value={option}>{option}</option>)}</select>;
 }
 
 function Field({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return <label className="block text-sm"><span className="text-muted-foreground">{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 w-full bg-background border border-border rounded-lg px-3 py-2" /></label>;
+  return <label className="block text-sm"><span className="font-semibold">{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} className="suite-input mt-2" /></label>;
 }
 
-function NumberInput({ value, onBlur }: { value: number; onBlur: (value: number) => void }) {
-  return <input type="number" defaultValue={value} onBlur={(event) => onBlur(Number(event.currentTarget.value))} className="w-24 bg-background border border-border rounded-lg px-2 py-1" />;
+function NumberInput({ value, onBlur, disabled = false }: { value: number; onBlur: (value: number) => void; disabled?: boolean }) {
+  return <input type="number" min={0} defaultValue={value} disabled={disabled} onBlur={(event) => onBlur(Math.max(0, Number(event.currentTarget.value)))} className="w-24 rounded-lg border border-border bg-background px-2.5 py-1.5 disabled:opacity-50" />;
 }
 
 function SimpleTable({ rows, columns }: { rows: any[]; columns: string[] }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead className="text-left text-muted-foreground border-b border-border"><tr>{columns.map((column) => <th key={column} className="p-2">{column}</th>)}</tr></thead>
-        <tbody className="divide-y divide-border">{rows.map((row, index) => <tr key={row.id || index}>{columns.map((column) => <td key={column} className="p-2">{String(row[column] ?? '')}</td>)}</tr>)}</tbody>
+    <div className="max-w-full overflow-x-auto rounded-lg border border-border">
+      <table className="suite-table min-w-[680px]">
+        <thead><tr>{columns.map((column) => <th key={column}>{column.replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`)}</th>)}</tr></thead>
+        <tbody>{rows.map((row, index) => <tr key={row.id || index}>{columns.map((column) => <td key={column}>{column === 'createdAt' && row[column] ? new Date(row[column]).toLocaleString() : String(row[column] ?? '')}</td>)}</tr>)}</tbody>
       </table>
     </div>
   );
+}
+
+function statusClass(status: string) {
+  if (status === 'completed') return 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
+  if (status === 'failed' || status === 'cancelled') return 'bg-red-500/10 text-red-700 dark:text-red-300';
+  if (status === 'running') return 'bg-violet-500/10 text-violet-700 dark:text-violet-300';
+  return 'bg-blue-500/10 text-blue-700 dark:text-blue-300';
 }

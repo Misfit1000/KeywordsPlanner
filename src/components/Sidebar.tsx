@@ -52,7 +52,7 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOp
       {isOpen && <div onClick={onClose} className="fixed inset-0 z-40 bg-background/70 backdrop-blur-sm lg:hidden" />}
 
       {isOpen && (
-        <aside className="fixed left-0 top-[4.25rem] z-50 flex h-[calc(100vh-4.25rem)] w-[17rem] flex-col overflow-hidden border-r border-border bg-card shadow-sm lg:sticky">
+        <aside className="fixed left-0 top-[4.25rem] z-50 flex h-[calc(100vh-4.25rem)] w-[16rem] flex-col overflow-hidden border-r border-border bg-card lg:sticky">
           <div className="border-b border-border p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -81,7 +81,7 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOp
                           setActiveTab(item.id);
                           if (window.innerWidth < 1024) onClose();
                         }}
-                        className={`group flex min-h-12 w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-colors duration-200 ${
+                        className={`group flex min-h-12 w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-200 ${
                           isActive
                             ? 'bg-accent/10 text-accent'
                             : 'text-muted-foreground hover:bg-muted hover:text-foreground'

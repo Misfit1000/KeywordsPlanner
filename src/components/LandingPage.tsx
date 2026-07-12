@@ -7,6 +7,8 @@ import {
   Briefcase,
   CheckCircle2,
   Code2,
+  CreditCard,
+  Download,
   FileText,
   Gauge,
   Globe,
@@ -15,12 +17,14 @@ import {
   MapPin,
   Monitor,
   Search,
+  Smartphone,
   ShieldCheck,
   Store,
   Upload,
   Users,
   Zap,
 } from 'lucide-react';
+import { motion } from 'motion/react';
 import { createAuditSubmitGuard } from '../lib/api/audit-submit-guard';
 import {
   CategoryScoreBar,
@@ -28,7 +32,6 @@ import {
   FeatureSuiteCard,
   MegaMenuPanel,
   PricingCard,
-  ProductMockupPanel,
   RadialScoreGauge,
   SectionHeader,
   SeverityBadge,
@@ -36,7 +39,6 @@ import {
   StatusBadge,
   SurfaceCard,
   ToolCard,
-  UseCaseCard,
 } from './ui/visual-system';
 
 interface Props {
@@ -58,25 +60,11 @@ export type LandingDestination =
   | 'keyword-research'
   | 'start-audit';
 
-const trustBullets = [
-  'Separate audit engine for live audits',
-  'No paid SEO or AI API required',
-  'Passive Security Review only',
-  'No raw HTML storage',
-];
-
 const credibilityBadges: Array<{ icon: IconType; title: string; description: string }> = [
-  { icon: Activity, title: 'Separate audit engine', description: 'The Render audit engine handles website checks outside Vercel request paths.' },
-  { icon: Zap, title: 'Realtime progress', description: 'Supabase realtime events show what the audit engine is checking now.' },
-  { icon: CheckCircle2, title: 'No raw HTML storage', description: 'SEOIntel stores audit results, page summaries, events, and issues, not full raw HTML.' },
-  { icon: BarChart3, title: 'No fake ranking data', description: 'No fake traffic, CPC, backlink, domain authority, or SERP-position claims.' },
-  { icon: ShieldCheck, title: 'Passive security only', description: 'The Passive Security Review stays non-invasive and uses public signals.' },
-];
-
-const platformStats = [
-  { label: 'Audits run', value: 1284, suffix: '', note: 'Demo platform counter', icon: Activity },
-  { label: 'Pages checked', value: 9760, suffix: '', note: 'Demo platform counter', icon: Globe },
-  { label: 'Issue types detected', value: 40, suffix: '+', note: 'Deterministic check coverage', icon: AlertTriangle },
+  { icon: BarChart3, title: 'No fake data', description: 'Ranking, traffic, backlink, and search-volume values are never invented.' },
+  { icon: ShieldCheck, title: 'Passive security only', description: 'Checks use public signals without probing, exploitation, or attack payloads.' },
+  { icon: CheckCircle2, title: 'Your data stays focused', description: 'SEOIntel stores findings and page summaries, never complete raw HTML.' },
+  { icon: Zap, title: 'Actionable live reports', description: 'Realtime progress leads to prioritized fixes and export-ready evidence.' },
 ];
 
 const featureHighlights = [
@@ -105,10 +93,18 @@ const featureHighlights = [
     action: 'security-audit' as LandingDestination,
   },
   {
-    icon: Briefcase,
-    title: 'Visual Reports',
+    icon: Zap,
+    title: 'Performance',
+    description: 'Understand observed response time, page size, and resource signals.',
+    checks: ['Response timing', 'Page weight observations', 'Resource counts'],
+    cta: 'Open performance checks',
+    action: 'website-analyzer' as LandingDestination,
+  },
+  {
+    icon: FileText,
+    title: 'Reports',
     description: 'Turn audit findings into executive summaries, previews, and top-fix lists.',
-    checks: ['Overall and category scores', 'Fix priority distribution', 'Desktop, mobile, and SERP previews'],
+    checks: ['Overall and category scores', 'Fix priority distribution', 'PDF and data exports'],
     cta: 'Open reports',
     action: 'reports' as LandingDestination,
   },
@@ -348,30 +344,35 @@ const useCases = [
     title: 'Small businesses',
     description: 'Find obvious website issues before spending time or money on campaigns.',
     outcomes: ['Plain-English fixes', 'Quick site health score', 'Simple report for owners'],
+    action: 'start-audit' as LandingDestination,
   },
   {
     icon: Users,
     title: 'Agencies and freelancers',
     description: 'Run client discovery audits and turn the findings into a clear scope of work.',
     outcomes: ['Top fixes first', 'Client-friendly language', 'Visual previews for handoff'],
+    action: 'reports' as LandingDestination,
   },
   {
     icon: BarChart3,
     title: 'Marketers',
     description: 'Check landing pages, campaign pages, and content pages before launch.',
     outcomes: ['Search preview review', 'Content structure checks', 'Priority-based backlog'],
+    action: 'keyword-research' as LandingDestination,
   },
   {
     icon: Code2,
     title: 'Developers',
     description: 'See technical SEO and passive security signals without digging through raw page output.',
     outcomes: ['Status and redirect checks', 'Preferred page URL review', 'Browser protection notes'],
+    action: 'website-analyzer' as LandingDestination,
   },
   {
     icon: MapPin,
     title: 'Local site owners',
     description: 'Audit service pages, contact pages, and city pages with easy next actions.',
     outcomes: ['Mobile preview context', 'Metadata checks', 'Fast quick-audit workflow'],
+    action: 'start-audit' as LandingDestination,
   },
 ];
 
@@ -445,11 +446,11 @@ const resourcesColumns = [
 const faqs = [
   {
     question: 'Does SEOIntel use AI?',
-    answer: 'No. The audit engine uses deterministic checks and public website signals. The homepage does not claim AI scoring or AI-written SEO advice.',
+    answer: 'The audit engine does not use AI for scores or findings. Administrators can optionally use Gemini to create review-only blog drafts; generated drafts are never published automatically.',
   },
   {
-    question: 'Does SEOIntel use paid SEO APIs or AI APIs?',
-    answer: 'No. The current product focuses on deterministic checks, public website signals, and optional imported data. It does not depend on paid SEO APIs or AI APIs.',
+    question: 'Does the audit depend on paid SEO data APIs?',
+    answer: 'No. Audits use deterministic checks, public website signals, and optional imported data. SEOIntel does not invent ranking, traffic, backlink, or search-volume values.',
   },
   {
     question: 'Does SEOIntel show real Google rankings?',
@@ -505,87 +506,63 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
 
   return (
     <main className="w-full bg-background text-foreground">
-      <section id="product" className="section-shell relative overflow-hidden pb-16 pt-8 md:pb-24 md:pt-20">
-        <div className="grid items-start gap-10 lg:grid-cols-[1.02fr_0.98fr]">
-          <div className="space-y-8">
-            <div className="space-y-5">
-              <StatusBadge tone="accent">Live SEO suite for practical website checks</StatusBadge>
-              <h1 className="max-w-3xl text-4xl font-bold leading-tight md:text-5xl">
-                Professional SEO audits, clearly explained
+      <section id="product" className="relative overflow-hidden border-b border-border bg-card">
+        <div className="hero-grid pointer-events-none absolute inset-0" />
+        <div className="pointer-events-none absolute -right-24 top-10 h-[34rem] w-[44rem] rounded-full bg-blue-500/10 blur-3xl dark:bg-blue-500/5" />
+        <div className="section-shell relative py-12 sm:py-16 lg:py-20">
+          <div className="grid items-center gap-12 lg:grid-cols-[0.82fr_1.18fr] xl:gap-16">
+            <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="min-w-0">
+              <StatusBadge tone="success">Worker-backed live audits</StatusBadge>
+              <h1 className="mt-6 max-w-2xl text-4xl font-bold leading-[1.08] sm:text-5xl lg:text-[3.55rem]">
+                Find SEO issues. Fix what matters.
               </h1>
-              <p className="max-w-2xl text-lg leading-8 text-muted-foreground md:text-xl">
-                See on-page SEO, technical health, crawlability, performance observations, and passive security in one prioritized report. No paid SEO data feeds or AI APIs.
+              <p className="mt-6 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg sm:leading-8">
+                Audit on-page SEO, technical delivery, performance observations, and passive browser security in one clear, prioritized report.
               </p>
-            </div>
 
-            <form id="start-audit" onSubmit={handleSubmit} className="trust-card p-2" aria-label="Start a free website audit">
-              <div className="flex flex-col gap-2 md:flex-row">
-                <label className="flex min-w-0 flex-1 items-center gap-3 rounded-xl bg-muted/60 px-4 py-3">
+              <form id="start-audit" onSubmit={handleSubmit} className="mt-8 flex max-w-xl flex-col gap-2 rounded-xl border border-border bg-card p-2 shadow-[0_12px_32px_-22px_rgba(49,104,245,0.55)] sm:flex-row" aria-label="Start a free website audit">
+                <label className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2">
                   <Globe className="h-5 w-5 shrink-0 text-muted-foreground" />
                   <span className="sr-only">Website URL</span>
-                  <input
-                    type="text"
-                    value={url}
-                    onChange={(event) => setUrl(event.target.value)}
-                    placeholder="example.com"
-                    className="w-full bg-transparent text-lg outline-none placeholder:text-muted-foreground/60"
-                    required
-                  />
+                  <input type="text" inputMode="url" autoComplete="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="Enter your website URL" className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-[var(--subtle-foreground)]" required />
                 </label>
-                <button type="submit" disabled={starting || !url.trim()} className="trust-button px-6 py-3">
-                  {starting ? 'Starting audit...' : 'Start free audit'}
-                  <ArrowRight className="h-5 w-5" />
+                <button type="submit" disabled={starting || !url.trim()} className="trust-button min-w-40 px-5">
+                  {starting ? 'Starting audit...' : 'Audit my website'}
+                  {!starting && <ArrowRight className="h-4 w-4" />}
                 </button>
+              </form>
+
+              <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3 text-sm text-muted-foreground">
+                <span className="inline-flex items-center gap-2"><CreditCard className="h-4 w-4 text-emerald-600" /> No credit card</span>
+                <span className="inline-flex items-center gap-2"><Activity className="h-4 w-4 text-accent" /> Realtime progress</span>
+                <span className="inline-flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-violet-600" /> Passive checks</span>
               </div>
-            </form>
-            <p className="text-sm font-medium text-muted-foreground">
-              Free quick audits are lightweight. Paid users unlock full audits.
-            </p>
 
-            <div className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-2">
-              {trustBullets.map((text) => (
-                <TrustBullet key={text} text={text} />
-              ))}
-            </div>
+              <div className="mt-7 flex flex-wrap gap-3">
+                <button type="button" onClick={onExploreFeatures} className="quiet-button">Open dashboard</button>
+                <button type="button" onClick={() => onNavigate('reports')} className="inline-flex items-center gap-2 px-2 py-2 text-sm font-semibold text-accent hover:underline">View report experience <ArrowRight className="h-4 w-4" /></button>
+              </div>
+            </motion.div>
 
-            <div className="flex flex-wrap gap-3">
-              <a href="#reports" className="quiet-button">
-                See Report Preview
-              </a>
-              <button type="button" onClick={onExploreFeatures} className="quiet-button">
-                Open Dashboard
-              </button>
-            </div>
+            <HeroAuditDashboard onOpenIssues={() => onNavigate('reports')} onDownload={() => onNavigate('reports')} />
           </div>
-
-          <ProductMockupPanel label="Product preview - example data" />
         </div>
       </section>
 
-      <section className="section-shell pb-10">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-          {credibilityBadges.map((badge) => (
-            <CredibilityBadge key={badge.title} {...badge} />
-          ))}
+      <section className="border-b border-border bg-background">
+        <div className="section-shell grid gap-px py-8 sm:grid-cols-2 lg:grid-cols-4">
+          {credibilityBadges.map((badge) => <CredibilityBadge key={badge.title} {...badge} />)}
         </div>
       </section>
 
-      <section className="section-shell pb-16">
-        <div className="grid gap-4 rounded-[2rem] border border-border bg-card/80 p-4 shadow-md shadow-slate-950/5 md:grid-cols-3">
-          {platformStats.map((stat) => (
-            <StatBlock key={stat.label} {...stat} />
-          ))}
-        </div>
-      </section>
-
-      <section className="border-y border-border bg-muted/30 py-16 md:py-20">
+      <section id="features" className="scroll-mt-24 border-y border-border bg-muted/30 py-16 md:py-20">
         <div className="section-shell">
           <SectionHeader
             eyebrow="Core product"
-            title="Four clear reasons to run the audit."
-            description="The homepage leads with real SEOIntel capabilities instead of generic progress graphics or unsupported ranking promises."
+            title="Everything you need in one clear audit."
+            description="Review search visibility, website health, passive browser protections, performance signals, and client-ready reports without invented data."
           />
-          <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             {featureHighlights.map((feature) => (
               <FeatureProofCard
                 key={feature.title}
@@ -604,7 +581,7 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
         </div>
       </section>
 
-      <section id="features" className="section-shell py-16 md:py-20">
+      <section id="suite-features" className="section-shell scroll-mt-24 py-16 md:py-20">
         <SectionHeader
           eyebrow="Feature suite"
           title="A fuller SEO platform shape, with honest feature boundaries."
@@ -661,16 +638,7 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
       </section>
 
       <section id="use-cases" className="section-shell py-16 md:py-20">
-        <SectionHeader
-          eyebrow="Example workflows"
-          title="Use-case cards without fake customer claims."
-          description="These are practical ways different teams can use SEOIntel, not invented testimonials or logos."
-        />
-        <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-5">
-          {useCases.map((useCase) => (
-            <UseCaseCard key={useCase.title} {...useCase} />
-          ))}
-        </div>
+        <AudienceSection onNavigate={onNavigate} />
       </section>
 
       <section id="reports" className="border-y border-border bg-muted/30 py-16 md:py-20">
@@ -794,54 +762,125 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
   );
 }
 
-function CredibilityBadge({ icon: Icon, title, description }: { icon: IconType; title: string; description: string }) {
+function HeroAuditDashboard({ onOpenIssues, onDownload }: { onOpenIssues: () => void; onDownload: () => void }) {
+  const phases = [
+    { label: 'Checking page titles', progress: 34 },
+    { label: 'Reviewing search access', progress: 58 },
+    { label: 'Checking browser protections', progress: 76 },
+    { label: 'Prioritizing fixes', progress: 92 },
+  ];
+  const [phaseIndex, setPhaseIndex] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setPhaseIndex((current) => (current + 1) % phases.length), 2600);
+    return () => window.clearInterval(timer);
+  }, [phases.length]);
+
+  const phase = phases[phaseIndex];
   return (
-    <SurfaceCard className="p-4">
-      <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-accent/10 text-accent">
-        <Icon className="h-5 w-5" />
+    <motion.div initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.55, delay: 0.08 }} className="relative min-w-0">
+      <div className="absolute -inset-6 -z-10 rounded-full bg-blue-500/10 blur-3xl" />
+      <div className="overflow-hidden rounded-xl border border-blue-200/80 bg-card shadow-[0_24px_70px_-38px_rgba(30,64,175,0.55)] dark:border-blue-400/20">
+        <div className="grid sm:grid-cols-[3.5rem_minmax(0,1fr)]">
+          <aside className="hidden bg-[#071840] px-2 py-4 text-blue-100 sm:flex sm:flex-col sm:items-center">
+            <ShieldCheck className="h-6 w-6 text-blue-300" />
+            <div className="mt-8 grid gap-3">
+              {[Activity, Monitor, BarChart3, FileText, ShieldCheck].map((Icon, index) => <span key={index} className={`flex h-9 w-9 items-center justify-center rounded-lg ${index === 0 ? 'bg-blue-600 text-white' : 'text-blue-200/70'}`}><Icon className="h-4 w-4" /></span>)}
+            </div>
+          </aside>
+
+          <div className="relative min-w-0 p-3 sm:p-4">
+            <div className="motion-scan-line pointer-events-none absolute inset-x-0 top-0 z-10 h-px bg-blue-500/50" />
+            <div className="flex flex-col gap-3 border-b border-border pb-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-xs font-semibold text-muted-foreground">Interactive report preview</div>
+                <div className="mt-0.5 font-semibold">Overview: example.com</div>
+              </div>
+              <button type="button" onClick={onDownload} className="quiet-button min-h-9 px-3 py-1.5 text-xs"><Download className="h-3.5 w-3.5" /> Download report</button>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-[1.15fr_repeat(4,0.72fr)]">
+              <div className="row-span-2 rounded-lg border border-border bg-background p-3 lg:row-span-1">
+                <RadialScoreGauge value={86} label="Overall score" detail="Example audit result" size="sm" />
+              </div>
+              {[['SEO', 88, 'Good'], ['Technical', 84, 'Good'], ['Performance', 78, 'Review'], ['Security', 90, 'Strong']].map(([label, score, status]) => (
+                <div key={String(label)} className="rounded-lg border border-border bg-background p-3">
+                  <div className="text-[11px] text-muted-foreground">{label}</div>
+                  <div className="mt-2 text-2xl font-semibold">{score}</div>
+                  <div className={`mt-2 text-[10px] font-semibold ${status === 'Review' ? 'text-amber-600' : 'text-emerald-600'}`}>{status}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-2 grid gap-2 lg:grid-cols-[1.2fr_0.8fr]">
+              <div className="rounded-lg border border-border bg-background p-3">
+                <div className="flex items-center justify-between gap-3"><div className="text-xs font-semibold">Issues overview</div><div className="text-[10px] text-accent">{phase.label}</div></div>
+                <div className="mt-3 space-y-2.5">
+                  {[['Urgent', 14, 22, 'bg-red-500'], ['Warnings', 38, 58, 'bg-amber-500'], ['Notices', 65, 76, 'bg-blue-500'], ['Passed', 152, 92, 'bg-emerald-500']].map(([label, count, width, color]) => (
+                    <div key={String(label)} className="grid grid-cols-[4.3rem_1fr_2rem] items-center gap-2 text-[10px]"><span>{label}</span><div className="h-1.5 overflow-hidden rounded-full bg-muted"><motion.div animate={{ width: `${width}%` }} transition={{ duration: 0.7 }} className={`h-full rounded-full ${color}`} /></div><span className="text-right font-semibold">{count}</span></div>
+                  ))}
+                </div>
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted"><motion.div animate={{ width: `${phase.progress}%` }} transition={{ duration: 0.55 }} className="h-full rounded-full bg-accent" /></div>
+              </div>
+              <div className="rounded-lg border border-border bg-background p-3">
+                <div className="text-xs font-semibold">Top issues</div>
+                <div className="mt-3 space-y-2 text-[10px]">
+                  <div className="flex gap-2"><span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-red-500" /><span>Missing meta description</span></div>
+                  <div className="flex gap-2"><span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-amber-500" /><span>Page title needs attention</span></div>
+                  <div className="flex gap-2"><span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-blue-500" /><span>Heading order can improve</span></div>
+                </div>
+                <button type="button" onClick={onOpenIssues} className="mt-3 inline-flex items-center gap-1 text-[11px] font-semibold text-accent hover:underline">View all issues <ArrowRight className="h-3 w-3" /></button>
+              </div>
+            </div>
+
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              <button type="button" onClick={onOpenIssues} className="rounded-lg border border-border bg-background p-2.5 text-left hover:border-accent/30"><Monitor className="h-4 w-4 text-accent" /><div className="mt-2 text-[10px] font-semibold">Desktop preview</div><div className="mt-2 h-8 rounded bg-gradient-to-br from-blue-100 to-slate-100 dark:from-blue-950 dark:to-slate-900" /></button>
+              <button type="button" onClick={onOpenIssues} className="rounded-lg border border-border bg-background p-2.5 text-left hover:border-accent/30"><Smartphone className="h-4 w-4 text-accent" /><div className="mt-2 text-[10px] font-semibold">Mobile preview</div><div className="mx-auto mt-2 h-8 w-5 rounded bg-slate-900" /></button>
+              <button type="button" onClick={onOpenIssues} className="rounded-lg border border-border bg-background p-2.5 text-left hover:border-accent/30"><Search className="h-4 w-4 text-accent" /><div className="mt-2 text-[10px] font-semibold">Google preview</div><div className="mt-2 h-1.5 w-4/5 rounded bg-blue-600/70" /><div className="mt-1 h-1 w-full rounded bg-muted" /></button>
+            </div>
+          </div>
+        </div>
       </div>
-      <h3 className="text-sm font-bold">{title}</h3>
-      <p className="mt-2 text-xs leading-5 text-muted-foreground">{description}</p>
-    </SurfaceCard>
+    </motion.div>
   );
 }
 
-function useCountUp(target: number, durationMs = 900) {
-  const [value, setValue] = useState(0);
+function AudienceSection({ onNavigate }: { onNavigate: (destination: LandingDestination) => void }) {
+  const roles = useCases.slice(0, 4);
+  return (
+    <div className="grid items-center gap-10 lg:grid-cols-[0.88fr_1.12fr]">
+      <div>
+        <div className="page-eyebrow">Built for practical SEO work</div>
+        <h2 className="mt-3 max-w-xl text-3xl font-semibold leading-tight sm:text-4xl">Useful for owners, agencies, marketers, and developers</h2>
+        <p className="mt-4 max-w-xl text-base leading-7 text-muted-foreground">Move from a public URL to measured findings, visual context, and a prioritized backlog without pretending unsupported data exists.</p>
+        <ul className="mt-6 grid gap-3 text-sm">
+          {['Find urgent issues before they compound', 'Review desktop, mobile, and search context', 'Share a structured report with stakeholders', 'Keep technical evidence available for developers'].map((item) => <li key={item} className="flex items-center gap-3"><CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />{item}</li>)}
+        </ul>
+        <button type="button" onClick={() => onNavigate('dashboard')} className="trust-button mt-7">Explore the workspace <ArrowRight className="h-4 w-4" /></button>
+      </div>
 
-  useEffect(() => {
-    let frame = 0;
-    const startedAt = performance.now();
-
-    const tick = (time: number) => {
-      const progress = Math.max(0, Math.min(1, (time - startedAt) / durationMs));
-      const eased = 1 - Math.pow(1 - progress, 3);
-      setValue(Math.round(target * eased));
-      if (progress < 1) frame = window.requestAnimationFrame(tick);
-    };
-
-    frame = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(frame);
-  }, [durationMs, target]);
-
-  return value;
+      <div className="relative rounded-xl border border-border bg-card p-5 sm:p-8">
+        <div className="pointer-events-none absolute left-1/2 top-1/2 hidden h-56 w-56 -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-blue-300 lg:block" />
+        <div className="relative grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_9rem_1fr] lg:grid-rows-2 lg:items-center">
+          {roles.map((role, index) => {
+            const Icon = role.icon;
+            const placement = index === 0 ? 'lg:col-start-1 lg:row-start-1' : index === 1 ? 'lg:col-start-3 lg:row-start-1' : index === 2 ? 'lg:col-start-1 lg:row-start-2' : 'lg:col-start-3 lg:row-start-2';
+            return <button key={role.title} type="button" onClick={() => onNavigate(role.action)} className={`group rounded-xl border border-border bg-background p-4 text-left transition hover:border-accent/35 hover:bg-muted/50 ${placement}`}><div className="flex items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent group-hover:bg-accent group-hover:text-white"><Icon className="h-5 w-5" /></span><div><h3 className="text-sm font-semibold">{role.title}</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">{role.outcomes[0]}</p></div></div></button>;
+          })}
+          <motion.div animate={{ y: [0, -5, 0] }} transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }} className="hidden h-28 w-28 items-center justify-center justify-self-center rounded-xl border border-blue-200 bg-blue-50 text-blue-600 shadow-sm dark:border-blue-500/25 dark:bg-blue-500/10 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:flex"><ShieldCheck className="h-12 w-12" /></motion.div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-function StatBlock({ icon: Icon, label, value, suffix, note }: { icon: IconType; label: string; value: number; suffix: string; note: string }) {
-  const animatedValue = useCountUp(value);
-  const displayValue = `${new Intl.NumberFormat('en-US').format(animatedValue)}${suffix}`;
-
+function CredibilityBadge({ icon: Icon, title, description }: { icon: IconType; title: string; description: string }) {
   return (
-    <div className="rounded-2xl border border-border bg-background/80 p-5 shadow-sm">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/10 text-accent">
-          <Icon className="h-6 w-6" />
-        </div>
-        <StatusBadge tone="accent">Illustrative</StatusBadge>
+    <div className="flex gap-3 px-4 py-3 lg:px-6">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent">
+        <Icon className="h-5 w-5" />
       </div>
-      <div className="text-4xl font-bold tracking-tight">{displayValue}</div>
-      <div className="mt-1 font-semibold">{label}</div>
-      <p className="mt-2 text-xs leading-5 text-muted-foreground">{note}</p>
+      <div><h3 className="text-sm font-semibold">{title}</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p></div>
     </div>
   );
 }
@@ -884,7 +923,7 @@ function ReportShowcase({ onNavigate }: { onNavigate: (destination: LandingDesti
   };
 
   return (
-      <div className="mt-10 w-full min-w-0 overflow-hidden rounded-[2rem] border border-border bg-card shadow-lg shadow-slate-950/10 dark:shadow-black/40">
+      <div className="mt-10 w-full min-w-0 overflow-hidden rounded-xl border border-border bg-card shadow-sm shadow-slate-950/10 dark:shadow-black/40">
       <div className="border-b border-border bg-background/80 px-4 py-3 sm:px-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex min-w-0 items-center gap-3">
@@ -1185,15 +1224,6 @@ function AuditCheckGroup({ icon: Icon, title, description, checks }: { icon: Ico
         ))}
       </div>
     </SurfaceCard>
-  );
-}
-
-function TrustBullet({ text }: { text: string }) {
-  return (
-    <div className="flex items-center gap-2">
-      <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
-      <span>{text}</span>
-    </div>
   );
 }
 

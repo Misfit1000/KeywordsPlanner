@@ -1,5 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
-import { LogOut, Menu, Search, TrendingUp, User, X } from 'lucide-react';
+import { ArrowRight, LogOut, Menu, Search, TrendingUp, User, X } from 'lucide-react';
 import { BrandMark, ThemeToggle } from '../ui/visual-system';
 
 type Theme = 'light' | 'dark';
@@ -38,8 +38,8 @@ export function MarketingShell({
   const auditHref = `${navigationBase}#start-audit`;
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-50 border-b border-border bg-card/94 shadow-[0_8px_30px_-26px_rgba(11,27,70,0.4)] backdrop-blur-xl">
-        <div className="section-shell flex h-16 items-center justify-between gap-4">
+      <header className="sticky top-0 z-50 border-b border-border/80 bg-card/92 backdrop-blur-xl">
+        <div className="section-shell flex h-[4.5rem] items-center justify-between gap-4">
           <button type="button" onClick={onHome} className="rounded-lg" aria-label="SEOIntel home"><BrandMark /></button>
           <nav className="hidden items-center gap-1 lg:flex" aria-label="Public navigation">
             {links.map(([label, href]) => <a key={href} href={href} className="rounded-lg px-3 py-2 text-sm font-semibold text-muted-foreground hover:bg-muted hover:text-foreground">{label}</a>)}
@@ -52,7 +52,7 @@ export function MarketingShell({
                 <button type="button" onClick={onLogout} className="rounded-lg p-2.5 text-muted-foreground hover:bg-red-500/10 hover:text-red-600" aria-label="Sign out"><LogOut className="h-5 w-5" /></button>
               </>
             ) : <button type="button" onClick={onLogin} className="hidden min-h-10 rounded-lg px-3 text-sm font-semibold text-foreground hover:bg-muted sm:block">Sign in</button>}
-            <a href={auditHref} className="trust-button min-h-10 px-3 py-2 text-sm"><span className="hidden sm:inline">Start free audit</span><span className="sm:hidden">Audit</span></a>
+            <a href={auditHref} className="trust-button min-h-10 px-4 py-2 text-sm"><span className="hidden sm:inline">Start free audit</span><span className="sm:hidden">Audit</span><ArrowRight className="hidden h-4 w-4 sm:block" /></a>
             <button type="button" onClick={() => setMenuOpen((open) => !open)} className="rounded-lg p-2.5 text-muted-foreground hover:bg-muted lg:hidden" aria-expanded={menuOpen} aria-controls="public-mobile-nav" aria-label="Toggle navigation">{menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}</button>
           </div>
         </div>
@@ -109,7 +109,7 @@ export function WorkspaceShell({
 }) {
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-50 flex h-[4.25rem] items-center border-b border-border bg-card/94 px-4 shadow-[0_8px_30px_-26px_rgba(11,27,70,0.4)] backdrop-blur-xl md:px-6">
+      <header className="sticky top-0 z-50 flex h-[4.25rem] items-center border-b border-border/80 bg-card/92 px-4 backdrop-blur-xl md:px-6">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <button type="button" onClick={onToggleSidebar} className="rounded-lg p-2.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={sidebarOpen ? 'Close navigation' : 'Open navigation'}><Menu className="h-5 w-5" /></button>
           <button type="button" onClick={onHome} className="rounded-lg" aria-label="SEOIntel home"><BrandMark /></button>
