@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import handler from '../api/index';
+import handler from '../api/index.js';
 
 const server = createServer((request, response) => {
   void Promise.resolve(handler(request, response)).catch((error) => {
