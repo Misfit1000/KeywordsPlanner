@@ -70,15 +70,18 @@ export default function BlogPostPage({ slug }: { slug: string }) {
             <header className="border-b border-border pb-8">
               <div className="flex flex-wrap gap-2">{post.tags.map((tag) => <StatusBadge key={tag} tone="accent">{tag}</StatusBadge>)}</div>
               <h1 className="mt-5 text-4xl font-semibold leading-tight sm:text-5xl">{post.title}</h1>
-              <p className="mt-5 text-lg leading-8 text-muted-foreground">{post.excerpt}</p>
+              <p className="mt-5 text-lg leading-8 text-muted-foreground">{post.tagline || post.excerpt}</p>
+              {post.summary && post.summary !== post.tagline && <p className="mt-4 max-w-3xl text-base leading-7 text-muted-foreground">{post.summary}</p>}
               <div className="mt-6 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
                 <span className="inline-flex items-center gap-2"><CalendarDays className="h-4 w-4" />{formatDate(post.publishedAt)}</span>
                 <span className="inline-flex items-center gap-2"><Clock className="h-4 w-4" />{post.readingTimeMinutes} min read</span>
                 <button type="button" onClick={copyLink} className="inline-flex items-center gap-2 font-semibold text-accent hover:underline"><Share2 className="h-4 w-4" />{shareMessage || 'Share'}</button>
               </div>
             </header>
-            {post.ogImageUrl && <img src={post.ogImageUrl} alt={`Featured image for ${post.title}`} className="mt-8 aspect-[16/9] w-full rounded-xl border border-border object-cover" />}
+            {post.ogImageUrl && <figure className="mt-8"><img src={post.ogImageUrl} alt={post.ogImageAlt || `Featured image for ${post.title}`} sizes="(max-width: 1024px) 100vw, 896px" className="aspect-[16/9] w-full rounded-xl border border-border object-cover" />{post.ogImageAttribution && <figcaption className="mt-2 text-xs text-muted-foreground">{post.ogImageAttribution}</figcaption>}</figure>}
             <div className="blog-prose mt-10" dangerouslySetInnerHTML={{ __html: post.contentHtml }} />
+            {post.sources.length > 0 && <section className="mt-12 border-t border-border pt-8" aria-labelledby="article-sources"><h2 id="article-sources" className="text-2xl font-semibold">Sources and references</h2><ul className="mt-4 space-y-3">{post.sources.map((source) => <li key={source.url} className="rounded-lg border border-border bg-muted/20 p-4"><a href={source.url} target="_blank" rel="noreferrer" className="font-semibold text-accent hover:underline">{source.title}</a><p className="mt-1 text-sm text-muted-foreground">{source.publisher}{source.author ? ` · ${source.author}` : ''}</p></li>)}</ul></section>}
+            {post.relatedArticles.length > 0 && <section className="mt-12 border-t border-border pt-8" aria-labelledby="related-articles"><h2 id="related-articles" className="text-2xl font-semibold">Related articles</h2><div className="mt-4 grid gap-3 sm:grid-cols-2">{post.relatedArticles.map((article) => <a key={article.postId} href={`/blog/${article.slug}`} className="rounded-lg border border-border p-4 transition hover:border-accent/40 hover:bg-muted/30"><span className="font-semibold text-foreground">{article.title}</span>{article.reason && <span className="mt-1 block text-sm leading-6 text-muted-foreground">{article.reason}</span>}</a>)}</div></section>}
             <Panel className="mt-12 p-6 sm:p-8">
               <div className="flex items-start gap-4"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent"><BookOpen className="h-5 w-5" /></div><div><h2 className="text-xl font-semibold">Apply the guidance with measured evidence</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Run an SEOIntel audit to connect these recommendations to real page findings, crawl evidence, and fix priorities.</p><a href="/#start-audit" className="trust-button mt-4">Start a free audit</a></div></div>
             </Panel>

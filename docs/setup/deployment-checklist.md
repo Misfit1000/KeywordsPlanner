@@ -23,7 +23,7 @@ git diff --check
 
 - Set `VITE_SUPABASE_URL`.
 - Set `VITE_SUPABASE_ANON_KEY`.
-- Optionally set server-only `GEMINI_API_KEY` and `GEMINI_MODEL` for admin blog drafting.
+- Do not set `GEMINI_API_KEY` on Vercel; blog provider calls run in the worker.
 - Confirm no `VITE_GEMINI_*` environment variable exists.
 - Do not set the Supabase service role key in public `VITE_*` variables.
 - Deploy frontend and lightweight API routes only.
@@ -39,12 +39,13 @@ git diff --check
 
 - Set `SUPABASE_URL`.
 - Set `SUPABASE_SERVICE_ROLE_KEY`.
+- Optionally set `BLOG_AUTOMATION_ENABLED=true`, `GEMINI_API_KEY`, and `GEMINI_MODEL` on the worker.
 - Run `npm run worker:audit`.
 - Verify worker logs show the worker started and can claim queued audits.
 
 ## Supabase
 
-- Apply every file in `supabase/migrations/` in numeric order through `011_production_robustness.sql`. Existing projects must apply 010 before 011; never rewrite an earlier migration.
+- Apply every file in `supabase/migrations/` in numeric order through `012_blog_automation_platform.sql`. Existing projects must apply 011 before 012; never rewrite an earlier migration.
 - Confirm Supabase Realtime is enabled for audit tables.
 - Confirm the live audit page shows `WebSocket live` after opening an audit.
 - Confirm RLS is enabled on audit tables.
@@ -66,4 +67,4 @@ git diff --check
 9. Confirm JSON/pages CSV/issues CSV exports work.
 10. Confirm a completed Paid, Agency, or Admin audit downloads a valid PDF and a Free audit receives the expected upgrade message.
 11. Confirm cancel works for a queued audit.
-12. Publish a reviewed test article, verify `/blog`, and confirm it appears in `/sitemap.xml`.
+12. Publish a reviewed test article, verify complete initial HTML at `/blog/{slug}`, and confirm it appears in `/sitemap.xml` and `/rss.xml`.

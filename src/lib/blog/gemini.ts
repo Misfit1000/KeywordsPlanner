@@ -2,8 +2,9 @@ import { buildBlogSeoFields } from './seo';
 import { sanitizeBlogHtml, blogTextFromHtml } from './sanitize';
 import { createBlogSlug } from './slug';
 import type { GeminiBlogDraft } from './types';
+import { evaluateBlogQuality } from './quality';
 
-type GeminiAction = 'topics' | 'draft';
+type GeminiAction = 'topics' | 'draft' | 'custom_headline';
 
 function modelName() {
   const configured = String(process.env.GEMINI_MODEL || 'gemini-2.5-flash');
@@ -12,7 +13,7 @@ function modelName() {
 
 async function requestGemini(prompt: string, responseSchema: Record<string, unknown>) {
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('Gemini draft assistant is not configured. Add GEMINI_API_KEY to the Vercel server environment.');
+  if (!apiKey) throw new Error('Blog generation is not configured. Add GEMINI_API_KEY to the worker environment only.');
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45_000);
   try {
@@ -25,7 +26,7 @@ async function requestGemini(prompt: string, responseSchema: Record<string, unkn
           responseMimeType: 'application/json',
           responseSchema,
           temperature: 0.55,
-          maxOutputTokens: 5000,
+          maxOutputTokens: 10000,
         },
       }),
       signal: controller.signal,
@@ -34,17 +35,17 @@ async function requestGemini(prompt: string, responseSchema: Record<string, unkn
     const payload: any = await response.json();
     const text = payload?.candidates?.[0]?.content?.parts?.map((part: any) => part.text || '').join('') || '';
     if (!text) throw new Error('Gemini returned an empty draft.');
-    return JSON.parse(text);
+    return { data: JSON.parse(text), usage: payload?.usageMetadata || {} };
   } finally {
     clearTimeout(timeout);
   }
 }
 
-export async function generateBlogWithGemini(input: { action: GeminiAction; topic?: string; audience?: string; keywords?: string }) {
+export async function generateBlogWithGemini(input: { action: GeminiAction; topic?: string; headline?: string; audience?: string; keywords?: string; sources?: Array<{ url: string; title: string; publisher: string }>; contentGapBrief?: { coveredSubtopics?: string[]; contentGaps?: string[]; proposedOriginalAngle?: string } }) {
   const audience = String(input.audience || 'website owners, marketers, developers, and SEO practitioners').slice(0, 240);
   const keywords = String(input.keywords || '').slice(0, 300);
   if (input.action === 'topics') {
-    const result = await requestGemini(
+    const response = await requestGemini(
       `Suggest eight useful, non-duplicative blog topics for SEOIntel, a visual SEO, technical SEO, website health, and passive security audit product. Audience: ${audience}. Optional themes: ${keywords || 'on-page SEO, crawlability, website performance observations, and passive browser protections'}. Avoid news claims, invented statistics, guaranteed ranking promises, backlinks, traffic estimates, and paid-data claims. Return concise evergreen titles with a one-sentence angle.`,
       {
         type: 'object',
@@ -54,41 +55,66 @@ export async function generateBlogWithGemini(input: { action: GeminiAction; topi
         required: ['topics'],
       },
     );
-    return { topics: Array.isArray(result.topics) ? result.topics.slice(0, 8) : [] };
+    return { topics: Array.isArray(response.data.topics) ? response.data.topics.slice(0, 8) : [] };
   }
 
-  const topic = String(input.topic || '').trim().slice(0, 240);
+  const customHeadline = String(input.headline || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+  const topic = String(input.action === 'custom_headline' ? customHeadline : input.topic || '').trim().slice(0, 240);
   if (topic.length < 5) throw new Error('Enter a specific topic before generating a draft.');
-  const result = await requestGemini(
-    `Write an original, practical, evidence-conscious article about: "${topic}". Audience: ${audience}. Focus phrases: ${keywords || topic}. The article is for SEOIntel. Use clear language, a short introduction, descriptive H2/H3 headings, lists where useful, concrete implementation guidance, and a concise conclusion. Produce 700-1200 words. Do not include an H1. Use only these HTML tags: p, h2, h3, h4, ul, ol, li, strong, em, blockquote, pre, code, hr, br, a. Do not invent statistics, customer claims, ranking guarantees, traffic, backlinks, search volume, or proprietary data. Do not claim current events or facts that require live verification. The draft must be reviewed and fact-checked by an administrator before publication.`,
+  const sources = (input.sources || []).filter((source) => /^https?:\/\//.test(source.url) && source.title && source.publisher).slice(0, 12);
+  const sourceContext = sources.length
+    ? `Use only these supplied research sources for factual claims and add crawlable hyperlinks to them where relevant: ${sources.map((source) => `${source.title} (${source.publisher}): ${source.url}`).join('; ')}.`
+    : 'Do not invent current facts, dates, quotes, statistics, or sources. Mark claims that need a source with [SOURCE REVIEW REQUIRED].';
+  const gapContext = input.contentGapBrief
+    ? `Reference pages cover these broad subtopics: ${(input.contentGapBrief.coveredSubtopics || []).slice(0, 20).join('; ')}. Original gaps to address: ${(input.contentGapBrief.contentGaps || []).slice(0, 20).join('; ')}. Original angle: ${input.contentGapBrief.proposedOriginalAngle || 'Use independent evidence and examples'}. Do not copy their wording, examples, tables, paragraph order, or heading sequence.`
+    : '';
+  const response = await requestGemini(
+    `Write an original, practical, evidence-conscious article about: "${topic}". ${input.action === 'custom_headline' ? `Preserve this exact administrator headline: "${customHeadline}".` : ''} Audience: ${audience}. Focus phrases: ${keywords || topic}. The article is for SEOIntel. Answer the main question near the beginning. Write 1,500-2,200 meaningful words without filler. Use varied concise sentences, readable paragraphs, descriptive H2/H3 headings, concrete examples, one practical workflow or checklist, and a concise conclusion. Do not include an H1 because the renderer supplies it. Use only these HTML tags: p, h2, h3, h4, ul, ol, li, strong, em, blockquote, pre, code, hr, br, a. ${sourceContext} ${gapContext} Do not copy source sentences, paragraph order, examples, tables, or heading sequences. Do not invent statistics, quotes, customer claims, ranking guarantees, traffic, backlinks, search volume, or proprietary data. Every factual external reference must be a standard HTML hyperlink. Include at least two useful internal links to relevant SEOIntel pages using paths beginning with /. The draft must be reviewed and fact-checked before publication.`,
     {
       type: 'object',
       properties: {
         title: { type: 'string' },
         excerpt: { type: 'string' },
+        tagline: { type: 'string' },
+        summary: { type: 'string' },
         contentHtml: { type: 'string' },
         focusKeyword: { type: 'string' },
         tags: { type: 'array', items: { type: 'string' } },
         seoTitle: { type: 'string' },
         metaDescription: { type: 'string' },
       },
-      required: ['title', 'excerpt', 'contentHtml', 'focusKeyword', 'tags', 'seoTitle', 'metaDescription'],
+      required: ['title', 'excerpt', 'tagline', 'summary', 'contentHtml', 'focusKeyword', 'tags', 'seoTitle', 'metaDescription'],
     },
   );
 
+  const result = response.data;
   const contentHtml = sanitizeBlogHtml(result.contentHtml);
   const contentText = blogTextFromHtml(contentHtml);
   const generatedSeo = buildBlogSeoFields({ title: result.title, excerpt: result.excerpt, contentText, focusKeyword: result.focusKeyword });
   const draft: GeminiBlogDraft = {
     title: String(result.title || topic).slice(0, 140),
     excerpt: String(result.excerpt || generatedSeo.excerpt).slice(0, 360),
+    tagline: String(result.tagline || '').slice(0, 240),
+    summary: String(result.summary || result.excerpt || generatedSeo.excerpt).slice(0, 600),
     contentHtml,
     focusKeyword: String(result.focusKeyword || generatedSeo.focusKeyword).slice(0, 100),
     tags: Array.isArray(result.tags) ? result.tags.map(String).map((tag: string) => tag.trim().slice(0, 40)).filter(Boolean).slice(0, 12) : [],
     suggestedSlug: createBlogSlug(result.title || topic),
     seoTitle: String(result.seoTitle || generatedSeo.seoTitle).slice(0, 70),
     metaDescription: String(result.metaDescription || generatedSeo.metaDescription).slice(0, 180),
+    providerUsage: {
+      model: modelName(),
+      inputTokens: Number.isFinite(Number(response.usage.promptTokenCount)) ? Number(response.usage.promptTokenCount) : null,
+      outputTokens: Number.isFinite(Number(response.usage.candidatesTokenCount)) ? Number(response.usage.candidatesTokenCount) : null,
+      totalTokens: Number.isFinite(Number(response.usage.totalTokenCount)) ? Number(response.usage.totalTokenCount) : null,
+    },
   };
-  if (contentText.split(/\s+/).filter(Boolean).length < 250) throw new Error('Gemini returned an incomplete article. Try a more specific topic.');
+  if (input.action === 'custom_headline') draft.title = customHeadline;
+  const qualityReport = evaluateBlogQuality({ ...draft, slug: draft.suggestedSlug, sources }, { requireSources: sources.length > 0 });
+  draft.qualityReport = qualityReport;
+  if (qualityReport.wordCount < 1500) throw new Error('The draft did not reach 1,500 useful words. Refine the topic or generate a broader article.');
+  if (qualityReport.blockedReasons.some((reason) => !/Required research sources/.test(reason))) {
+    throw new Error(`The draft failed content quality checks: ${qualityReport.blockedReasons.join('; ')}.`);
+  }
   return draft;
 }

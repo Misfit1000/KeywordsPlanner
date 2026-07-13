@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { getSupabaseAdminClient } from '../supabase/server';
 import { estimateReadingTime } from './seo';
 import type { BlogListResult, BlogPost, BlogPostStatus } from './types';
+import { inspectBlogLinks } from './quality';
+import type { CompetitorReferenceSnapshot } from './research';
 
 type BlogPostRow = Record<string, any>;
 
@@ -14,6 +16,8 @@ function toPost(row: BlogPostRow): BlogPost {
     slug: String(row.slug || ''),
     title: String(row.title || ''),
     excerpt: String(row.excerpt || ''),
+    tagline: String(row.tagline || ''),
+    summary: String(row.summary || row.excerpt || ''),
     contentHtml: String(row.content_html ?? row.contentHtml ?? ''),
     contentText,
     focusKeyword: String(row.focus_keyword ?? row.focusKeyword ?? ''),
@@ -22,8 +26,35 @@ function toPost(row: BlogPostRow): BlogPost {
     metaDescription: String(row.meta_description ?? row.metaDescription ?? ''),
     canonicalUrl: String(row.canonical_url ?? row.canonicalUrl ?? ''),
     ogImageUrl: String(row.og_image_url ?? row.ogImageUrl ?? ''),
+    ogTitle: String(row.og_title ?? row.ogTitle ?? row.seo_title ?? row.title ?? ''),
+    ogDescription: String(row.og_description ?? row.ogDescription ?? row.meta_description ?? row.excerpt ?? ''),
+    ogImageAlt: String(row.og_image_alt ?? row.ogImageAlt ?? ''),
+    ogImageAttribution: String(row.og_image_attribution ?? row.ogImageAttribution ?? ''),
     status: String(row.status || 'draft') as BlogPostStatus,
+    origin: row.origin || 'admin_manual',
+    articleType: String(row.article_type ?? row.articleType ?? 'evergreen guide'),
+    topicCluster: String(row.topic_cluster ?? row.topicCluster ?? ''),
+    language: String(row.language || 'en'),
+    robotsDirective: String(row.robots_directive ?? row.robotsDirective ?? 'index,follow,max-image-preview:large'),
+    freshnessStatus: row.freshness_status ?? row.freshnessStatus ?? 'evergreen',
+    sourcePublishedAt: row.source_published_at ?? row.sourcePublishedAt ?? null,
+    sourceUpdatedAt: row.source_updated_at ?? row.sourceUpdatedAt ?? null,
+    discoveredAt: row.discovered_at ?? row.discoveredAt ?? null,
+    continuingDevelopment: Boolean(row.continuing_development ?? row.continuingDevelopment),
+    scheduledAt: row.scheduled_at ?? row.scheduledAt ?? null,
+    publicationReason: String(row.publication_reason ?? row.publicationReason ?? ''),
+    qualityStatus: row.quality_status ?? row.qualityStatus ?? 'pending',
+    qualityResults: row.quality_results ?? row.qualityResults ?? null,
+    originalityStatus: row.originality_status ?? row.originalityStatus ?? 'pending',
+    sourceStatus: row.source_status ?? row.sourceStatus ?? 'pending',
+    prerenderStatus: row.prerender_status ?? row.prerenderStatus ?? 'pending',
+    imageStatus: row.image_status ?? row.imageStatus ?? 'pending',
+    sources: Array.isArray(row.sources) ? row.sources : [],
+    relatedArticles: Array.isArray(row.related_articles ?? row.relatedArticles) ? (row.related_articles ?? row.relatedArticles) : [],
+    generationJobId: row.generation_job_id ?? row.generationJobId ?? null,
+    batchId: row.batch_id ?? row.batchId ?? null,
     authorId: row.author_id ?? row.authorId ?? null,
+    reviewerId: row.reviewer_id ?? row.reviewerId ?? null,
     updatedBy: row.updated_by ?? row.updatedBy ?? null,
     publishedAt: row.published_at ?? row.publishedAt ?? null,
     createdAt: String(row.created_at ?? row.createdAt ?? new Date().toISOString()),
@@ -33,7 +64,7 @@ function toPost(row: BlogPostRow): BlogPost {
 }
 
 function isPublic(row: BlogPostRow) {
-  return row.status === 'published' && row.published_at && new Date(row.published_at).getTime() <= Date.now();
+  return row.status === 'published' && row.published_at && new Date(row.published_at).getTime() <= Date.now() && (!row.robots_directive || String(row.robots_directive).startsWith('index'));
 }
 
 function publicMemoryRows() {
@@ -53,8 +84,9 @@ export const blogRepository = {
 
     let request = client
       .from('blog_posts')
-      .select('id,slug,title,excerpt,focus_keyword,tags,seo_title,meta_description,canonical_url,og_image_url,status,author_id,published_at,created_at,updated_at,content_text', { count: 'exact' })
+      .select('id,slug,title,excerpt,tagline,summary,focus_keyword,tags,seo_title,meta_description,canonical_url,og_image_url,og_title,og_description,og_image_alt,og_image_attribution,status,origin,article_type,topic_cluster,language,robots_directive,freshness_status,sources,related_articles,author_id,published_at,created_at,updated_at,content_text', { count: 'exact' })
       .eq('status', 'published')
+      .like('robots_directive', 'index%')
       .not('published_at', 'is', null)
       .lte('published_at', new Date().toISOString())
       .order('published_at', { ascending: false })
@@ -92,6 +124,17 @@ export const blogRepository = {
       return row ? toPost(row) : null;
     }
     const { data, error } = await client.from('blog_posts').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    return data ? toPost(data) : null;
+  },
+
+  async getByGenerationJobId(generationJobId: string) {
+    const client = getSupabaseAdminClient();
+    if (!client) {
+      const row = [...memoryPosts.values()].find((item) => item.generation_job_id === generationJobId);
+      return row ? toPost(row) : null;
+    }
+    const { data, error } = await client.from('blog_posts').select('*').eq('generation_job_id', generationJobId).maybeSingle();
     if (error) throw error;
     return data ? toPost(data) : null;
   },
@@ -135,9 +178,93 @@ export const blogRepository = {
 
   async sitemapRows() {
     const client = getSupabaseAdminClient();
-    if (!client) return publicMemoryRows().map((row) => ({ slug: String(row.slug), updatedAt: String(row.updated_at) }));
-    const { data, error } = await client.from('blog_posts').select('slug,updated_at').eq('status', 'published').lte('published_at', new Date().toISOString()).order('published_at', { ascending: false }).limit(5000);
+    if (!client) return publicMemoryRows().filter((row) => String(row.robots_directive || 'index').startsWith('index')).map((row) => ({ slug: String(row.slug), updatedAt: String(row.updated_at), imageUrl: String(row.og_image_url || '') }));
+    const { data, error } = await client.from('blog_posts').select('slug,updated_at,og_image_url').eq('status', 'published').like('robots_directive', 'index%').lte('published_at', new Date().toISOString()).order('published_at', { ascending: false }).limit(5000);
     if (error) throw error;
-    return (data || []).map((row) => ({ slug: String(row.slug), updatedAt: String(row.updated_at) }));
+    return (data || []).map((row) => ({ slug: String(row.slug), updatedAt: String(row.updated_at), imageUrl: String(row.og_image_url || '') }));
+  },
+
+  async relatedPublished(post: BlogPost, limit = 4) {
+    const client = getSupabaseAdminClient();
+    if (!client) return publicMemoryRows().filter((row) => row.id !== post.id && (!post.topicCluster || row.topic_cluster === post.topicCluster)).slice(0, limit).map(toPost);
+    let request = client.from('blog_posts').select('*').eq('status', 'published').lte('published_at', new Date().toISOString()).neq('id', post.id).order('published_at', { ascending: false }).limit(limit);
+    if (post.topicCluster) request = request.eq('topic_cluster', post.topicCluster);
+    const { data, error } = await request;
+    if (error) throw error;
+    return (data || []).map(toPost);
+  },
+
+  async syncEditorialRecords(post: BlogPost, actorId: string | null, previousStatus = '') {
+    const client = getSupabaseAdminClient();
+    if (!client) return;
+    const links = inspectBlogLinks(post.contentHtml);
+    const sourceRows = post.sources.map((source) => ({
+      article_id: post.id, url: source.url, title: source.title, publisher: source.publisher, author: source.author || '',
+      published_at: source.publishedAt || null, updated_at_source: source.updatedAt || null, accessed_at: source.accessedAt || new Date().toISOString(),
+      source_type: source.sourceType || 'reference', supported_claims: source.supportedClaims || [], primary_source: Boolean(source.primary),
+      reliability: source.reliability || 'unverified', citation_status: source.citationStatus || 'needs_review',
+    }));
+    const linkRows = links.map((link) => ({ article_id: post.id, link_type: /^https?:\/\//i.test(link.href) ? 'external' : 'internal', href: link.href, anchor_text: link.anchor, canonical: true, validation_status: 'passed' }));
+    linkRows.push(...post.relatedArticles.map((related) => ({ article_id: post.id, link_type: 'related', href: `/blog/${related.slug}`, anchor_text: related.title, canonical: true, validation_status: 'passed' })));
+    const [sourcesDelete, linksDelete] = await Promise.all([
+      client.from('blog_sources').delete().eq('article_id', post.id),
+      client.from('blog_links').delete().eq('article_id', post.id),
+    ]);
+    if (sourcesDelete.error) throw sourcesDelete.error;
+    if (linksDelete.error) throw linksDelete.error;
+    if (sourceRows.length) { const { error } = await client.from('blog_sources').insert(sourceRows); if (error) throw error; }
+    if (linkRows.length) { const { error } = await client.from('blog_links').insert(linkRows); if (error) throw error; }
+    if (post.qualityResults) {
+      const { error } = await client.from('blog_quality_results').insert({ article_id: post.id, generation_job_id: post.generationJobId, gate_type: 'content', status: post.qualityResults.status === 'pending' ? 'needs_review' : post.qualityResults.status, checks: post.qualityResults.checks, blocked_reasons: post.qualityResults.blockedReasons, checked_at: post.qualityResults.checkedAt });
+      if (error) throw error;
+    }
+    const { error: revisionError } = await client.from('blog_revisions').insert({ article_id: post.id, actor_id: actorId, origin: post.origin, previous_state: previousStatus, new_state: post.status, reason: previousStatus === post.status ? 'Content or metadata updated.' : 'Editorial state changed.', snapshot: { title: post.title, slug: post.slug, qualityStatus: post.qualityStatus, sourceStatus: post.sourceStatus, originalityStatus: post.originalityStatus, prerenderStatus: post.prerenderStatus, imageStatus: post.imageStatus } });
+    if (revisionError) throw revisionError;
+    if (previousStatus !== post.status) {
+      const { error: eventError } = await client.from('blog_publication_events').insert({ article_id: post.id, generation_job_id: post.generationJobId, actor_id: actorId, event_type: 'state_change', previous_state: previousStatus, new_state: post.status, reason: post.publicationReason, scheduled_for: post.scheduledAt });
+      if (eventError) throw eventError;
+    }
+  },
+
+  async publishDueScheduled(limit = 10) {
+    const client = getSupabaseAdminClient();
+    if (!client) return [] as string[];
+    const { data, error } = await client.from('blog_posts').select('id,scheduled_at,origin,freshness_status,source_published_at,source_updated_at,quality_status').eq('status', 'scheduled').in('quality_status', ['passed', 'needs_review']).eq('originality_status', 'passed').eq('source_status', 'passed').eq('prerender_status', 'passed').in('image_status', ['passed', 'not_required']).lte('scheduled_at', new Date().toISOString()).order('scheduled_at', { ascending: true }).limit(Math.max(1, Math.min(20, limit)));
+    if (error) throw error;
+    const published: string[] = [];
+    for (const row of data || []) {
+      const timestamp = new Date().toISOString();
+      const sourceTime = Math.max(new Date(row.source_updated_at || 0).getTime(), new Date(row.source_published_at || 0).getTime());
+      const staleAutomaticStory = row.origin === 'trend_autopilot' && (!Number.isFinite(sourceTime) || Date.now() - sourceTime > 48 * 60 * 60 * 1000);
+      if (staleAutomaticStory) {
+        const { error: holdError } = await client.from('blog_posts').update({ status: 'needs_review', robots_directive: 'noindex,nofollow', publication_reason: 'Automatic publication held because the verified 48-hour freshness window expired.' }).eq('id', row.id).eq('status', 'scheduled');
+        if (holdError) throw holdError;
+        const { error: holdEventError } = await client.from('blog_publication_events').insert({ article_id: row.id, event_type: 'freshness_hold', previous_state: 'scheduled', new_state: 'needs_review', scheduled_for: row.scheduled_at, reason: 'Verified source freshness expired before publication.' });
+        if (holdEventError) throw holdEventError;
+        continue;
+      }
+      const { data: updated, error: updateError } = await client.from('blog_posts').update({ status: 'published', published_at: timestamp, robots_directive: 'index,follow,max-image-preview:large' }).eq('id', row.id).eq('status', 'scheduled').select('id').maybeSingle();
+      if (updateError) throw updateError;
+      if (!updated) continue;
+      published.push(row.id);
+      const { error: eventError } = await client.from('blog_publication_events').insert({ article_id: row.id, event_type: 'scheduled_publish', previous_state: 'scheduled', new_state: 'published', scheduled_for: row.scheduled_at, reason: 'Configured publication time reached after all gates passed.' });
+      if (eventError) throw eventError;
+    }
+    return published;
+  },
+
+  async storeCompetitorResearch(articleId: string, references: CompetitorReferenceSnapshot[], brief: { coveredSubtopics: string[]; contentGaps: string[]; formatObservations: string[]; proposedOriginalAngle: string; trafficLabel: string }) {
+    const client = getSupabaseAdminClient();
+    if (!client || !references.length) return;
+    const rows = references.map((reference) => ({
+      article_id: articleId, reference_url: reference.url, covered_subtopics: reference.observedTopics,
+      format_observations: brief.formatObservations, content_gaps: brief.contentGaps, outdated_information: [],
+      proposed_original_angle: brief.proposedOriginalAngle, traffic_label: brief.trafficLabel,
+      similarity_risk: 'needs_review', plagiarism_status: 'pending',
+    }));
+    const { error } = await client.from('blog_competitor_research').insert(rows);
+    if (error) throw error;
   },
 };
+
+export { toPost as mapBlogPostRow };

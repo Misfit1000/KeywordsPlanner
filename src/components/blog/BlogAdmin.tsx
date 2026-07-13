@@ -1,17 +1,31 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Archive, Bot, CalendarDays, CheckCircle2, FilePlus2, Globe2, Loader2, RefreshCw, Save, Search, Sparkles, WandSparkles, XCircle } from 'lucide-react';
-import { archiveAdminBlogPost, generateAdminBlog, getAdminBlogPosts, saveAdminBlogPost } from '../../lib/blog/client';
+import { Archive, CalendarDays, CheckCircle2, FilePlus2, Globe2, Loader2, RefreshCw, Save, Search, XCircle } from 'lucide-react';
+import { archiveAdminBlogPost, getAdminBlogPosts, importAdminBlogImage, saveAdminBlogPost } from '../../lib/blog/client';
 import { blogSeoChecklist, buildBlogSeoFields } from '../../lib/blog/seo';
 import { createBlogSlug } from '../../lib/blog/slug';
-import type { BlogPost, BlogPostInput, BlogPostStatus, GeminiBlogDraft } from '../../lib/blog/types';
+import type { BlogPost, BlogPostInput, BlogPostStatus } from '../../lib/blog/types';
 import { EmptyState, StatusBadge } from '../ui/visual-system';
 import { FormField, Notice, Panel } from '../ui/page-system';
 import RichTextEditor from './RichTextEditor';
+import BlogAutomationPanel from './BlogAutomationPanel';
 
-type Draft = Required<Omit<BlogPostInput, 'publishedAt'>> & { publishedAt: string };
+type Draft = BlogPostInput & {
+  title: string;
+  slug: string;
+  excerpt: string;
+  contentHtml: string;
+  focusKeyword: string;
+  tags: string[];
+  seoTitle: string;
+  metaDescription: string;
+  canonicalUrl: string;
+  ogImageUrl: string;
+  status: BlogPostStatus;
+  publishedAt: string;
+};
 
 const EMPTY_DRAFT: Draft = {
-  title: '', slug: '', excerpt: '', contentHtml: '<p></p>', focusKeyword: '', tags: [], seoTitle: '', metaDescription: '', canonicalUrl: '', ogImageUrl: '', status: 'draft', publishedAt: '',
+  title: '', slug: '', excerpt: '', tagline: '', summary: '', contentHtml: '<p></p>', focusKeyword: '', tags: [], seoTitle: '', metaDescription: '', canonicalUrl: '', ogImageUrl: '', status: 'draft', publishedAt: '', origin: 'admin_manual',
 };
 
 function draftFromPost(post: BlogPost): Draft {
@@ -19,6 +33,8 @@ function draftFromPost(post: BlogPost): Draft {
     title: post.title,
     slug: post.slug,
     excerpt: post.excerpt,
+    tagline: post.tagline,
+    summary: post.summary,
     contentHtml: post.contentHtml,
     focusKeyword: post.focusKeyword,
     tags: post.tags,
@@ -26,8 +42,21 @@ function draftFromPost(post: BlogPost): Draft {
     metaDescription: post.metaDescription,
     canonicalUrl: post.canonicalUrl,
     ogImageUrl: post.ogImageUrl,
+    ogImageAlt: post.ogImageAlt,
+    ogImageAttribution: post.ogImageAttribution,
     status: post.status,
-    publishedAt: post.publishedAt ? post.publishedAt.slice(0, 16) : '',
+    origin: post.origin,
+    articleType: post.articleType,
+    topicCluster: post.topicCluster,
+    sources: post.sources,
+    relatedArticles: post.relatedArticles,
+    qualityStatus: post.qualityStatus,
+    qualityResults: post.qualityResults,
+    originalityStatus: post.originalityStatus,
+    sourceStatus: post.sourceStatus,
+    prerenderStatus: post.prerenderStatus,
+    imageStatus: post.imageStatus,
+    publishedAt: (post.scheduledAt || post.publishedAt) ? String(post.scheduledAt || post.publishedAt).slice(0, 16) : '',
   };
 }
 
@@ -44,11 +73,8 @@ export default function BlogAdmin() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [search, setSearch] = useState('');
-  const [geminiLoading, setGeminiLoading] = useState<'topics' | 'draft' | null>(null);
-  const [topic, setTopic] = useState('');
-  const [audience, setAudience] = useState('website owners, marketers, developers, and SEO practitioners');
-  const [topicIdeas, setTopicIdeas] = useState<Array<{ title: string; angle: string }>>([]);
   const [editorialReviewed, setEditorialReviewed] = useState(false);
+  const [imageImport, setImageImport] = useState({ sourceUrl: '', creator: '', publisher: '', licence: '', altText: '' });
 
   const loadPosts = async () => {
     setLoading(true);
@@ -106,11 +132,18 @@ export default function BlogAdmin() {
     setSaving(true);
     setError(null);
     try {
-      const publishedAt = nextStatus === 'published' ? (publishNow ? new Date().toISOString() : draft.publishedAt || new Date().toISOString()) : null;
-      const data = await saveAdminBlogPost({ ...draft, status: nextStatus, publishedAt }, selectedId || undefined);
+      const publishedAt = nextStatus === 'published' ? (publishNow ? new Date().toISOString() : new Date().toISOString()) : null;
+      const scheduledAt = nextStatus === 'scheduled' ? draft.publishedAt : null;
+      const data = await saveAdminBlogPost({
+        ...draft,
+        status: nextStatus,
+        publishedAt,
+        scheduledAt,
+        ...(editorialReviewed ? { originalityStatus: 'passed', sourceStatus: 'passed', prerenderStatus: 'passed', imageStatus: draft.ogImageUrl ? draft.imageStatus || 'needs_review' : 'not_required' } : {}),
+      }, selectedId || undefined);
       setSelectedId(data.post.id);
       setDraft(draftFromPost(data.post));
-      setMessage(nextStatus === 'published' ? (new Date(data.post.publishedAt || 0).getTime() > Date.now() ? 'Article scheduled.' : 'Article published.') : 'Draft saved.');
+      setMessage(nextStatus === 'scheduled' ? 'Article scheduled.' : nextStatus === 'published' ? 'Article published.' : 'Draft saved.');
       await loadPosts();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Article could not be saved.');
@@ -137,43 +170,16 @@ export default function BlogAdmin() {
     }
   };
 
-  const suggestTopics = async () => {
-    setGeminiLoading('topics');
-    setError(null);
-    try {
-      const data: any = await generateAdminBlog({ action: 'topics', audience, keywords: draft.focusKeyword });
-      setTopicIdeas(Array.isArray(data.topics) ? data.topics : []);
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Gemini topic suggestions failed.');
-    } finally {
-      setGeminiLoading(null);
-    }
-  };
 
-  const generateDraft = async () => {
-    setGeminiLoading('draft');
-    setError(null);
+  const importImage = async () => {
+    setSaving(true); setError(null);
     try {
-      const data = await generateAdminBlog({ action: 'draft', topic, audience, keywords: draft.focusKeyword }) as GeminiBlogDraft;
-      setDraft((current) => ({
-        ...current,
-        title: data.title,
-        slug: data.suggestedSlug,
-        excerpt: data.excerpt,
-        contentHtml: data.contentHtml,
-        focusKeyword: data.focusKeyword,
-        tags: data.tags,
-        seoTitle: data.seoTitle,
-        metaDescription: data.metaDescription,
-        status: 'draft',
-      }));
-      setEditorialReviewed(false);
-      setMessage('Gemini draft loaded. Review facts, links, claims, and wording before publishing.');
+      const { image } = await importAdminBlogImage({ ...imageImport, articleId: selectedId });
+      setDraft((current) => ({ ...current, ogImageUrl: String(image.storage_url || image.source_url || ''), ogImageAlt: String(image.alt_text || imageImport.altText), ogImageAttribution: String(image.attribution || ''), imageStatus: 'passed' }));
+      setMessage('Image verified and imported. Attribution details were retained.');
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Gemini draft generation failed.');
-    } finally {
-      setGeminiLoading(null);
-    }
+      setError(requestError instanceof Error ? requestError.message : 'Image could not be imported.');
+    } finally { setSaving(false); }
   };
 
   return (
@@ -185,6 +191,8 @@ export default function BlogAdmin() {
 
       {error && <Notice tone="danger" title="Blog action failed">{error}</Notice>}
       {message && <Notice tone="success">{message}</Notice>}
+
+      <BlogAutomationPanel posts={posts} onChanged={() => void loadPosts()} />
 
       <div className="grid gap-6 2xl:grid-cols-[320px_minmax(0,1fr)]">
         <Panel className="h-fit overflow-hidden p-0 2xl:sticky 2xl:top-24">
@@ -206,7 +214,7 @@ export default function BlogAdmin() {
               <div className="flex flex-wrap gap-2">
                 {selectedId && <button type="button" onClick={archive} disabled={saving} className="quiet-button text-red-600"><Archive className="h-4 w-4" /> Archive</button>}
                 <button type="button" onClick={() => persist('draft')} disabled={saving} className="quiet-button"><Save className="h-4 w-4" /> Save draft</button>
-                <button type="button" onClick={() => persist('published')} disabled={saving || !draft.publishedAt || !editorialReviewed} className="quiet-button"><CalendarDays className="h-4 w-4" /> Schedule</button>
+                <button type="button" onClick={() => persist('scheduled')} disabled={saving || !draft.publishedAt || !editorialReviewed} className="quiet-button"><CalendarDays className="h-4 w-4" /> Schedule</button>
                 <button type="button" onClick={() => persist('published', true)} disabled={saving || !editorialReviewed} className="trust-button">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe2 className="h-4 w-4" />} Publish now</button>
               </div>
             </div>
@@ -223,19 +231,15 @@ export default function BlogAdmin() {
               <FormField label="Tags" htmlFor="blog-tags" hint="Comma-separated; up to 12 tags."><input id="blog-tags" value={draft.tags.join(', ')} onChange={(event) => update('tags', event.target.value.split(',').map((tag) => tag.trim()).filter(Boolean))} className="suite-input" /></FormField>
             </div>
             <div className="mt-5"><FormField label="Excerpt" htmlFor="blog-excerpt" hint={`${draft.excerpt.length}/360 characters`}><textarea id="blog-excerpt" value={draft.excerpt} onChange={(event) => update('excerpt', event.target.value)} className="suite-input min-h-28 resize-y" maxLength={360} /></FormField></div>
+            <div className="mt-5 grid gap-5 lg:grid-cols-2"><FormField label="Article tagline" htmlFor="blog-tagline" hint="Adds context without repeating the headline."><input id="blog-tagline" value={draft.tagline || ''} onChange={(event) => update('tagline', event.target.value)} className="suite-input" maxLength={240} /></FormField><FormField label="Executive summary" htmlFor="blog-summary"><textarea id="blog-summary" value={draft.summary || ''} onChange={(event) => update('summary', event.target.value)} className="suite-input min-h-24 resize-y" maxLength={600} /></FormField></div>
+            <div className="mt-5 rounded-lg border border-border bg-muted/20 p-4"><h4 className="text-sm font-semibold text-foreground">Primary research source</h4><p className="mt-1 text-xs leading-5 text-muted-foreground">The exact source URL must also appear as a descriptive hyperlink in the article body.</p><div className="mt-4 grid gap-4 lg:grid-cols-3"><FormField label="Source URL" htmlFor="blog-source-url"><input id="blog-source-url" type="url" value={draft.sources?.[0]?.url || ''} onChange={(event) => update('sources', [{ ...(draft.sources?.[0] || { title: '', publisher: '' }), url: event.target.value, citationStatus: 'verified', reliability: 'high' }])} className="suite-input" /></FormField><FormField label="Source title" htmlFor="blog-source-title"><input id="blog-source-title" value={draft.sources?.[0]?.title || ''} onChange={(event) => update('sources', [{ ...(draft.sources?.[0] || { url: '', publisher: '' }), title: event.target.value, citationStatus: 'verified', reliability: 'high' }])} className="suite-input" /></FormField><FormField label="Publisher" htmlFor="blog-source-publisher"><input id="blog-source-publisher" value={draft.sources?.[0]?.publisher || ''} onChange={(event) => update('sources', [{ ...(draft.sources?.[0] || { url: '', title: '' }), publisher: event.target.value, citationStatus: 'verified', reliability: 'high' }])} className="suite-input" /></FormField></div></div>
             <div className="mt-5"><FormField label="Article content"><RichTextEditor value={draft.contentHtml} onChange={(contentHtml) => update('contentHtml', contentHtml)} /></FormField></div>
           </Panel>
 
           <Panel className="p-5 sm:p-6">
-            <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2 text-accent"><Bot className="h-5 w-5" /><h3 className="text-xl font-semibold">Gemini draft assistant</h3></div><p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">Optional server-side drafting. Generated content is never published automatically and must be reviewed for factual accuracy, originality, links, and claims.</p></div><button type="button" onClick={suggestTopics} disabled={Boolean(geminiLoading)} className="quiet-button">{geminiLoading === 'topics' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Suggest topics</button></div>
-            <div className="mt-5 grid gap-4 lg:grid-cols-2"><FormField label="Topic" htmlFor="gemini-topic"><input id="gemini-topic" value={topic} onChange={(event) => setTopic(event.target.value)} placeholder="Example: How to prioritize technical SEO fixes" className="suite-input" /></FormField><FormField label="Audience" htmlFor="gemini-audience"><input id="gemini-audience" value={audience} onChange={(event) => setAudience(event.target.value)} className="suite-input" /></FormField></div>
-            {topicIdeas.length > 0 && <div className="mt-5 grid gap-3 md:grid-cols-2">{topicIdeas.map((idea) => <button key={idea.title} type="button" onClick={() => setTopic(idea.title)} className="rounded-xl border border-border p-4 text-left hover:border-accent/30 hover:bg-muted"><span className="text-sm font-semibold">{idea.title}</span><span className="mt-1 block text-xs leading-5 text-muted-foreground">{idea.angle}</span></button>)}</div>}
-            <button type="button" onClick={generateDraft} disabled={Boolean(geminiLoading) || topic.trim().length < 5} className="trust-button mt-5">{geminiLoading === 'draft' ? <Loader2 className="h-4 w-4 animate-spin" /> : <WandSparkles className="h-4 w-4" />} Generate review draft</button>
-          </Panel>
-
-          <Panel className="p-5 sm:p-6">
             <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-start sm:justify-between"><div><h3 className="text-xl font-semibold">Search preview and SEO checks</h3><p className="mt-1 text-sm text-muted-foreground">Deterministic checks guide the editor; they do not guarantee Google rankings.</p></div><button type="button" onClick={autoFillSeo} className="quiet-button"><RefreshCw className="h-4 w-4" /> Auto-fill SEO</button></div>
-            <div className="mt-5 grid gap-5 lg:grid-cols-2"><FormField label="SEO title" htmlFor="blog-seo-title" hint={`${draft.seoTitle.length}/60 recommended characters`}><input id="blog-seo-title" value={draft.seoTitle} onChange={(event) => update('seoTitle', event.target.value)} className="suite-input" maxLength={70} /></FormField><FormField label="Meta description" htmlFor="blog-meta" hint={`${draft.metaDescription.length}/160 recommended characters`}><textarea id="blog-meta" value={draft.metaDescription} onChange={(event) => update('metaDescription', event.target.value)} className="suite-input min-h-24 resize-y" maxLength={180} /></FormField><FormField label="Canonical URL override" htmlFor="blog-canonical" hint="Leave empty to use the article URL."><input id="blog-canonical" type="url" value={draft.canonicalUrl} onChange={(event) => update('canonicalUrl', event.target.value)} className="suite-input" placeholder="https://keywordsintel.vercel.app/blog/article-slug" /></FormField><FormField label="Social image URL" htmlFor="blog-og-image"><input id="blog-og-image" type="url" value={draft.ogImageUrl} onChange={(event) => update('ogImageUrl', event.target.value)} className="suite-input" placeholder="https://.../article-image.jpg" /></FormField><FormField label="Publish date" htmlFor="blog-publish-date" hint="A future date schedules public visibility."><input id="blog-publish-date" type="datetime-local" value={draft.publishedAt} onChange={(event) => update('publishedAt', event.target.value)} className="suite-input" /></FormField></div>
+            <div className="mt-5 grid gap-5 lg:grid-cols-2"><FormField label="SEO title" htmlFor="blog-seo-title" hint={`${draft.seoTitle.length}/60 recommended characters`}><input id="blog-seo-title" value={draft.seoTitle} onChange={(event) => update('seoTitle', event.target.value)} className="suite-input" maxLength={70} /></FormField><FormField label="Meta description" htmlFor="blog-meta" hint={`${draft.metaDescription.length}/160 recommended characters`}><textarea id="blog-meta" value={draft.metaDescription} onChange={(event) => update('metaDescription', event.target.value)} className="suite-input min-h-24 resize-y" maxLength={180} /></FormField><FormField label="Canonical URL override" htmlFor="blog-canonical" hint="Leave empty to use the article URL."><input id="blog-canonical" type="url" value={draft.canonicalUrl} onChange={(event) => update('canonicalUrl', event.target.value)} className="suite-input" placeholder="https://keywordsintel.vercel.app/blog/article-slug" /></FormField><FormField label="Publish date" htmlFor="blog-publish-date" hint="A future date schedules public visibility."><input id="blog-publish-date" type="datetime-local" value={draft.publishedAt} onChange={(event) => update('publishedAt', event.target.value)} className="suite-input" /></FormField></div>
+            <div className="mt-5 rounded-lg border border-border p-4"><h4 className="text-sm font-semibold text-foreground">Verified article image</h4><p className="mt-1 text-xs leading-5 text-muted-foreground">Imports only public raster images after network, file type, size, dimensions, licence, and attribution checks. SVG is rejected.</p><div className="mt-4 grid gap-4 lg:grid-cols-2"><FormField label="Public image URL" htmlFor="image-source"><input id="image-source" type="url" value={imageImport.sourceUrl} onChange={(event) => setImageImport((value) => ({ ...value, sourceUrl: event.target.value }))} className="suite-input" /></FormField><FormField label="Descriptive alt text" htmlFor="image-alt"><input id="image-alt" value={imageImport.altText} onChange={(event) => setImageImport((value) => ({ ...value, altText: event.target.value }))} className="suite-input" /></FormField><FormField label="Publisher" htmlFor="image-publisher"><input id="image-publisher" value={imageImport.publisher} onChange={(event) => setImageImport((value) => ({ ...value, publisher: event.target.value }))} className="suite-input" /></FormField><FormField label="Licence" htmlFor="image-licence"><input id="image-licence" value={imageImport.licence} onChange={(event) => setImageImport((value) => ({ ...value, licence: event.target.value }))} className="suite-input" /></FormField></div><button type="button" onClick={importImage} disabled={saving || !imageImport.sourceUrl || !imageImport.publisher || !imageImport.licence || imageImport.altText.length < 8} className="quiet-button mt-4">Verify and import image</button>{draft.ogImageUrl && <p className="mt-3 break-all text-xs text-muted-foreground">Stored image: {draft.ogImageUrl}</p>}</div>
             <div className="mt-6 rounded-xl border border-border bg-white p-5 text-slate-900"><div className="text-sm text-emerald-700">keywordsintel.vercel.app / blog / {draft.slug || 'article-slug'}</div><div className="mt-1 text-xl text-[#1a0dab]">{draft.seoTitle || draft.title || 'Article SEO title'}</div><p className="mt-1 text-sm leading-6 text-slate-700">{draft.metaDescription || draft.excerpt || 'Article meta description preview.'}</p></div>
             <div className="mt-5 grid gap-2 sm:grid-cols-2">{checklist.map((item) => <div key={item.label} className={`flex gap-2 rounded-lg border p-3 text-sm ${item.pass ? 'border-emerald-500/20 bg-emerald-500/8 text-emerald-800 dark:text-emerald-200' : 'border-border bg-muted/35 text-muted-foreground'}`}>{item.pass ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <XCircle className="h-4 w-4 shrink-0" />}{item.label}</div>)}</div>
           </Panel>

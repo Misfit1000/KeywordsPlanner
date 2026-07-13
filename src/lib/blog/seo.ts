@@ -47,7 +47,7 @@ export function blogSeoChecklist(post: Pick<import('./types').BlogPostInput, 'ti
     { label: 'SEO title is 30-60 characters', pass: Boolean(post.seoTitle && post.seoTitle.length >= 30 && post.seoTitle.length <= 60) },
     { label: 'Meta description is 120-160 characters', pass: Boolean(post.metaDescription && post.metaDescription.length >= 120 && post.metaDescription.length <= 160) },
     { label: 'Slug is readable and concise', pass: Boolean(post.slug && post.slug.length <= 75 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(post.slug)) },
-    { label: 'Article has at least 600 words', pass: text.split(' ').filter(Boolean).length >= 600 },
+    { label: 'Article has at least 1,500 useful words', pass: text.split(' ').filter(Boolean).length >= 1500 },
     { label: 'Focus phrase appears in title and introduction', pass: Boolean(keyword && post.title.toLowerCase().includes(keyword) && text.slice(0, 700).toLowerCase().includes(keyword)) },
     { label: 'Excerpt clearly summarizes the article', pass: Boolean(post.excerpt && post.excerpt.length >= 90) },
   ];

@@ -5,7 +5,7 @@
 1. Create a Supabase project.
 2. Copy the project URL and anon key for the frontend.
 3. Copy the service role key for the API and worker only.
-4. Apply every SQL file in `supabase/migrations/` in numeric order through `011_production_robustness.sql`. Existing projects must apply the resilience migration 010 before the production-control migration 011.
+4. Apply every SQL file in `supabase/migrations/` in numeric order through `012_blog_automation_platform.sql`. Existing projects must apply migration 011 before the append-only blog automation migration 012.
 
 ## Frontend Environment
 

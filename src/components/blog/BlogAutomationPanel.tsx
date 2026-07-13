@@ -1,0 +1,122 @@
+import { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, CalendarClock, CheckCircle2, Clock3, FileStack, Loader2, Newspaper, Play, RefreshCw, Save, Settings2, Sparkles, XCircle } from 'lucide-react';
+import { getBlogAutomationDashboard, getBlogAutomationSettings, queueBlogBatch, queueBlogJob, runAdminBlogWorkflow, saveBlogAutomationSettings } from '../../lib/blog/client';
+import type { BlogAdminOverview, BlogGenerationJob, BlogPost } from '../../lib/blog/types';
+import { FormField, Notice, Panel } from '../ui/page-system';
+import { StatusBadge } from '../ui/visual-system';
+
+const EMPTY_OVERVIEW: BlogAdminOverview = {
+  automaticGeneratedToday: 0, automaticGeneratedWeek: 0, automaticPublishedToday: 0, automaticPublishedWeek: 0,
+  manuallyTriggered: 0, manualBatchArticles: 0, customHeadlineArticles: 0, updates: 0,
+  skippedAutomaticOpportunities: 0, automaticHeldForReview: 0, highPriorityStories: 0, expiringStories: 0,
+  draftsNeedingReview: 0, activeJobs: 0,
+  unresolvedClaims: 0, sourceFailures: 0, linkFailures: 0, imageFailures: 0, qualityFailures: 0,
+  originalityWarnings: 0, duplicateTopicWarnings: 0, prerenderFailures: 0, updatesDue: 0,
+  sitemapReady: 0, rssReady: 0, providerInputTokens: 0, providerOutputTokens: 0,
+};
+
+function jobTone(state: string) {
+  if (state === 'published') return 'success' as const;
+  if (state === 'failed' || state === 'cancelled') return 'danger' as const;
+  if (state === 'ready_for_review' || state === 'scheduled') return 'warning' as const;
+  return 'accent' as const;
+}
+
+function formatDate(value: string | null | undefined) {
+  if (!value) return 'Not scheduled';
+  return new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+}
+
+export default function BlogAutomationPanel({ posts, onChanged }: { posts: BlogPost[]; onChanged: () => void }) {
+  const [overview, setOverview] = useState(EMPTY_OVERVIEW);
+  const [jobs, setJobs] = useState<BlogGenerationJob[]>([]);
+  const [discoveries, setDiscoveries] = useState<Array<Record<string, any>>>([]);
+  const [settings, setSettings] = useState<Record<string, any>>({ enabled: false, timezone: 'UTC', daily_automatic_limit: 2, weekly_automatic_limit: 10, preferred_start_hour: 9, preferred_end_hour: 17, minimum_spacing_minutes: 180, approved_feed_urls: [], require_review_for_urgent: true });
+  const [topic, setTopic] = useState('');
+  const [headline, setHeadline] = useState('');
+  const [batchHeadlines, setBatchHeadlines] = useState('');
+  const [sourceUrlsText, setSourceUrlsText] = useState('');
+  const [competitorUrlsText, setCompetitorUrlsText] = useState('');
+  const [busy, setBusy] = useState('');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  const load = async () => {
+    setBusy('load');
+    try {
+      const [dashboard, configuration] = await Promise.all([getBlogAutomationDashboard(), getBlogAutomationSettings()]);
+      setOverview(dashboard.overview);
+      setJobs(dashboard.jobs);
+      setDiscoveries(dashboard.discoveries);
+      setSettings(configuration.settings);
+      setError('');
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Content operations could not be loaded.');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  useEffect(() => { void load(); }, []);
+  const scheduled = useMemo(() => posts.filter((post) => post.status === 'scheduled').sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt))), [posts]);
+  const counters = [
+    ['Automatic today', overview.automaticGeneratedToday, `${overview.automaticPublishedToday} published`],
+    ['Manual articles', overview.manuallyTriggered, 'Does not use automatic quota'],
+    ['Custom headlines', overview.customHeadlineArticles, 'Administrator supplied'],
+    ['Batch articles', overview.manualBatchArticles, 'Independent jobs'],
+    ['Fresh stories', overview.highPriorityStories, `${overview.expiringStories} expiring soon`],
+    ['Needs review', overview.draftsNeedingReview, `${overview.activeJobs} active jobs`],
+    ['Quality holds', overview.qualityFailures, `${overview.unresolvedClaims} unresolved claims`],
+    ['Source and link holds', overview.sourceFailures + overview.linkFailures, `${overview.sourceFailures} source · ${overview.linkFailures} link`],
+    ['Media and HTML holds', overview.imageFailures + overview.prerenderFailures, `${overview.imageFailures} image · ${overview.prerenderFailures} HTML`],
+    ['Originality warnings', overview.originalityWarnings, `${overview.duplicateTopicWarnings} duplicate topics`],
+    ['Discovery files', overview.sitemapReady, `${overview.rssReady} RSS-ready`],
+    ['Provider usage', overview.providerInputTokens + overview.providerOutputTokens, `${overview.providerInputTokens} input · ${overview.providerOutputTokens} output`],
+  ];
+
+  const run = async (action: () => Promise<unknown>, success: string, key: string) => {
+    setBusy(key); setError(''); setMessage('');
+    try { await action(); setMessage(success); await load(); onChanged(); }
+    catch (requestError) { setError(requestError instanceof Error ? requestError.message : 'The action could not be completed.'); }
+    finally { setBusy(''); }
+  };
+
+  const batch = batchHeadlines.split('\n').map((item) => item.trim()).filter(Boolean);
+  const sourceUrls = sourceUrlsText.split('\n').map((item) => item.trim()).filter(Boolean).slice(0, 12);
+  const competitorUrls = competitorUrlsText.split('\n').map((item) => item.trim()).filter(Boolean).slice(0, 5);
+  const workflow = (post: BlogPost, action: 'hold' | 'publish_now' | 'convert_manual') => run(
+    () => runAdminBlogWorkflow(post.id, { action, reason: action === 'hold' ? 'Held for administrator review.' : action === 'publish_now' ? 'Administrator approved immediate publication.' : 'Converted to the manual publication workflow.' }),
+    action === 'hold' ? 'Article held for review.' : action === 'publish_now' ? 'Article published.' : 'Article converted to manual scheduling.',
+    `workflow-${post.id}`,
+  );
+
+  return (
+    <Panel className="p-5 sm:p-6">
+      <div className="flex flex-col gap-4 border-b border-border pb-5 lg:flex-row lg:items-start lg:justify-between">
+        <div><div className="flex items-center gap-2 text-accent"><Sparkles className="h-5 w-5" /><h3 className="text-xl font-semibold text-foreground">Content operations</h3></div><p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">Queue research and drafting work, review freshness decisions, and control publishing windows. Automatic and administrator-triggered quotas remain separate.</p></div>
+        <button type="button" onClick={() => void load()} disabled={busy === 'load'} className="quiet-button">{busy === 'load' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Refresh</button>
+      </div>
+      {error && <div className="mt-5"><Notice tone="danger" title="Content operation failed">{error}</Notice></div>}
+      {message && <div className="mt-5"><Notice tone="success">{message}</Notice></div>}
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{counters.map(([label, value, detail]) => <div key={String(label)} className="rounded-lg border border-border bg-muted/25 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold text-foreground">{value}</p><p className="mt-1 text-xs text-muted-foreground">{detail}</p></div>)}</div>
+
+      <div className="mt-6 rounded-lg border border-border bg-muted/20 p-4"><h4 className="font-semibold text-foreground">Research inputs</h4><p className="mt-1 text-xs leading-5 text-muted-foreground">Optional public HTTPS references are fetched by the worker with SSRF controls. Competitor pages create a topic-gap brief only; wording, examples, tables, and structure are not copied.</p><div className="mt-4 grid gap-4 lg:grid-cols-2"><FormField label={`Source URLs (${sourceUrls.length}/12)`} htmlFor="automation-source-urls" hint="One authoritative source per line."><textarea id="automation-source-urls" value={sourceUrlsText} onChange={(event) => setSourceUrlsText(event.target.value)} className="suite-input min-h-20 resize-y" /></FormField><FormField label={`Competitor reference URLs (${competitorUrls.length}/5)`} htmlFor="automation-competitor-urls" hint="Used only for content-gap observations."><textarea id="automation-competitor-urls" value={competitorUrlsText} onChange={(event) => setCompetitorUrlsText(event.target.value)} className="suite-input min-h-20 resize-y" /></FormField></div></div>
+
+      <div className="mt-6 grid gap-5 xl:grid-cols-3">
+        <div className="rounded-lg border border-border p-4"><h4 className="font-semibold text-foreground">Manual article</h4><p className="mt-1 text-xs leading-5 text-muted-foreground">Creates an independent review job and never consumes automatic quota.</p><div className="mt-4"><FormField label="Article topic" htmlFor="automation-topic"><textarea id="automation-topic" value={topic} onChange={(event) => setTopic(event.target.value)} className="suite-input min-h-24 resize-y" maxLength={240} /></FormField></div><button type="button" disabled={topic.trim().length < 5 || Boolean(busy)} onClick={() => void run(() => queueBlogJob({ mode: 'manual', topic, sourceUrls, competitorUrls, requestId: crypto.randomUUID() }), 'Manual article queued.', 'manual')} className="trust-button mt-4">{busy === 'manual' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Queue article</button></div>
+        <div className="rounded-lg border border-border p-4"><h4 className="font-semibold text-foreground">Custom headline</h4><p className="mt-1 text-xs leading-5 text-muted-foreground">Preserves the exact headline. Duplicate or misleading promises are held for review.</p><div className="mt-4"><FormField label="Exact headline" htmlFor="automation-headline"><textarea id="automation-headline" value={headline} onChange={(event) => setHeadline(event.target.value)} className="suite-input min-h-24 resize-y" maxLength={140} /></FormField></div><button type="button" disabled={headline.trim().length < 8 || Boolean(busy)} onClick={() => void run(() => queueBlogJob({ mode: 'custom_headline', headline, sourceUrls, competitorUrls, requestId: crypto.randomUUID() }), 'Custom-headline article queued.', 'headline')} className="trust-button mt-4">{busy === 'headline' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Queue headline</button></div>
+        <div className="rounded-lg border border-border p-4"><h4 className="font-semibold text-foreground">Manual batch</h4><p className="mt-1 text-xs leading-5 text-muted-foreground">One headline per line. Maximum five; each runs and fails independently.</p><div className="mt-4"><FormField label={`Headlines (${batch.length}/5)`} htmlFor="automation-batch"><textarea id="automation-batch" value={batchHeadlines} onChange={(event) => setBatchHeadlines(event.target.value)} className="suite-input min-h-24 resize-y" /></FormField></div><button type="button" disabled={!batch.length || batch.length > 5 || Boolean(busy)} onClick={() => void run(() => queueBlogBatch({ headlines: batch, sourceUrls, competitorUrls }), `${batch.length} batch jobs queued.`, 'batch')} className="trust-button mt-4">{busy === 'batch' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileStack className="h-4 w-4" />} Queue batch</button></div>
+      </div>
+
+      <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,.85fr)]">
+        <div className="rounded-lg border border-border p-4"><div className="flex items-start justify-between gap-4"><div><h4 className="flex items-center gap-2 font-semibold text-foreground"><Newspaper className="h-4 w-4 text-accent" /> Freshness queue</h4><p className="mt-1 text-xs leading-5 text-muted-foreground">Only relevant, authoritative stories inside the freshness window can be selected. Zero suitable stories means zero forced articles.</p></div><button type="button" disabled={Boolean(busy) || !(settings.approved_feed_urls || []).length} onClick={() => void run(() => queueBlogJob({ mode: 'discover', feedUrls: settings.approved_feed_urls, requestId: crypto.randomUUID() }), 'Freshness discovery queued.', 'discover')} className="quiet-button">{busy === 'discover' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Discover</button></div><div className="mt-4 space-y-2">{discoveries.length ? discoveries.slice(0, 8).map((item) => <div key={item.id || item.source_url} className="rounded-lg bg-muted/35 p-3"><div className="flex flex-wrap items-center gap-2"><StatusBadge tone={item.freshness_status === 'high' ? 'success' : item.freshness_status === 'medium' ? 'warning' : 'neutral'}>{item.freshness_status || 'unverified'}</StatusBadge><span className="text-xs text-muted-foreground">{item.publisher}</span></div><a href={item.source_url} target="_blank" rel="noreferrer" className="mt-2 block text-sm font-semibold text-foreground hover:text-accent">{item.source_title}</a><p className="mt-1 text-xs leading-5 text-muted-foreground">{item.priority_reason || 'Awaiting freshness classification.'}</p></div>) : <p className="rounded-lg bg-muted/25 p-4 text-sm text-muted-foreground">No discoveries yet. Add approved feeds in settings, then queue discovery.</p>}</div></div>
+
+        <div className="rounded-lg border border-border p-4"><h4 className="flex items-center gap-2 font-semibold text-foreground"><Settings2 className="h-4 w-4 text-accent" /> Autopilot settings</h4><div className="mt-4 space-y-4"><label className="flex items-start gap-3 text-sm"><input type="checkbox" checked={Boolean(settings.enabled)} onChange={(event) => setSettings((value) => ({ ...value, enabled: event.target.checked }))} className="mt-1 h-4 w-4 accent-[var(--accent)]" /><span><span className="font-semibold text-foreground">Enable automatic discovery</span><span className="block text-xs leading-5 text-muted-foreground">Generation still follows quotas and publication gates.</span></span></label><label className="flex items-start gap-3 text-sm"><input type="checkbox" checked={Boolean(settings.require_review_for_urgent)} onChange={(event) => setSettings((value) => ({ ...value, require_review_for_urgent: event.target.checked }))} className="mt-1 h-4 w-4 accent-[var(--accent)]" /><span><span className="font-semibold text-foreground">Require editorial review</span><span className="block text-xs leading-5 text-muted-foreground">Recommended for fresh or time-sensitive content.</span></span></label><FormField label="Timezone" htmlFor="automation-timezone"><input id="automation-timezone" value={settings.timezone || 'UTC'} onChange={(event) => setSettings((value) => ({ ...value, timezone: event.target.value }))} className="suite-input" /></FormField><div className="grid grid-cols-2 gap-3"><FormField label="Start hour" htmlFor="automation-start"><input id="automation-start" type="number" min="0" max="23" value={settings.preferred_start_hour ?? 9} onChange={(event) => setSettings((value) => ({ ...value, preferred_start_hour: Number(event.target.value) }))} className="suite-input" /></FormField><FormField label="End hour" htmlFor="automation-end"><input id="automation-end" type="number" min="1" max="24" value={settings.preferred_end_hour ?? 17} onChange={(event) => setSettings((value) => ({ ...value, preferred_end_hour: Number(event.target.value) }))} className="suite-input" /></FormField></div><FormField label="Approved HTTPS feeds" htmlFor="automation-feeds" hint="One RSS or Atom URL per line; maximum 20."><textarea id="automation-feeds" value={(settings.approved_feed_urls || []).join('\n')} onChange={(event) => setSettings((value) => ({ ...value, approved_feed_urls: event.target.value.split('\n').map((item) => item.trim()).filter(Boolean).slice(0, 20) }))} className="suite-input min-h-24 resize-y" /></FormField><button type="button" disabled={Boolean(busy)} onClick={() => void run(() => saveBlogAutomationSettings(settings), 'Autopilot settings saved.', 'settings')} className="quiet-button">{busy === 'settings' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save settings</button></div></div>
+      </div>
+
+      <div className="mt-6 grid gap-5 xl:grid-cols-2"><div className="rounded-lg border border-border p-4"><h4 className="flex items-center gap-2 font-semibold text-foreground"><Clock3 className="h-4 w-4 text-accent" /> Generation jobs</h4><div className="mt-4 overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="text-xs text-muted-foreground"><tr><th className="pb-3 pr-4 font-medium">Origin</th><th className="pb-3 pr-4 font-medium">Topic</th><th className="pb-3 pr-4 font-medium">State</th><th className="pb-3 font-medium">Updated</th></tr></thead><tbody>{jobs.slice(0, 12).map((job) => <tr key={job.id} className="border-t border-border"><td className="py-3 pr-4 text-xs">{job.origin.replaceAll('_', ' ')}</td><td className="max-w-72 py-3 pr-4"><span className="line-clamp-2">{job.customHeadline || job.topic || 'Trend discovery'}</span>{job.error && <span className="mt-1 block text-xs text-red-600 dark:text-red-300">{job.error}</span>}</td><td className="py-3 pr-4"><StatusBadge tone={jobTone(job.state)}>{job.state.replaceAll('_', ' ')}</StatusBadge></td><td className="whitespace-nowrap py-3 text-xs text-muted-foreground">{formatDate(job.updatedAt)}</td></tr>)}</tbody></table>{!jobs.length && <p className="py-5 text-sm text-muted-foreground">No generation jobs have been queued.</p>}</div></div><div className="rounded-lg border border-border p-4"><h4 className="flex items-center gap-2 font-semibold text-foreground"><CalendarClock className="h-4 w-4 text-accent" /> Content calendar</h4><div className="mt-4 space-y-2">{scheduled.length ? scheduled.map((post) => <div key={post.id} className="flex items-start justify-between gap-4 rounded-lg bg-muted/35 p-3"><div><p className="text-sm font-semibold text-foreground">{post.title}</p><p className="mt-1 text-xs text-muted-foreground">{post.origin.replaceAll('_', ' ')} · {post.topicCluster || 'Unassigned cluster'}</p></div><div className="text-right"><StatusBadge tone="warning">scheduled</StatusBadge><p className="mt-1 whitespace-nowrap text-xs text-muted-foreground">{formatDate(post.scheduledAt)}</p></div></div>) : <p className="rounded-lg bg-muted/25 p-4 text-sm text-muted-foreground">No articles are scheduled. Articles appear here only after all publication gates pass.</p>}</div><div className="mt-4 grid grid-cols-2 gap-2 text-xs"><div className="flex items-center gap-2 rounded-lg border border-border p-3"><CheckCircle2 className="h-4 w-4 text-emerald-600" /> All gates passed</div><div className="flex items-center gap-2 rounded-lg border border-border p-3"><AlertTriangle className="h-4 w-4 text-amber-600" /> Review holds visible</div><div className="flex items-center gap-2 rounded-lg border border-border p-3"><XCircle className="h-4 w-4 text-red-600" /> Failures never publish</div><div className="flex items-center gap-2 rounded-lg border border-border p-3"><Clock3 className="h-4 w-4 text-blue-600" /> Times use configured zone</div></div></div></div>
+      {scheduled.length > 0 && <div className="mt-6 rounded-lg border border-border p-4"><h4 className="flex items-center gap-2 font-semibold text-foreground"><CalendarClock className="h-4 w-4 text-accent" /> Scheduled article controls</h4><div className="mt-4 space-y-3">{scheduled.map((post) => <div key={post.id} className="flex flex-col gap-3 rounded-lg bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold text-foreground">{post.title}</p><p className="mt-1 text-xs text-muted-foreground">{formatDate(post.scheduledAt)} · {post.origin.replaceAll('_', ' ')}</p></div><div className="flex flex-wrap gap-2"><button type="button" disabled={Boolean(busy)} onClick={() => void workflow(post, 'hold')} className="quiet-button">Hold</button><button type="button" disabled={Boolean(busy)} onClick={() => void workflow(post, 'convert_manual')} className="quiet-button">Make manual</button><button type="button" disabled={Boolean(busy)} onClick={() => void workflow(post, 'publish_now')} className="trust-button">Publish now</button></div></div>)}</div></div>}
+    </Panel>
+  );
+}

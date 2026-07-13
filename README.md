@@ -12,6 +12,7 @@ SEOIntel is a resource-aware SEO, technical SEO, and passive security audit plat
 - **Transparent Scores**: Measured deductions are stored with limitations; unavailable provider data does not affect scores.
 - **Account History And Comparison**: Owner-scoped Supabase history with new, resolved, and persistent issue comparison.
 - **No Paid APIs**: Operates using free data and local analysis rules.
+- **Editorial Content Operations**: Administrator-controlled manual, batch, and optional worker-backed article jobs with freshness scoring, source records, quality gates, safe images, scheduling, static HTML, RSS, and sitemaps.
 
 ## Getting Started
 

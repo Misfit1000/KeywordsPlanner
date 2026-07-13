@@ -28,6 +28,7 @@ import type { AuditIssue } from '../lib/audit/types';
 import { safePublicFetch, type SafePublicFetchOptions } from '../lib/security/safe-public-fetch';
 import { calculateTransparentAuditScore, toReportScoreRecord } from '../lib/audit/audit-scoring';
 import { AuditWriteBatch } from './audit-write-batch';
+import { processOneBlogJob } from './blog-worker';
 import { HostRequestScheduler } from './host-request-scheduler';
 import {
   aggregateFailureCounts,
@@ -1017,7 +1018,10 @@ export async function runAuditWorkerLoop() {
     try {
       await writeWorkerHeartbeat(state, { status: 'idle', currentAuditId: null, queuePollingStatus: 'active', databaseConnected: true, lastFatalWorkerError: null });
       const claimed = await runOneAudit(config.workerId, state);
-      if (!claimed) await wait(config.pollIntervalMs);
+      const blogProcessed = !claimed && process.env.BLOG_AUTOMATION_ENABLED === 'true'
+        ? await processOneBlogJob(`${config.workerId}:blog`)
+        : false;
+      if (!claimed && !blogProcessed) await wait(config.pollIntervalMs);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error || 'Worker polling failure');
       updateWorkerState(state, { status: 'idle', currentAuditId: null, queuePollingStatus: 'error', databaseConnected: false, lastFatalWorkerError: detail });

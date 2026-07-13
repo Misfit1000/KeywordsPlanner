@@ -21,6 +21,9 @@
   ],
   "rewrites": [
     { "source": "/sitemap.xml", "destination": "/api/index.js?path=tools/blog/sitemap.xml" },
+    { "source": "/rss.xml", "destination": "/api/index.js?path=tools/blog/rss.xml" },
+    { "source": "/news-sitemap.xml", "destination": "/api/index.js?path=tools/blog/news-sitemap.xml" },
+    { "source": "/blog/:slug", "destination": "/api/index.js?path=tools/blog/html/:slug" },
     { "source": "/api/:path*", "destination": "/api/index.js?path=:path*" },
     { "source": "/pricing", "destination": "/index.html" },
     { "source": "/reports/example", "destination": "/index.html" },

@@ -45,6 +45,7 @@ export interface SafePublicFetchOptions {
   userAgent?: string;
   allowPrivateForTesting?: boolean;
   allowNonStandardPortsForTesting?: boolean;
+  returnBuffer?: boolean;
 }
 
 export interface SafePublicResponse {
@@ -54,6 +55,7 @@ export interface SafePublicResponse {
   headers: Record<string, string>;
   contentType: string;
   body: string;
+  bodyBuffer?: Buffer;
   bodyBytes: number;
   redirectCount: number;
   durationMs: number;
@@ -191,7 +193,7 @@ function contentTypeAllowed(contentType: string, allowed: string[]) {
 }
 
 async function requestPinned(url: URL, address: ResolvedAddress, options: Required<SafePublicFetchOptions>) {
-  return new Promise<{ status: number; headers: Record<string, string>; body: string; bytes: number }>((resolve, reject) => {
+  return new Promise<{ status: number; headers: Record<string, string>; body: string; bodyBuffer: Buffer; bytes: number }>((resolve, reject) => {
     const transport = url.protocol === 'https:' ? httpsRequest : httpRequest;
     let settled = false;
     const requestOptions = {
@@ -240,7 +242,8 @@ async function requestPinned(url: URL, address: ResolvedAddress, options: Requir
       response.on('end', () => {
         if (settled) return;
         settled = true;
-        resolve({ status: response.statusCode || 0, headers, body: Buffer.concat(chunks).toString('utf8'), bytes });
+        const bodyBuffer = Buffer.concat(chunks);
+        resolve({ status: response.statusCode || 0, headers, body: options.returnBuffer ? '' : bodyBuffer.toString('utf8'), bodyBuffer, bytes });
       });
       response.on('error', (error) => {
         if (settled) return;
@@ -274,6 +277,7 @@ export async function safePublicFetch(value: string, input: SafePublicFetchOptio
     userAgent: input.userAgent ?? 'SEOIntelBot/1.0 (+https://keywordsintel.vercel.app/)',
     allowPrivateForTesting: input.allowPrivateForTesting ?? false,
     allowNonStandardPortsForTesting: input.allowNonStandardPortsForTesting ?? false,
+    returnBuffer: input.returnBuffer ?? false,
   };
   const requestedUrl = parsePublicHttpUrl(value, options).toString();
   const startedAt = Date.now();
@@ -319,6 +323,7 @@ export async function safePublicFetch(value: string, input: SafePublicFetchOptio
       headers: response.headers,
       contentType,
       body: response.body,
+      ...(options.returnBuffer ? { bodyBuffer: response.bodyBuffer } : {}),
       bodyBytes: response.bytes,
       redirectCount,
       durationMs: Date.now() - startedAt,

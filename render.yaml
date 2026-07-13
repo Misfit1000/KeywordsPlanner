@@ -21,3 +21,9 @@ services:
         value: render-web-service
       - key: DEEP_AUDIT_ENABLED
         value: "false"
+      - key: BLOG_AUTOMATION_ENABLED
+        value: "false"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash

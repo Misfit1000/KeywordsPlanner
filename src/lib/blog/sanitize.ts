@@ -26,7 +26,8 @@ export function sanitizeBlogHtml(value: string) {
 }
 
 export function blogTextFromHtml(value: string) {
-  return sanitizeHtml(String(value || ''), { allowedTags: [], allowedAttributes: {} })
+  const spacedBlocks = String(value || '').replace(/<\/(?:p|h[1-6]|li|blockquote|pre|div|section)>/gi, ' ').replace(/<br\s*\/?\s*>/gi, ' ');
+  return sanitizeHtml(spacedBlocks, { allowedTags: [], allowedAttributes: {} })
     .replace(/\s+/g, ' ')
     .trim();
 }

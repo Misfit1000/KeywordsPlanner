@@ -25,5 +25,10 @@ export const API_ROUTES = {
   blogPost: (slug: string) => `/api/tools/blog/posts/${encodeURIComponent(slug)}`,
   adminBlogPosts: "/api/tools/admin/blog/posts",
   adminBlogPost: (id: string) => `/api/tools/admin/blog/posts/${encodeURIComponent(id)}`,
-  adminBlogGenerate: "/api/tools/admin/blog/generate"
+  adminBlogPostWorkflow: (id: string) => `/api/tools/admin/blog/posts/${encodeURIComponent(id)}/workflow`,
+  adminBlogOverview: "/api/tools/admin/blog/overview",
+  adminBlogSettings: "/api/tools/admin/blog/settings",
+  adminBlogJobs: "/api/tools/admin/blog/jobs",
+  adminBlogBatches: "/api/tools/admin/blog/batches",
+  adminBlogImageImport: "/api/tools/admin/blog/images/import"
 };

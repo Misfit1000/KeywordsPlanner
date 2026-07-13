@@ -7,7 +7,10 @@ import Database from "better-sqlite3";
 import path from "path";
 import { apiRouter } from "./src/api/index";
 import { securityRouter } from "./src/lib/security/api/index";
-import { canonicalSiteOrigin, renderBlogSitemap } from "./src/lib/blog/sitemap";
+import { canonicalSiteOrigin, renderBlogNewsSitemap, renderBlogRss, renderBlogSitemap } from "./src/lib/blog/sitemap";
+import { blogRepository } from "./src/lib/blog/repository";
+import { renderBlogArticleHtml } from "./src/lib/blog/render";
+import { normalizeBlogSlug } from "./src/lib/blog/slug";
 import {
   apiErrorHandler,
   apiSecurityHeaders,
@@ -65,6 +68,23 @@ async function startServer() {
     } catch (error) {
       next(error);
     }
+  });
+  app.get('/rss.xml', async (req, res, next) => {
+    try { res.type('application/rss+xml').send(await renderBlogRss(canonicalSiteOrigin(req))); } catch (error) { next(error); }
+  });
+  app.get('/news-sitemap.xml', async (req, res, next) => {
+    try { res.type('application/xml').send(await renderBlogNewsSitemap(canonicalSiteOrigin(req))); } catch (error) { next(error); }
+  });
+  app.get('/blog/:slug', async (req, res, next) => {
+    try {
+      const post = await blogRepository.getPublishedBySlug(normalizeBlogSlug(req.params.slug));
+      if (!post) return res.status(404).type('html').send('<!doctype html><html><head><meta name="robots" content="noindex"></head><body><h1>Article not found</h1><p><a href="/blog">Return to the blog</a></p></body></html>');
+      if (!post.relatedArticles.length) {
+        const related = await blogRepository.relatedPublished(post, 4);
+        post.relatedArticles = related.map((item) => ({ postId: item.id, slug: item.slug, title: item.title, reason: item.topicCluster ? `More guidance about ${item.topicCluster}.` : '' }));
+      }
+      res.type('html').send(renderBlogArticleHtml(post, canonicalSiteOrigin(req)));
+    } catch (error) { next(error); }
   });
 
   // Auth Routes

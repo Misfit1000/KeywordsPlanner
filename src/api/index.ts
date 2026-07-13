@@ -20,11 +20,14 @@ import {
 import type { ResourceAuditDocument } from '../lib/audit/resource-types';
 import { getAuditProfileForDocument } from '../lib/audit/audit-profiles';
 import { createRateLimiter } from '../lib/api/http-hardening';
-import { blogRepository } from '../lib/blog/repository';
-import { generateBlogWithGemini } from '../lib/blog/gemini';
+import { blogRepository, mapBlogPostRow } from '../lib/blog/repository';
 import { normalizeBlogSlug } from '../lib/blog/slug';
 import { BlogValidationError, prepareBlogPost } from '../lib/blog/validation';
-import { canonicalSiteOrigin, renderBlogSitemap } from '../lib/blog/sitemap';
+import { canonicalSiteOrigin, renderBlogNewsSitemap, renderBlogRss, renderBlogSitemap } from '../lib/blog/sitemap';
+import { renderBlogArticleHtml } from '../lib/blog/render';
+import { blogAutomationRepository } from '../lib/blog/automation-repository';
+import { blogJobIdempotencyKey, validateManualBatch } from '../lib/blog/automation';
+import { importBlogImage } from '../lib/blog/images';
 import { ApiError } from '../lib/api/errors';
 import {
   admitAuditSubmission,
@@ -51,9 +54,11 @@ function asyncJsonRoute(handler: any) {
 
 export const apiRouter = Router();
 
-apiRouter.use('/admin/blog/generate', createRateLimiter({ namespace: 'blog-gemini', windowMs: 60_000, maxRequests: 5 }));
 apiRouter.use('/admin', durableRateLimit({ namespace: 'admin-api', limit: 120, windowSeconds: 60 }));
-apiRouter.use('/admin/blog/generate', durableRateLimit({ namespace: 'blog-generation', limit: 5, windowSeconds: 3600 }));
+apiRouter.use('/admin/blog/jobs', durableRateLimit({ namespace: 'blog-jobs', limit: 20, windowSeconds: 3600 }));
+apiRouter.use('/admin/blog/batches', durableRateLimit({ namespace: 'blog-batches', limit: 5, windowSeconds: 3600 }));
+apiRouter.use('/admin/blog/images/import', durableRateLimit({ namespace: 'blog-images', limit: 10, windowSeconds: 3600 }));
+apiRouter.use('/blog/scheduler', durableRateLimit({ namespace: 'blog-scheduler', limit: 10, windowSeconds: 300 }));
 apiRouter.use('/audit/export', durableRateLimit({ namespace: 'report-export', limit: 10, windowSeconds: 300 }));
 apiRouter.use('/audit/cancel', durableRateLimit({ namespace: 'audit-cancel', limit: 10, windowSeconds: 300 }));
 
@@ -63,6 +68,13 @@ function firstHeaderValue(value: unknown) {
 
 function hashGuestValue(value: string) {
   return createHash('sha256').update(value).digest('hex');
+}
+
+function schedulerRequestAllowed(req: any) {
+  const expected = String(process.env.BLOG_SCHEDULER_SECRET || process.env.CRON_SECRET || '');
+  const supplied = firstHeaderValue(req.headers?.authorization).replace(/^Bearer\s+/i, '') || firstHeaderValue(req.headers?.['x-blog-scheduler-secret']);
+  if (expected.length < 24 || supplied.length < 24) return false;
+  return createHash('sha256').update(expected).digest('hex') === createHash('sha256').update(supplied).digest('hex');
 }
 
 function getCookieValue(req: any, name: string) {
@@ -119,6 +131,18 @@ async function uniqueBlogSlug(value: string, exceptId?: string) {
     if (suffix > 9999) throw new Error('Could not create a unique slug.');
   }
   return candidate;
+}
+
+function prepareBlogPostForStorage(input: any) {
+  const row = prepareBlogPost({ ...input, prerenderStatus: 'passed' });
+  const now = new Date().toISOString();
+  const candidate = mapBlogPostRow({ ...row, id: 'prerender-check', created_at: now, updated_at: now });
+  const html = renderBlogArticleHtml(candidate, canonicalSiteOrigin());
+  if (!html.startsWith('<!doctype html>') || !html.includes('<h1>') || !html.includes('application/ld+json') || !html.includes('rel="canonical"')) {
+    throw new BlogValidationError('Publication blocked: initial article HTML is incomplete.');
+  }
+  row.prerender_status = 'passed';
+  return row;
 }
 
 async function logBlogAction(adminUserId: string, action: string, postId: string, metadata: Record<string, unknown> = {}) {
@@ -430,9 +454,58 @@ apiRouter.get('/blog/sitemap.xml', asyncJsonRoute(async (req, res) => {
   res.status(200).send(xml);
 }));
 
+apiRouter.get('/blog/rss.xml', asyncJsonRoute(async (req, res) => {
+  const xml = await renderBlogRss(canonicalSiteOrigin(req));
+  res.setHeader('Content-Type', 'application/rss+xml; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+  res.status(200).send(xml);
+}));
+
+apiRouter.get('/blog/news-sitemap.xml', asyncJsonRoute(async (req, res) => {
+  const xml = await renderBlogNewsSitemap(canonicalSiteOrigin(req));
+  res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+  res.status(200).send(xml);
+}));
+
+const runBlogScheduler = asyncJsonRoute(async (req: any, res: any) => {
+  if (!schedulerRequestAllowed(req)) throw new ApiError('BLOG_SCHEDULER_UNAUTHORIZED', 'Scheduler authentication failed.', 401);
+  const [publishedIds, settings] = await Promise.all([blogRepository.publishDueScheduled(10), blogAutomationRepository.getSettings()]);
+  let discoveryJob = null;
+  if (settings.enabled && Array.isArray(settings.approved_feed_urls) && settings.approved_feed_urls.length) {
+    const now = new Date();
+    const sixHourBucket = `${now.toISOString().slice(0, 10)}-${Math.floor(now.getUTCHours() / 6)}`;
+    discoveryJob = await blogAutomationRepository.createJob({
+      origin: 'autopilot',
+      payload: { jobType: 'discover_trends', feedUrls: settings.approved_feed_urls },
+      idempotencyKey: blogJobIdempotencyKey({ origin: 'autopilot', topic: 'scheduled-discovery', dateBucket: sixHourBucket }),
+    });
+  }
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: { publishedCount: publishedIds.length, publishedIds, discoveryJobId: discoveryJob?.id || null } });
+});
+apiRouter.get('/blog/scheduler/run', runBlogScheduler);
+apiRouter.post('/blog/scheduler/run', runBlogScheduler);
+
+apiRouter.get('/blog/html/:slug', asyncJsonRoute(async (req, res) => {
+  const post = await blogRepository.getPublishedBySlug(normalizeBlogSlug(req.params.slug));
+  if (!post) return res.status(404).type('html').send('<!doctype html><html><head><meta name="robots" content="noindex"></head><body><h1>Article not found</h1><p><a href="/blog">Return to the blog</a></p></body></html>');
+  if (!post.relatedArticles.length) {
+    const related = await blogRepository.relatedPublished(post, 4);
+    post.relatedArticles = related.map((item) => ({ postId: item.id, slug: item.slug, title: item.title, reason: item.topicCluster ? `More guidance about ${item.topicCluster}.` : '' }));
+  }
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+  res.status(200).send(renderBlogArticleHtml(post, canonicalSiteOrigin(req)));
+}));
+
 apiRouter.get('/blog/posts/:slug', asyncJsonRoute(async (req, res) => {
   const post = await blogRepository.getPublishedBySlug(normalizeBlogSlug(req.params.slug));
   if (!post) return res.status(404).json({ success: false, error: 'Article not found.' });
+  if (!post.relatedArticles.length) {
+    const related = await blogRepository.relatedPublished(post, 4);
+    post.relatedArticles = related.map((item) => ({ postId: item.id, slug: item.slug, title: item.title, reason: item.topicCluster ? `More guidance about ${item.topicCluster}.` : '' }));
+  }
   res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
   res.json({ success: true, data: { post } });
 }));
@@ -444,13 +517,110 @@ apiRouter.get('/admin/blog/posts', asyncJsonRoute(async (req, res) => {
   res.json({ success: true, data: { posts } });
 }));
 
+apiRouter.get('/admin/blog/overview', asyncJsonRoute(async (req, res) => {
+  if (!(await requireAdminRequester(req, res))) return;
+  const [overview, jobs, discoveries] = await Promise.all([
+    blogAutomationRepository.overview(),
+    blogAutomationRepository.listJobs(40),
+    blogAutomationRepository.listDiscoveries(40),
+  ]);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: { overview, jobs, discoveries } });
+}));
+
+apiRouter.get('/admin/blog/settings', asyncJsonRoute(async (req, res) => {
+  if (!(await requireAdminRequester(req, res))) return;
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: { settings: await blogAutomationRepository.getSettings() } });
+}));
+
+apiRouter.put('/admin/blog/settings', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const feedUrls = Array.isArray(req.body?.approved_feed_urls) ? req.body.approved_feed_urls.slice(0, 20).map(String) : [];
+  if (feedUrls.some((value) => { try { return new URL(value).protocol !== 'https:'; } catch { return true; } })) throw new ApiError('INVALID_BLOG_FEED', 'Approved feeds must use valid public HTTPS URLs.', 400);
+  const timezone = String(req.body?.timezone || 'UTC');
+  try { new Intl.DateTimeFormat('en', { timeZone: timezone }).format(); } catch { throw new ApiError('INVALID_TIMEZONE', 'Enter a valid IANA timezone.', 400); }
+  const settings = await blogAutomationRepository.updateSettings({ ...req.body, timezone, approved_feed_urls: feedUrls }, requester.userId);
+  await logBlogAction(requester.userId, 'update_blog_autopilot_settings', 'default', { enabled: settings.enabled, timezone });
+  res.json({ success: true, data: { settings } });
+}));
+
+apiRouter.post('/admin/blog/jobs', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const mode = String(req.body?.mode || 'manual');
+  const origin = mode === 'custom_headline' ? 'admin_custom_headline' : mode === 'discover' ? 'autopilot' : 'admin_manual';
+  const topic = String(req.body?.topic || '').replace(/\s+/g, ' ').trim().slice(0, 240);
+  const headline = String(req.body?.headline || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+  if (mode !== 'discover' && (mode === 'custom_headline' ? headline.length < 8 : topic.length < 5)) throw new ApiError('BLOG_JOB_INPUT_REQUIRED', mode === 'custom_headline' ? 'Enter a specific headline.' : 'Enter a specific topic.', 400);
+  if (mode === 'custom_headline') {
+    const duplicate = (await blogRepository.listAdmin(200)).find((post) => post.title.toLowerCase() === headline.toLowerCase());
+    if (duplicate && req.body?.allowDuplicate !== true) throw new ApiError('DUPLICATE_BLOG_HEADLINE', `A post already uses this headline: ${duplicate.title}`, 409);
+  }
+  const current = new Date();
+  const dateBucket = mode === 'discover'
+    ? current.toISOString().slice(0, 13)
+    : `${current.toISOString().slice(0, 13)}:${Math.floor(current.getUTCMinutes() / 10)}`;
+  const job = await blogAutomationRepository.createJob({
+    origin,
+    topic,
+    customHeadline: headline,
+    requestedBy: requester.userId,
+    payload: {
+      jobType: mode === 'discover' ? 'discover_trends' : 'generate_article',
+      manualDiscovery: mode === 'discover',
+      audience: String(req.body?.audience || '').slice(0, 240),
+      keywords: String(req.body?.keywords || '').slice(0, 300),
+      feedUrls: Array.isArray(req.body?.feedUrls) ? req.body.feedUrls.slice(0, 20) : undefined,
+      sources: Array.isArray(req.body?.sources) ? req.body.sources.slice(0, 12) : undefined,
+      sourceUrls: Array.isArray(req.body?.sourceUrls) ? req.body.sourceUrls.slice(0, 12).map(String) : undefined,
+      competitorUrls: Array.isArray(req.body?.competitorUrls) ? req.body.competitorUrls.slice(0, 5).map(String) : undefined,
+    },
+    idempotencyKey: blogJobIdempotencyKey({ origin, topic, customHeadline: headline, dateBucket }),
+  });
+  await logBlogAction(requester.userId, 'queue_blog_job', job.id, { origin, mode, batchId: null });
+  res.status(202).json({ success: true, data: { job } });
+}));
+
+apiRouter.post('/admin/blog/batches', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const batchInput = validateManualBatch({ headlines: req.body?.headlines, count: req.body?.count, maximumCost: req.body?.maximumCost });
+  if (!batchInput.headlines.length) throw new ApiError('BATCH_HEADLINES_REQUIRED', 'Provide one to five distinct headlines.', 400);
+  const recentJobs = await blogAutomationRepository.listJobs(200);
+  const recentCutoff = Date.now() - 10 * 60 * 1000;
+  const duplicateJob = recentJobs.find((job) => job.origin === 'admin_batch' && new Date(job.createdAt).getTime() >= recentCutoff && batchInput.headlines.some((headline) => headline.toLowerCase() === job.customHeadline.toLowerCase()));
+  if (duplicateJob) throw new ApiError('DUPLICATE_BLOG_BATCH', 'A recent batch already contains one of these headlines.', 409);
+  const batch = await blogAutomationRepository.createBatch({ createdBy: requester.userId, count: batchInput.count, settings: { audience: req.body?.audience || '', keywords: req.body?.keywords || '', sourceUrls: req.body?.sourceUrls || [], competitorUrls: req.body?.competitorUrls || [] }, maximumCost: req.body?.maximumCost });
+  const jobs = [];
+  for (const headline of batchInput.headlines) {
+    jobs.push(await blogAutomationRepository.createJob({
+      origin: 'admin_batch', customHeadline: headline, requestedBy: requester.userId, batchId: batch.id,
+      payload: { jobType: 'generate_article', audience: String(req.body?.audience || '').slice(0, 240), keywords: String(req.body?.keywords || '').slice(0, 300), sourceUrls: Array.isArray(req.body?.sourceUrls) ? req.body.sourceUrls.slice(0, 12).map(String) : [], competitorUrls: Array.isArray(req.body?.competitorUrls) ? req.body.competitorUrls.slice(0, 5).map(String) : [] },
+      idempotencyKey: blogJobIdempotencyKey({ origin: 'admin_batch', customHeadline: headline, batchId: batch.id }),
+    }));
+  }
+  await logBlogAction(requester.userId, 'queue_blog_batch', batch.id, { count: jobs.length });
+  res.status(202).json({ success: true, data: { batch, jobs } });
+}));
+
+apiRouter.post('/admin/blog/images/import', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const image = await importBlogImage(req.body || {});
+  await logBlogAction(requester.userId, 'import_blog_image', String((image as any).id), { articleId: req.body?.articleId || null, sourceUrl: (image as any).source_url });
+  res.status(201).json({ success: true, data: { image } });
+}));
+
 apiRouter.post('/admin/blog/posts', asyncJsonRoute(async (req, res) => {
   const requester = await requireAdminRequester(req, res);
   if (!requester) return;
   try {
-    const row = prepareBlogPost(req.body || {});
+    const row = prepareBlogPostForStorage(req.body || {});
     row.slug = await uniqueBlogSlug(row.slug);
     const post = await blogRepository.create({ ...row, author_id: requester.userId, updated_by: requester.userId });
+    await blogRepository.syncEditorialRecords(post, requester.userId, '');
     await logBlogAction(requester.userId, 'create_blog_post', post.id, { status: post.status, slug: post.slug });
     res.status(201).json({ success: true, data: { post } });
   } catch (error) {
@@ -465,15 +635,42 @@ apiRouter.put('/admin/blog/posts/:id', asyncJsonRoute(async (req, res) => {
   const existing = await blogRepository.getAdminById(req.params.id);
   if (!existing) return res.status(404).json({ success: false, error: 'Article not found.' });
   try {
-    const row = prepareBlogPost(req.body || {});
+    const row = prepareBlogPostForStorage(req.body || {});
     row.slug = await uniqueBlogSlug(row.slug, existing.id);
     const post = await blogRepository.update(existing.id, { ...row, updated_by: requester.userId });
+    if (post) await blogRepository.syncEditorialRecords(post, requester.userId, existing.status);
     await logBlogAction(requester.userId, 'update_blog_post', existing.id, { status: post?.status, slug: post?.slug });
     res.json({ success: true, data: { post } });
   } catch (error) {
     if (error instanceof BlogValidationError) return res.status(error.status).json({ success: false, error: error.message });
     throw error;
   }
+}));
+
+apiRouter.post('/admin/blog/posts/:id/workflow', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const existing = await blogRepository.getAdminById(req.params.id);
+  if (!existing) return res.status(404).json({ success: false, error: 'Article not found.' });
+  const action = String(req.body?.action || '');
+  const reason = String(req.body?.reason || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+  if (reason.length < 4) throw new ApiError('BLOG_WORKFLOW_REASON_REQUIRED', 'Provide a short reason for this workflow change.', 400);
+  let post;
+  if (action === 'hold' || action === 'cancel') {
+    post = await blogRepository.update(existing.id, { status: action === 'hold' ? 'needs_review' : 'draft', scheduled_at: null, published_at: null, robots_directive: 'noindex,nofollow', publication_reason: reason, reviewer_id: requester.userId, updated_by: requester.userId });
+  } else if (action === 'convert_manual') {
+    post = await blogRepository.update(existing.id, { origin: 'scheduled_manual', publication_reason: reason, updated_by: requester.userId });
+  } else if (action === 'publish_now' || action === 'reschedule') {
+    const scheduledAt = action === 'reschedule' ? String(req.body?.scheduledAt || '') : null;
+    const row = prepareBlogPostForStorage({ ...existing, status: action === 'publish_now' ? 'published' : 'scheduled', publishedAt: action === 'publish_now' ? new Date().toISOString() : null, scheduledAt, publicationReason: reason });
+    post = await blogRepository.update(existing.id, { ...row, reviewer_id: requester.userId, updated_by: requester.userId });
+  } else {
+    throw new ApiError('UNSUPPORTED_BLOG_WORKFLOW_ACTION', 'This content workflow action is not supported.', 400);
+  }
+  if (!post) return res.status(404).json({ success: false, error: 'Article not found.' });
+  await blogRepository.syncEditorialRecords(post, requester.userId, existing.status);
+  await logBlogAction(requester.userId, `blog_workflow_${action}`, post.id, { previousState: existing.status, newState: post.status, reason });
+  res.json({ success: true, data: { post } });
 }));
 
 apiRouter.delete('/admin/blog/posts/:id', asyncJsonRoute(async (req, res) => {
@@ -483,24 +680,6 @@ apiRouter.delete('/admin/blog/posts/:id', asyncJsonRoute(async (req, res) => {
   if (!post) return res.status(404).json({ success: false, error: 'Article not found.' });
   await logBlogAction(requester.userId, 'archive_blog_post', post.id, { slug: post.slug });
   res.json({ success: true, data: { post } });
-}));
-
-apiRouter.post('/admin/blog/generate', asyncJsonRoute(async (req, res) => {
-  if (!(await requireAdminRequester(req, res))) return;
-  try {
-    const result = await generateBlogWithGemini({
-      action: req.body?.action === 'topics' ? 'topics' : 'draft',
-      topic: req.body?.topic,
-      audience: req.body?.audience,
-      keywords: req.body?.keywords,
-    });
-    res.setHeader('Cache-Control', 'private, no-store');
-    res.json({ success: true, data: result });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Gemini draft generation failed.';
-    if (/not configured/i.test(message)) throw new ApiError('BLOG_GENERATION_NOT_CONFIGURED', 'Automated draft generation is not configured.', 503);
-    throw error;
-  }
 }));
 
 async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'quick') {

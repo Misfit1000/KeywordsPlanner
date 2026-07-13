@@ -1,45 +1,90 @@
-# Blog CMS Setup
+# Blog Automation Setup
 
-SEOIntel includes a public blog and an admin-only publishing workspace. Published posts are readable publicly; drafts and write operations require a server-verified admin account.
+SEOIntel includes a public blog, an administrator content workspace, deterministic publication gates, and an optional worker-backed Gemini drafting pipeline. Published articles are public. Drafts, previews, failed jobs, and scheduled articles before their release time remain private and `noindex`.
 
-## 1. Apply the database migration
+## Apply The Database Migration
 
-1. Open the Supabase dashboard for the SEOIntel project.
-2. Open **SQL Editor**.
-3. Run `supabase/migrations/007_blog_cms.sql`.
-4. Confirm `public.blog_posts` exists and Row Level Security is enabled.
-5. Confirm anonymous users can select only published posts and that admin writes use `public.is_admin_user(auth.uid())`.
+1. Apply every migration in `supabase/migrations/` in numeric order.
+2. Existing installations apply `012_blog_automation_platform.sql` after `011_production_robustness.sql`.
+3. Confirm the migration creates the generation, trend, source, quality, link, image, revision, publication, settings, and topic-hub tables.
+4. Confirm Row Level Security is enabled on every new table.
+5. Confirm the `blog-images` Storage bucket exists, public reads are allowed, and writes remain administrator/service-role only.
+6. Run the verification queries at the bottom of migration 012.
 
-Run migrations `001` through `006` first on a new project because migration `007` uses the existing user profile and admin helper.
+Never edit or rerun an earlier migration to add these fields. Migration 012 preserves existing posts and gives unpublished content safe `noindex,nofollow` defaults.
 
-## 2. Configure Gemini on Vercel
+## Configure Vercel
 
-Gemini is optional. Manual writing, SEO defaults, drafts, publishing, and the public blog work without it.
+Vercel serves the Vite application, lightweight authenticated queue endpoints, complete article HTML, sitemap XML, news sitemap XML, and RSS. It does not call Gemini or run discovery loops.
 
-1. Create a Gemini API key in Google AI Studio.
-2. Open the Vercel project, then **Settings > Environment Variables**.
-3. Add `GEMINI_API_KEY` for Production and Preview as needed.
-4. Optionally add `GEMINI_MODEL=gemini-2.5-flash`.
-5. Redeploy the Vercel project.
+Set:
 
-Do not create `VITE_GEMINI_API_KEY`. Variables prefixed with `VITE_` are included in browser bundles. The Gemini key is read only by the authenticated admin API route and is rate limited.
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `BLOG_SCHEDULER_SECRET` only when an external scheduler will call the fallback scheduler endpoint
 
-## 3. Publish an article
+Do not set `GEMINI_API_KEY` or any `VITE_GEMINI_*` variable on Vercel. The Supabase service-role key remains server-only and must never use a `VITE_` prefix.
 
-1. Sign in with an account whose `user_profiles.role` is `admin`.
-2. Open `/admin/blog`.
-3. Write an article or ask Gemini for a draft.
-4. Review and fact-check every generated statement and link.
-5. Complete the SEO checklist, preview the search snippet, and select **Publish**.
+## Configure The Existing Render Worker
 
-Gemini never publishes directly. The API sanitizes article HTML again before storage, creates a collision-safe slug, and records the admin action.
+The audit worker can process blog jobs while the audit queue is idle, avoiding a second service.
 
-## 4. Verify discovery
+Set on the Render worker:
 
-1. Open `/blog` and the published article URL.
-2. Open `/sitemap.xml` and confirm the article appears.
-3. Add `https://keywordsintel.vercel.app/sitemap.xml` in Google Search Console.
-4. Use URL Inspection for an important article and request indexing after verifying the rendered page.
-5. Keep titles, descriptions, internal links, and article claims useful and accurate.
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `BLOG_AUTOMATION_ENABLED=true`
+- `GEMINI_API_KEY`
+- `GEMINI_MODEL=gemini-2.5-flash` or another explicitly tested model
 
-SEO metadata and a sitemap make articles discoverable, but no implementation can guarantee a Google ranking. Ranking depends on content quality, competition, site authority, crawl/indexing decisions, and ongoing maintenance.
+Keep the existing start command:
+
+```bash
+npm run worker:audit
+```
+
+For an isolated worker, use `npm run worker:blog`, but do not run both modes against the same queue unless that extra capacity is intentional. Claims use leases and bounded retries.
+
+## Configure Autopilot
+
+1. Sign in as an administrator and open `/admin/blog`.
+2. In **Autopilot settings**, add only approved public HTTPS RSS or Atom feeds.
+3. Set the IANA timezone and publication window.
+4. Keep **Require editorial review** enabled until the source and quality workflow has been verified in production.
+5. Enable automatic discovery.
+
+The worker checks for a discovery bucket once per minute and creates at most one discovery job per six-hour bucket. A discovery can select zero, one, or two distinct high-priority opportunities. Manual, custom-headline, and batch jobs do not consume automatic quotas.
+
+## Publication Gates
+
+An article cannot be scheduled or published until all critical checks pass:
+
+- at least 1,500 useful words
+- one renderer-supplied H1 and logical H2/H3 structure
+- a non-repetitive tagline and complete metadata
+- recorded, verified sources represented by crawlable hyperlinks
+- at least two crawlable internal links
+- originality and close-paraphrase checks
+- safe image validation, or an explicit no-image decision
+- complete initial HTML with canonical, robots, Open Graph, and JSON-LD metadata
+
+Failures move work to review or failed state. They never create a partial public article.
+
+## Public Discovery Checks
+
+After publishing a reviewed test article, verify:
+
+- `/blog`
+- `/blog/{slug}` returns complete article HTML in View Source
+- `/sitemap.xml`
+- `/news-sitemap.xml`
+- `/rss.xml`
+- canonical, robots, Open Graph, Article JSON-LD, and Breadcrumb JSON-LD
+
+Only public, canonical, indexable articles appear in discovery files. Sitemap inclusion does not guarantee search-engine indexing or rankings.
+
+## Safe Images
+
+Use the admin image URL importer rather than pasting an arbitrary image URL into a published post. The importer applies DNS and redirect checks, blocks private networks, rejects SVG, limits files to 5 MB, verifies raster signatures, checks minimum dimensions, records licence and attribution fields, and stores accepted files in the controlled `blog-images` bucket.
