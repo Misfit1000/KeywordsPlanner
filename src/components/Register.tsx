@@ -17,6 +17,7 @@ export default function Register({
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [legalAccepted, setLegalAccepted] = useState(false);
   const { register } = useAuth();
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -25,7 +26,7 @@ export default function Register({
     setError(null);
     setSuccess(false);
     try {
-      await register(email.trim(), password);
+      await register(email.trim(), password, { accepted: legalAccepted, version: '2026-07-13' });
       setSuccess(true);
       window.setTimeout(() => onClose?.(), 700);
     } catch (err: any) {
@@ -72,7 +73,7 @@ export default function Register({
           </span>
         </FormField>
 
-        <FormField label="Password" htmlFor="register-password" hint="Use at least 6 characters. Your password is handled by the secure account service.">
+        <FormField label="Password" htmlFor="register-password" hint="Use at least 8 characters. Your password is handled by the secure account service.">
           <span className="relative block">
             <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
             <input
@@ -80,7 +81,7 @@ export default function Register({
               type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              minLength={6}
+              minLength={8}
               className="suite-input pl-11 pr-12"
               placeholder="Create a secure password"
               autoComplete="new-password"
@@ -92,13 +93,18 @@ export default function Register({
           </span>
         </FormField>
 
+        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-muted/35 p-3 text-sm leading-6">
+          <input type="checkbox" checked={legalAccepted} onChange={(event) => setLegalAccepted(event.target.checked)} required className="mt-1 h-4 w-4 shrink-0 accent-[var(--accent)]" aria-describedby="registration-consent" />
+          <span id="registration-consent" className="text-muted-foreground">I agree to the <a href="/terms" className="font-semibold text-accent hover:underline">Terms</a> and acknowledge the <a href="/privacy" className="font-semibold text-accent hover:underline">Privacy Notice</a>.</span>
+        </label>
+
         {error && <Notice tone="danger">{error}</Notice>}
 
         {success && <Notice tone="success">Account created. Loading your dashboard...</Notice>}
 
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || !legalAccepted}
           className="trust-button w-full"
         >
           {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : null}

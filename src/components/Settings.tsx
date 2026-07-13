@@ -1,6 +1,9 @@
 import { useState } from 'react';
-import { Database, Save, Settings as SettingsIcon, ShieldCheck, UserRound } from 'lucide-react';
+import { Database, Download, Loader2, Save, Settings as SettingsIcon, ShieldCheck, Trash2, UserRound } from 'lucide-react';
 import { FormField, Notice, PageHeader, PageSection, Panel } from './ui/page-system';
+import { useAuth } from '../contexts/AuthContext';
+import { getAuthHeaders } from '../lib/api/auth-headers';
+import { safeJsonFetch } from '../lib/http/safe-json';
 
 const SETTINGS_KEY = 'seointel_preferences';
 
@@ -13,13 +16,63 @@ function readPreferences() {
 }
 
 export default function Settings() {
+  const { user, logout } = useAuth();
   const [preferences, setPreferences] = useState(readPreferences);
   const [saved, setSaved] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [accountMessage, setAccountMessage] = useState<string | null>(null);
+  const [accountError, setAccountError] = useState<string | null>(null);
 
   const save = () => {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(preferences));
     setSaved(true);
     window.setTimeout(() => setSaved(false), 3000);
+  };
+
+  const exportAccount = async () => {
+    setExporting(true);
+    setAccountError(null);
+    try {
+      const response = await fetch('/api/tools/me/export', { headers: await getAuthHeaders(), credentials: 'same-origin' });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error?.message || payload?.error || 'Account export could not be created.');
+      }
+      const blob = await response.blob();
+      const href = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = href;
+      anchor.download = 'seointel-account-export.json';
+      anchor.click();
+      URL.revokeObjectURL(href);
+      setAccountMessage('Account export created.');
+    } catch (error) {
+      setAccountError(error instanceof Error ? error.message : 'Account export failed.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const deleteAccount = async () => {
+    if (deleteConfirmation !== 'DELETE') return;
+    setDeleting(true);
+    setAccountError(null);
+    setAccountMessage(null);
+    const response = await safeJsonFetch<{ success: true }>('/api/tools/me/delete', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ confirmation: deleteConfirmation }),
+    });
+    if (response.success === false) {
+      setAccountError(response.error);
+      setDeleting(false);
+      return;
+    }
+    await logout().catch(() => undefined);
+    window.location.assign('/');
   };
 
   return (
@@ -40,6 +93,7 @@ export default function Settings() {
             ['scan-preferences', ShieldCheck, 'Audit preferences'],
             ['account-plan', UserRound, 'Account and plan'],
             ['data-sources', Database, 'Data sources'],
+            ['data-control', Trash2, 'Data and deletion'],
           ].map(([id, Icon, label]) => (
             <a key={id as string} href={`#${id}`} className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-semibold text-muted-foreground hover:bg-muted hover:text-foreground">
               <Icon className="h-4 w-4 text-accent" />{label as string}
@@ -65,6 +119,28 @@ export default function Settings() {
 
           <PageSection id="data-sources" title="Optional data sources" description="Ranking, backlink, and search-performance views require user-provided data. SEOIntel does not invent missing provider values.">
             <Panel className="p-5 sm:p-6"><Notice tone="warning" title="Provider credentials are not entered here">Use Data Imports for CSV, Google Search Console, or Bing exports. Service credentials remain server-side and are never accepted by this browser form.</Notice></Panel>
+          </PageSection>
+
+          <PageSection id="data-control" title="Data export and account deletion" description="Download your account data or permanently remove private account records.">
+            <div className="space-y-5">
+              {accountMessage && <Notice tone="success">{accountMessage}</Notice>}
+              {accountError && <Notice tone="danger">{accountError}</Notice>}
+              <Panel className="p-5 sm:p-6">
+                <h3 className="text-base font-semibold">Export account data</h3>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">Exports profile details, projects, imported keyword records, competitors, and up to 500 recent audit summaries. Complete raw HTML is never included.</p>
+                <button type="button" onClick={exportAccount} disabled={!user || exporting} className="quiet-button mt-4"><Download className="h-4 w-4" />{exporting ? 'Preparing export…' : 'Download JSON export'}</button>
+              </Panel>
+              <Panel className="border-red-500/25 p-5 sm:p-6">
+                <h3 className="text-base font-semibold text-red-600 dark:text-red-400">Delete account permanently</h3>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">This removes private audits, findings, projects, imports, and the sign-in account. Required administrator/security records are de-identified rather than reassigned. Sign in again first if your session is older than 30 minutes.</p>
+                <FormField label="Type DELETE to confirm" htmlFor="delete-account-confirmation">
+                  <input id="delete-account-confirmation" value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} className="suite-input max-w-sm" autoComplete="off" />
+                </FormField>
+                <button type="button" onClick={deleteAccount} disabled={!user || deleting || deleteConfirmation !== 'DELETE'} className="mt-4 inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50">
+                  {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}{deleting ? 'Deleting account…' : 'Delete account'}
+                </button>
+              </Panel>
+            </div>
           </PageSection>
         </div>
       </div>

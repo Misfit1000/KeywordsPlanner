@@ -10,7 +10,7 @@ export {
   type AuditMode,
 };
 
-export type AuditStatus = 'queued' | 'running' | 'completed' | 'completed_with_warnings' | 'failed' | 'cancelled';
+export type AuditStatus = 'queued' | 'running' | 'completed' | 'completed_with_warnings' | 'failed' | 'cancelled' | 'abandoned';
 export type AuditSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 export type UserPlan = 'free' | 'paid' | 'agency' | 'admin';
 export type ProcessingTier = 'free' | 'paid' | 'agency' | 'admin';
@@ -61,6 +61,10 @@ export interface ResourceAuditDocument {
   usedHttpFallback?: boolean;
   warningCount?: number;
   failureCounts?: Record<string, number>;
+  archivedAt?: string | null;
+  deletedAt?: string | null;
+  recoveryAttempts?: number;
+  lastRecoveredAt?: string | null;
 }
 
 export interface ResourceAuditEvent {

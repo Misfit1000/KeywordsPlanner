@@ -13,6 +13,7 @@ import { useLocation, useNavigate } from 'react-router';
 import {
   TAB_PATHS,
   isWorkspacePath,
+  isKnownWorkspacePath,
   parseAuditWorkspacePath,
   tabForPath,
   type TabType,
@@ -43,6 +44,8 @@ const AuditWorkspace = lazy(() => import('./components/audit/AuditWorkspace'));
 const AuditHistoryPage = lazy(() => import('./components/audit/AuditHistoryPage'));
 const BlogIndex = lazy(() => import('./components/blog/BlogIndex'));
 const BlogPostPage = lazy(() => import('./components/blog/BlogPostPage'));
+const LegalPage = lazy(() => import('./components/LegalPage'));
+const NotFoundPage = lazy(() => import('./components/NotFoundPage'));
 
 export type { TabType } from './app/routes';
 
@@ -139,6 +142,14 @@ export default function App() {
   const activeTab = tabForPath(pathname);
   const workspaceRoute = parseAuditWorkspacePath(pathname);
   const isSearching = isWorkspacePath(pathname);
+  const isKnownWorkspace = isKnownWorkspacePath(pathname);
+  const legalKind = ({
+    '/privacy': 'privacy',
+    '/terms': 'terms',
+    '/acceptable-use': 'acceptable-use',
+    '/cookies': 'cookies',
+    '/contact': 'contact',
+  } as const)[pathname as '/privacy' | '/terms' | '/acceptable-use' | '/cookies' | '/contact'];
   const setActiveTab = (tab: TabType) => navigate(TAB_PATHS[tab]);
   const [inDepthAnalysis, setInDepthAnalysis] = useState(false);
 
@@ -171,6 +182,40 @@ export default function App() {
     if (pathname === '/register') setAuthMode('register');
     if (pathname === '/pricing') window.setTimeout(() => document.getElementById('pricing')?.scrollIntoView({ block: 'start' }), 80);
     if (pathname === '/reports/example') window.setTimeout(() => document.getElementById('reports')?.scrollIntoView({ block: 'start' }), 80);
+  }, [pathname]);
+
+  useEffect(() => {
+    const pages: Record<string, { title: string; description: string }> = {
+      '/': { title: 'SEOIntel - Visual SEO, Technical SEO & Passive Security Audit Tool', description: 'Run visual SEO, technical SEO, crawlability, performance, and passive security audits with desktop, mobile, and Google-style previews.' },
+      '/pricing': { title: 'SEOIntel Pricing and Free Audit Limits', description: 'Compare SEOIntel Free, Full, and Agency-ready audit limits without hidden ranking or backlink data claims.' },
+      '/reports/example': { title: 'SEOIntel Example Audit Report', description: 'Explore an example SEOIntel report layout with website health, coverage, passive security, previews, and prioritized fixes.' },
+    };
+    const page = pages[pathname];
+    if (!page) return;
+    const description = document.querySelector<HTMLMetaElement>('meta[name="description"]');
+    const canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+    document.title = page.title;
+    if (description) description.content = page.description;
+    if (canonical) canonical.href = `${window.location.origin}${pathname}`;
+  }, [pathname]);
+
+  useEffect(() => {
+    const legacyRoutes: Record<string, string> = {
+      '/dashboard': '/app',
+      '/seo-audit': '/app/audits/new',
+      '/audit-history': '/app/audits/history',
+      '/reports': '/app/reports',
+      '/settings': '/app/settings',
+    };
+    if (legacyRoutes[pathname]) navigate(legacyRoutes[pathname], { replace: true });
+    if (user && (pathname === '/login' || pathname === '/register')) navigate('/app', { replace: true });
+  }, [navigate, pathname, user]);
+
+  useEffect(() => {
+    const robots = document.querySelector<HTMLMetaElement>('meta[name="robots"]') || document.head.appendChild(Object.assign(document.createElement('meta'), { name: 'robots' }));
+    robots.content = pathname.startsWith('/app') || pathname.startsWith('/admin') || pathname.startsWith('/audit/live/') || pathname === '/login' || pathname === '/register'
+      ? 'noindex, nofollow'
+      : 'index, follow';
   }, [pathname]);
 
   useEffect(() => {
@@ -316,6 +361,7 @@ export default function App() {
 
   const blogMatch = pathname.match(/^\/blog(?:\/([^/]+))?\/?$/);
   const isBlogRoute = Boolean(blogMatch);
+  const knownPublicRoute = pathname === '/' || pathname === '/pricing' || pathname === '/reports/example' || pathname === '/login' || pathname === '/register' || isBlogRoute || Boolean(legalKind);
   let blogSlug = '';
   if (blogMatch?.[1]) {
     try {
@@ -379,6 +425,7 @@ export default function App() {
   if (liveAuditId) {
     return (
       <div className="min-h-screen bg-background text-foreground font-sans transition-colors duration-300">
+        <a href="#live-audit-content" className="skip-link">Skip to audit progress</a>
         <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border h-16 px-4 md:px-6 flex items-center justify-between">
           <button
             type="button"
@@ -389,7 +436,7 @@ export default function App() {
           </button>
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
         </header>
-        <main className="mx-auto w-full max-w-[1600px] p-3 sm:p-5 md:p-8">
+        <main id="live-audit-content" className="mx-auto w-full max-w-[1600px] p-3 sm:p-5 md:p-8" tabIndex={-1}>
           <Suspense fallback={<div className="h-64 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-accent" /></div>}>
             <LiveAuditProgress auditId={liveAuditId} onRerun={(url) => startLiveAudit(url, 'quick')} onOpenWorkspace={() => navigate(`/app/audits/${encodeURIComponent(liveAuditId)}/overview`)} />
           </Suspense>
@@ -507,7 +554,21 @@ export default function App() {
       )}
 
       <div className="relative z-10 flex flex-col min-h-screen">
-        {isBlogRoute ? (
+        {legalKind ? (
+          <MarketingShell
+            theme={theme}
+            onToggleTheme={toggleTheme}
+            userLabel={user?.username || (user ? 'Account' : null)}
+            authLoading={authLoading}
+            navigationBase="/"
+            onHome={() => navigate('/')}
+            onLogin={() => setAuthMode('login')}
+            onSettings={() => openAppTab('settings')}
+            onLogout={handleLogout}
+          >
+            <Suspense fallback={<LoadingSkeleton rows={5} />}><LegalPage kind={legalKind} /></Suspense>
+          </MarketingShell>
+        ) : isBlogRoute ? (
           <MarketingShell
             theme={theme}
             onToggleTheme={toggleTheme}
@@ -523,7 +584,7 @@ export default function App() {
               {blogSlug ? <BlogPostPage slug={blogSlug} /> : <BlogIndex />}
             </Suspense>
           </MarketingShell>
-        ) : !isSearching ? (
+        ) : !isSearching && knownPublicRoute ? (
             <MarketingShell
               theme={theme}
               onToggleTheme={toggleTheme}
@@ -556,7 +617,7 @@ export default function App() {
                 </div>
               )}
             </MarketingShell>
-          ) : (
+          ) : isSearching && isKnownWorkspace ? (
             <WorkspaceShell
               theme={theme}
               onToggleTheme={toggleTheme}
@@ -587,6 +648,20 @@ export default function App() {
             >
               <Suspense fallback={<LoadingSkeleton rows={5} />}>{renderContent()}</Suspense>
             </WorkspaceShell>
+          ) : (
+            <MarketingShell
+              theme={theme}
+              onToggleTheme={toggleTheme}
+              userLabel={user?.username || (user ? 'Account' : null)}
+              authLoading={authLoading}
+              navigationBase="/"
+              onHome={() => navigate('/')}
+              onLogin={() => setAuthMode('login')}
+              onSettings={() => openAppTab('settings')}
+              onLogout={handleLogout}
+            >
+              <Suspense fallback={<LoadingSkeleton rows={3} />}><NotFoundPage onHome={() => navigate('/')} /></Suspense>
+            </MarketingShell>
           )}
       </div>
     </div>

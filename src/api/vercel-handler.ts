@@ -5,7 +5,11 @@ import {
   createRateLimiter,
   jsonBodyParser,
   jsonParseErrorHandler,
+  requireJsonContentType,
+  strictCorsAndOrigin,
 } from '../lib/api/http-hardening';
+import { ApiError, requestIdMiddleware, sendSafeApiError } from '../lib/api/errors';
+import { publicVersionPayload } from '../lib/platform/version';
 
 let cachedApp: express.Express | null = null;
 
@@ -31,7 +35,9 @@ async function getApp() {
     rewriteVercelPath(req);
     next();
   });
+  app.use(requestIdMiddleware);
   app.use(apiSecurityHeaders);
+  app.use(strictCorsAndOrigin);
   app.use(createRateLimiter({ namespace: 'vercel-api', windowMs: 60_000, maxRequests: 300 }));
   app.use((req, res, next) => {
     // Vercel may provide a parsed body before Express sees the request. Parsing
@@ -40,16 +46,16 @@ async function getApp() {
     return parseJsonBody(req, res, next);
   });
   app.use(jsonParseErrorHandler);
+  app.use(requireJsonContentType);
+  app.get(['/api/version', '/version'], (_req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+    res.json(publicVersionPayload());
+  });
   app.use('/api/tools/audit/start', createRateLimiter({ namespace: 'audit-start', windowMs: 60_000, maxRequests: 20 }));
   app.use('/tools/audit/start', createRateLimiter({ namespace: 'audit-start-direct', windowMs: 60_000, maxRequests: 20 }));
   app.use('/api/tools', apiRouter);
   app.use('/tools', apiRouter);
-  app.use((req, res) => {
-    res.status(404).json({
-      success: false,
-      error: `API route not found: ${req.method} ${req.originalUrl || req.url}`,
-    });
-  });
+  app.use((_req, _res, next) => next(new ApiError('API_ROUTE_NOT_FOUND', 'The requested API route was not found.', 404)));
   app.use(apiErrorHandler);
 
   cachedApp = app;
@@ -61,18 +67,8 @@ export default async function handler(req: any, res: any) {
     const app = await getApp();
     return app(req, res);
   } catch (error: any) {
-    console.error('[api/index] function failed', {
-      message: error?.message,
-      stack: error?.stack,
-      url: req?.url,
-      method: req?.method,
-    });
-
     if (!res.headersSent) {
-      return res.status(500).json({
-        success: false,
-        error: error?.message || 'API function failed',
-      });
+      return sendSafeApiError(req, res, error);
     }
   }
 }

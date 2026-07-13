@@ -5,7 +5,7 @@
 1. Create a Supabase project.
 2. Copy the project URL and anon key for the frontend.
 3. Copy the service role key for the API and worker only.
-4. Apply every SQL file in `supabase/migrations/` in numeric order. Existing projects must also apply the later policy, history, blog, and preview metadata migrations through `009_audit_page_preview_metadata.sql`.
+4. Apply every SQL file in `supabase/migrations/` in numeric order through `011_production_robustness.sql`. Existing projects must apply the resilience migration 010 before the production-control migration 011.
 
 ## Frontend Environment
 

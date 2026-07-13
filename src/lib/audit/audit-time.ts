@@ -6,7 +6,7 @@ type AuditTimingInput = Pick<
 >;
 
 export function isTerminalAuditStatus(status?: AuditStatus | null) {
-  return status === 'completed' || status === 'completed_with_warnings' || status === 'failed' || status === 'cancelled';
+  return status === 'completed' || status === 'completed_with_warnings' || status === 'failed' || status === 'cancelled' || status === 'abandoned';
 }
 
 export function isCompletedAuditStatus(status?: AuditStatus | string | null) {

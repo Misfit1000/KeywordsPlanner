@@ -63,3 +63,10 @@ export function parseAuditWorkspacePath(pathname: string): { auditId: string; se
 export function isWorkspacePath(pathname: string) {
   return pathname === '/app' || pathname.startsWith('/app/') || pathname === '/admin' || pathname.startsWith('/admin/');
 }
+
+const adminPaths = new Set(['/admin', '/admin/login', '/admin/users', '/admin/audits', '/admin/queue', '/admin/workers', '/admin/diagnostics', '/admin/settings', '/admin/plans', '/admin/blog']);
+
+export function isKnownWorkspacePath(pathname: string) {
+  const normalized = pathname.replace(/\/$/, '') || '/';
+  return exactPathTabs.has(normalized) || Boolean(parseAuditWorkspacePath(pathname)) || adminPaths.has(normalized);
+}

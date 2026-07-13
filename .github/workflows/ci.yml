@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+        env:
+          BUILD_TIMESTAMP: ${{ github.event.head_commit.timestamp || github.event.pull_request.updated_at }}
+          GIT_COMMIT_SHA: ${{ github.sha }}
+      - run: npm run smoke:universal-domain
+      - run: npm run smoke:audit-resilience
+      - run: npm run smoke:audit-terminal-state
+      - run: npm run smoke:crawler-safety
+      - run: npm run smoke:api-error-safety
+      - run: npm run smoke:api-hardening
+      - run: npm run smoke:production-routing
+      - run: npm run smoke:accessibility
+      - run: npm run smoke:findings-layout
+      - run: npm run smoke:audit-pdf
+      - run: npm run verify:security
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high

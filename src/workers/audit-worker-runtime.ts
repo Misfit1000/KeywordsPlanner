@@ -1,6 +1,7 @@
 import { AUDIT_LIMITS } from '../lib/audit/audit-config';
 import { normalizeSupabaseProjectUrl } from '../lib/supabase/url';
 import type { WorkerHeartbeat, WorkerHeartbeatStatus } from '../lib/supabase/audit-repository';
+import { AUDIT_ENGINE_VERSION, CHECK_REGISTRY_VERSION, SCORING_VERSION } from '../lib/platform/version';
 
 export { type WorkerHeartbeatStatus };
 
@@ -15,6 +16,9 @@ export interface AuditWorkerConfig {
   supabaseUrl: string;
   supabaseHost: string;
   version: string;
+  auditEngineVersion: string;
+  scoringVersion: string;
+  checkRegistryVersion: string;
   runtime: string;
   supportedModes: Array<'quick' | 'standard' | 'deep'>;
   deepAuditEnabled: boolean;
@@ -27,6 +31,9 @@ export interface AuditWorkerRuntimeState {
   pollIntervalMs: number;
   currentAuditId: string | null;
   version: string;
+  auditEngineVersion: string;
+  scoringVersion: string;
+  checkRegistryVersion: string;
   runtime: string;
   supportedModes: Array<'quick' | 'standard' | 'deep'>;
   deepAuditEnabled: boolean;
@@ -64,6 +71,9 @@ export function loadWorkerConfig(env: WorkerEnv = process.env): AuditWorkerConfi
       env.npm_package_version ||
       '0.0.0',
     runtime: env.WORKER_RUNTIME || (env.RENDER || env.PORT ? 'render-web-service' : 'node-worker'),
+    auditEngineVersion: AUDIT_ENGINE_VERSION,
+    scoringVersion: SCORING_VERSION,
+    checkRegistryVersion: CHECK_REGISTRY_VERSION,
     supportedModes: env.DEEP_AUDIT_ENABLED === 'true' ? ['quick', 'standard', 'deep'] : ['quick', 'standard'],
     deepAuditEnabled: env.DEEP_AUDIT_ENABLED === 'true',
   };
@@ -78,6 +88,9 @@ export function createInitialWorkerState(config: AuditWorkerConfig): AuditWorker
     currentAuditId: null,
     version: config.version,
     runtime: config.runtime,
+    auditEngineVersion: config.auditEngineVersion,
+    scoringVersion: config.scoringVersion,
+    checkRegistryVersion: config.checkRegistryVersion,
     supportedModes: config.supportedModes,
     deepAuditEnabled: config.deepAuditEnabled,
     queuePollingStatus: 'starting',
@@ -113,6 +126,9 @@ export function buildWorkerHeartbeat(state: AuditWorkerRuntimeState): WorkerHear
     pollIntervalMs: state.pollIntervalMs,
     currentAuditId: state.currentAuditId,
     version: state.version,
+    auditEngineVersion: state.auditEngineVersion,
+    scoringVersion: state.scoringVersion,
+    checkRegistryVersion: state.checkRegistryVersion,
     runtime: state.runtime,
     supportedModes: state.supportedModes,
     deepAuditEnabled: state.deepAuditEnabled,

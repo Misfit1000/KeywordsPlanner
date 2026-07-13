@@ -23,7 +23,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string, legalConsent: { accepted: boolean; version: string }) => Promise<void>;
   logout: () => Promise<void>;
   updateUserProfile: (data: Partial<User>) => Promise<void>;
   error: string | null;
@@ -199,20 +199,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (signInError.message.toLowerCase().includes('invalid')) {
         throw new Error("Email or password is incorrect");
       }
-      throw new Error(signInError.message || "Login failed");
+      throw new Error('Unable to sign in. Please try again.');
     }
   };
 
-  const register = async (email: string, password: string) => {
+  const register = async (email: string, password: string, legalConsent: { accepted: boolean; version: string }) => {
     setError(null);
+    if (!legalConsent.accepted) throw new Error('Accept the Terms and Privacy Notice to create an account.');
     const client = await getSupabaseClientOrThrow();
+    const acceptedAt = new Date().toISOString();
 
-    const { data, error: signUpError } = await client.auth.signUp({ email, password });
+    const { data, error: signUpError } = await client.auth.signUp({
+      email,
+      password,
+      options: { data: { legal_consent_version: legalConsent.version, terms_accepted_at: acceptedAt, privacy_accepted_at: acceptedAt } },
+    });
     if (signUpError) {
       if (signUpError.message.toLowerCase().includes('already')) {
         throw new Error("User already exists. Please sign in");
       }
-      throw new Error(signUpError.message || "Registration failed");
+      throw new Error('Account could not be created. Please try again.');
     }
 
     if (data.user) {
@@ -220,6 +226,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await dataService.initUserProfile(data.user.id, {
         email,
         displayName: email.split('@')[0] || 'User',
+        termsAcceptedAt: acceptedAt,
+        privacyAcceptedAt: acceptedAt,
+        legalVersion: legalConsent.version,
       });
     }
   };

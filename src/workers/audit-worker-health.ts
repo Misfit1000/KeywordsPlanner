@@ -23,6 +23,9 @@ export function startWorkerHealthServer(
       lastCompletedAuditAt: state.lastCompletedAuditAt,
       lastFatalWorkerError: Boolean(state.lastFatalWorkerError),
       supportedModes: state.supportedModes,
+      auditEngineVersion: state.auditEngineVersion,
+      scoringVersion: state.scoringVersion,
+      checkRegistryVersion: state.checkRegistryVersion,
       deepAuditEnabled: state.deepAuditEnabled,
       planLimitsSummary: {
         free: { modes: ['quick'], maxPages: 5, priority: 10 },

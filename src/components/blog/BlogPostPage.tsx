@@ -60,7 +60,7 @@ export default function BlogPostPage({ slug }: { slug: string }) {
   };
 
   return (
-    <main className="bg-background text-foreground">
+    <main id="main-content" className="bg-background text-foreground">
       <div className="section-shell py-10 sm:py-14 lg:py-20">
         <a href="/blog" className="inline-flex items-center gap-2 text-sm font-semibold text-accent hover:underline"><ArrowLeft className="h-4 w-4" /> All articles</a>
         {loading ? <div className="mt-8"><LoadingSkeleton rows={8} /></div> : error || !post ? (

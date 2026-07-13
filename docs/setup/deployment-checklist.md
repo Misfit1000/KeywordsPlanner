@@ -44,7 +44,7 @@ git diff --check
 
 ## Supabase
 
-- Apply every file in `supabase/migrations/` in numeric order, including `006_private_audit_read_policies.sql`, `007_blog_cms.sql`, `008_audit_history_comparison.sql`, and `009_audit_page_preview_metadata.sql` for existing projects.
+- Apply every file in `supabase/migrations/` in numeric order through `011_production_robustness.sql`. Existing projects must apply 010 before 011; never rewrite an earlier migration.
 - Confirm Supabase Realtime is enabled for audit tables.
 - Confirm the live audit page shows `WebSocket live` after opening an audit.
 - Confirm RLS is enabled on audit tables.

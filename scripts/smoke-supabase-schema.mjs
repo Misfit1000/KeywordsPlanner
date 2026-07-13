@@ -9,6 +9,7 @@ const privatePoliciesSql = readFileSync(privatePoliciesPath, 'utf8');
 const historyMigrationSql = readFileSync(resolve('supabase/migrations/008_audit_history_comparison.sql'), 'utf8');
 const previewMigrationSql = readFileSync(resolve('supabase/migrations/009_audit_page_preview_metadata.sql'), 'utf8');
 const resilienceMigrationSql = readFileSync(resolve('supabase/migrations/010_audit_resilience_and_failures.sql'), 'utf8');
+const productionMigrationSql = readFileSync(resolve('supabase/migrations/011_production_robustness.sql'), 'utf8');
 
 for (const table of ['audits', 'audit_events', 'audit_pages', 'audit_issues', 'audit_reports']) {
   assert.match(sql, new RegExp(`create table if not exists public\\.${table}\\b`, 'i'), `${table} table is missing`);
@@ -48,6 +49,15 @@ assert.match(resilienceMigrationSql, /create table if not exists public\.audit_d
 assert.match(resilienceMigrationSql, /alter table public\.audit_diagnostics enable row level security/i, 'diagnostics RLS is missing');
 assert.match(resilienceMigrationSql, /No anon or authenticated policy is created/i, 'service-role-only diagnostics boundary is undocumented');
 assert.equal(/alter publication supabase_realtime add table public\.audit_diagnostics/i.test(resilienceMigrationSql), false, 'internal diagnostics must not be published to browser realtime');
+for (const table of ['deployment_versions', 'audit_admissions', 'api_rate_limit_windows', 'api_error_logs', 'data_retention_policies']) {
+  assert.match(productionMigrationSql, new RegExp(`create table if not exists public\\.${table}\\b`, 'i'), `${table} production table is missing`);
+  assert.match(productionMigrationSql, new RegExp(`alter table public\\.${table} enable row level security`, 'i'), `${table} production RLS is missing`);
+}
+for (const fn of ['admit_audit_submission', 'consume_api_rate_limit', 'consume_user_audit_quota', 'delete_user_owned_data', 'run_data_retention_cleanup']) {
+  assert.match(productionMigrationSql, new RegExp(`create or replace function public\\.${fn}\\b`, 'i'), `${fn} production function is missing`);
+  assert.match(productionMigrationSql, new RegExp(`grant execute on function public\\.${fn}`, 'i'), `${fn} service-role grant is missing`);
+}
+assert.match(productionMigrationSql, /recovery_attempts/i, 'bounded stale recovery metadata is missing');
 for (const bannedTerm of ['fire' + 'base', 'fire' + 'store']) {
   assert.equal(sql.toLowerCase().includes(bannedTerm), false, `migration should not contain ${bannedTerm} references`);
 }

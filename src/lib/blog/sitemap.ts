@@ -21,6 +21,11 @@ export async function renderBlogSitemap(origin: string) {
   const urls = [
     { loc: `${origin}/`, changefreq: 'weekly', priority: '1.0', lastmod: null },
     { loc: `${origin}/blog`, changefreq: 'weekly', priority: '0.8', lastmod: null },
+    { loc: `${origin}/privacy`, changefreq: 'yearly', priority: '0.3', lastmod: null },
+    { loc: `${origin}/terms`, changefreq: 'yearly', priority: '0.3', lastmod: null },
+    { loc: `${origin}/acceptable-use`, changefreq: 'yearly', priority: '0.3', lastmod: null },
+    { loc: `${origin}/cookies`, changefreq: 'yearly', priority: '0.2', lastmod: null },
+    { loc: `${origin}/contact`, changefreq: 'yearly', priority: '0.4', lastmod: null },
     ...posts.map((post) => ({ loc: `${origin}/blog/${encodeURIComponent(post.slug)}`, changefreq: 'monthly', priority: '0.7', lastmod: post.updatedAt })),
   ];
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((url) => `  <url>\n    <loc>${escapeXml(url.loc)}</loc>${url.lastmod ? `\n    <lastmod>${escapeXml(new Date(url.lastmod).toISOString())}</lastmod>` : ''}\n    <changefreq>${url.changefreq}</changefreq>\n    <priority>${url.priority}</priority>\n  </url>`).join('\n')}\n</urlset>\n`;

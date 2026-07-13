@@ -33,10 +33,17 @@ export async function safeJsonFetch<T>(
     try {
       const parsed = JSON.parse(raw);
       if (!response.ok) {
+        const parsedError = typeof parsed?.error === 'string'
+          ? parsed.error
+          : typeof parsed?.error?.message === 'string'
+            ? parsed.error.message
+            : typeof parsed?.message === 'string'
+              ? parsed.message
+              : `Request failed with status ${response.status}`;
         return {
           success: false,
           status: response.status,
-          error: parsed?.error || parsed?.message || `Request failed with status ${response.status}`,
+          error: parsedError,
           raw,
         };
       }

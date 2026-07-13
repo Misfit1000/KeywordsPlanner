@@ -50,7 +50,7 @@ export default function BlogIndex() {
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
 
   return (
-    <main className="bg-background text-foreground">
+    <main id="main-content" className="bg-background text-foreground">
       <div className="section-shell space-y-10 py-12 sm:py-16 lg:py-20">
         <PageHeader
           eyebrow="SEOIntel editorial"

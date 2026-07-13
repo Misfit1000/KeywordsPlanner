@@ -8,6 +8,12 @@ export const API_ROUTES = {
   auditCancel: (id: string) => `/api/tools/audit/cancel/${id}`,
   auditExport: (id: string, format: string) => `/api/tools/audit/export/${id}/${format}`,
   auditRerun: (id: string) => `/api/tools/audit/rerun/${id}`,
+  auditArchive: (id: string) => `/api/tools/audit/archive/${id}`,
+  auditDelete: (id: string) => `/api/tools/audit/${id}`,
+  version: '/api/version',
+  accountExport: '/api/tools/me/export',
+  accountDelete: '/api/tools/me/delete',
+  adminDiagnostics: '/api/tools/admin/diagnostics',
   meProfile: "/api/tools/me/profile",
   securityStart: "/api/tools/audit/start", // Based on the code, security audit calls /api/tools/audit/start with type="security"
   keywordResearch: "/api/tools/keyword/research",

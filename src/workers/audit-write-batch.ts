@@ -26,6 +26,7 @@ export interface AuditWriteBatchOptions {
   issueBatchSize?: number;
   eventBatchSize?: number;
   progressThrottleMs?: number;
+  writeTimeoutMs?: number;
   now?: () => number;
 }
 
@@ -57,6 +58,7 @@ export class AuditWriteBatch {
   private readonly eventBatchSize: number;
   private readonly progressThrottleMs: number;
   private readonly now: () => number;
+  private readonly writeTimeoutMs: number;
   private readonly metrics: AuditWriteMetrics = {
     flushes: 0,
     writeOperations: 0,
@@ -84,6 +86,7 @@ export class AuditWriteBatch {
     this.issueBatchSize = Math.max(1, options.issueBatchSize ?? 40);
     this.eventBatchSize = Math.max(1, options.eventBatchSize ?? 20);
     this.progressThrottleMs = Math.max(0, options.progressThrottleMs ?? 1_200);
+    this.writeTimeoutMs = Math.max(1_000, options.writeTimeoutMs ?? 15_000);
     this.now = options.now ?? Date.now;
   }
 
@@ -123,7 +126,7 @@ export class AuditWriteBatch {
         progress: event.progress ?? patch.progress,
       });
     }
-    const terminal = patch.status === 'completed' || patch.status === 'completed_with_warnings' || patch.status === 'failed' || patch.status === 'cancelled';
+    const terminal = patch.status === 'completed' || patch.status === 'completed_with_warnings' || patch.status === 'failed' || patch.status === 'cancelled' || patch.status === 'abandoned';
     const throttleElapsed = this.now() - this.lastProgressWriteAt >= this.progressThrottleMs;
     if (options.force || terminal || throttleElapsed || this.events.length >= this.eventBatchSize) {
       await this.flush(options.force || terminal || throttleElapsed);
@@ -148,7 +151,17 @@ export class AuditWriteBatch {
     const startedAt = this.now();
     this.metrics.writeOperations += 1;
     try {
-      return await operation();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          operation(),
+          new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(() => reject(new Error(`Database write exceeded ${this.writeTimeoutMs}ms.`)), this.writeTimeoutMs);
+          }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
     } finally {
       this.metrics.dbWriteMs += Math.max(0, this.now() - startedAt);
     }

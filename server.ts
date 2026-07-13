@@ -14,7 +14,11 @@ import {
   createRateLimiter,
   jsonBodyParser,
   jsonParseErrorHandler,
+  requireJsonContentType,
+  strictCorsAndOrigin,
 } from "./src/lib/api/http-hardening";
+import { ApiError, requestIdMiddleware } from "./src/lib/api/errors";
+import { publicVersionPayload } from "./src/lib/platform/version";
 
 const dirName = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
 
@@ -38,11 +42,18 @@ db.exec(`
 async function startServer() {
   const app = express();
   app.set('trust proxy', 1);
+  app.use(requestIdMiddleware);
   app.use(apiSecurityHeaders);
+  app.use(strictCorsAndOrigin);
   app.use(createRateLimiter({ namespace: 'local-api', windowMs: 60_000, maxRequests: 300 }));
   app.use(jsonBodyParser());
   app.use(jsonParseErrorHandler);
+  app.use(requireJsonContentType);
   app.use(cookieParser());
+  app.get('/api/version', (_req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+    res.json(publicVersionPayload());
+  });
 
   // Mount tool APIs
   app.use('/api/tools/audit/start', createRateLimiter({ namespace: 'local-audit-start', windowMs: 60_000, maxRequests: 20 }));
@@ -132,14 +143,7 @@ async function startServer() {
 
 
   // Fallback 404 for API routes to always return JSON
-  app.use('/api', (req, res) => {
-    if (!res.headersSent) {
-      res.status(404).json({
-        success: false,
-        error: `API route not found: ${req.method} ${req.originalUrl}`
-      });
-    }
-  });
+  app.use('/api', (_req, _res, next) => next(new ApiError('API_ROUTE_NOT_FOUND', 'The requested API route was not found.', 404)));
   app.use(apiErrorHandler);
 
   // Vite middleware for development

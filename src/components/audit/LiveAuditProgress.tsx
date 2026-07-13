@@ -58,6 +58,7 @@ function statusLabel(status?: string) {
   if (status === 'completed_with_warnings') return 'Report ready with warnings';
   if (status === 'failed') return 'Needs attention';
   if (status === 'cancelled') return 'Stopped';
+  if (status === 'abandoned') return 'Stopped after recovery attempts';
   return status || 'Loading';
 }
 
@@ -307,6 +308,7 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun, onOpenWorkspac
           <ConnectionBadge connection={connection} now={now} />
         </div>
         <CurrentWorkCard currentWork={currentWork} connection={connection} now={now} />
+
         {warning && (
           <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-700 text-sm">
             {humanizeAuditText(warning)}
@@ -535,6 +537,14 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun, onOpenWorkspac
         {warning && (
           <div className="mt-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-700 text-sm">
             {humanizeAuditText(warning)}
+          </div>
+        )}
+
+        {audit.status === 'queued' && audit.estimatedWaitSeconds != null && (
+          <div className="mt-4 grid gap-3 rounded-lg border border-border bg-muted/30 p-4 sm:grid-cols-3" aria-label="Queue estimate">
+            <Info label="Audits ahead" value={String(Math.max(0, Math.round(audit.estimatedWaitSeconds / 45)))} />
+            <Info label="Estimated start" value={audit.estimatedWaitSeconds > 0 ? `${Math.max(1, Math.ceil(audit.estimatedWaitSeconds / 60))} to ${Math.max(2, Math.ceil(audit.estimatedWaitSeconds / 60) + 2)} minutes` : 'Next available slot'} />
+            <Info label="Audit service" value={connection.status === 'error' ? 'Temporarily unavailable' : 'Waiting for capacity'} />
           </div>
         )}
 

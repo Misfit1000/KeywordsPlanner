@@ -38,6 +38,7 @@ export function MarketingShell({
   const auditHref = `${navigationBase}#start-audit`;
   return (
     <div className="flex min-h-screen flex-col">
+      <a href="#main-content" className="skip-link">Skip to main content</a>
       <header className="sticky top-0 z-50 border-b border-border/80 bg-card/92 backdrop-blur-xl">
         <div className="section-shell flex h-[4.5rem] items-center justify-between gap-4">
           <button type="button" onClick={onHome} className="rounded-lg" aria-label="SEOIntel home"><BrandMark /></button>
@@ -66,6 +67,7 @@ export function MarketingShell({
         )}
       </header>
       {children}
+      <PublicFooter />
     </div>
   );
 }
@@ -109,6 +111,7 @@ export function WorkspaceShell({
 }) {
   return (
     <div className="flex h-dvh min-h-0 flex-col overflow-hidden">
+      <a href="#workspace-content" className="skip-link">Skip to workspace content</a>
       <header className="relative z-50 flex h-[4.25rem] shrink-0 items-center border-b border-border/80 bg-card/92 px-4 backdrop-blur-xl md:px-6">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <button type="button" onClick={onToggleSidebar} className="rounded-lg p-2.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={sidebarOpen ? 'Close navigation' : 'Open navigation'}><Menu className="h-5 w-5" /></button>
@@ -132,7 +135,28 @@ export function WorkspaceShell({
           )}
         </div>
       </header>
-      <div className="flex min-h-0 flex-1 overflow-hidden">{sidebar}<main className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain"><div className="suite-page">{children}</div></main></div>
+      <div className="flex min-h-0 flex-1 overflow-hidden">{sidebar}<main id="workspace-content" className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain" tabIndex={-1}><div className="suite-page">{children}</div></main></div>
     </div>
+  );
+}
+
+function PublicFooter() {
+  return (
+    <footer className="mt-auto border-t border-border bg-card/70">
+      <div className="section-shell grid gap-8 py-10 sm:grid-cols-2 lg:grid-cols-[1.2fr_1fr_1fr]">
+        <div>
+          <BrandMark />
+          <p className="mt-3 max-w-md text-sm leading-6 text-muted-foreground">Resource-light website audits with transparent coverage, passive security boundaries, and no invented ranking data.</p>
+        </div>
+        <nav aria-label="Product links">
+          <h2 className="text-sm font-semibold">Product</h2>
+          <div className="mt-3 grid gap-2 text-sm text-muted-foreground"><a href="/#features" className="hover:text-foreground">Features</a><a href="/#pricing" className="hover:text-foreground">Pricing</a><a href="/blog" className="hover:text-foreground">Blog</a><a href="/contact" className="hover:text-foreground">Contact</a></div>
+        </nav>
+        <nav aria-label="Legal links">
+          <h2 className="text-sm font-semibold">Trust and legal</h2>
+          <div className="mt-3 grid gap-2 text-sm text-muted-foreground"><a href="/privacy" className="hover:text-foreground">Privacy</a><a href="/terms" className="hover:text-foreground">Terms</a><a href="/acceptable-use" className="hover:text-foreground">Acceptable use</a><a href="/cookies" className="hover:text-foreground">Cookies</a></div>
+        </nav>
+      </div>
+    </footer>
   );
 }

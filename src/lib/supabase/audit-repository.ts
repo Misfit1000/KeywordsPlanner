@@ -17,6 +17,7 @@ import {
   isSupabaseAdminEnabled,
   requireSupabaseAdminClient,
 } from './server';
+import { deploymentVersionRow } from '../platform/version';
 
 type DbRow = Record<string, any>;
 export type WorkerHeartbeatStatus = 'starting' | 'idle' | 'running' | 'stopping' | 'stopped' | 'failed';
@@ -28,6 +29,9 @@ export interface WorkerHeartbeat {
   pollIntervalMs: number;
   currentAuditId: string | null;
   version: string;
+  auditEngineVersion?: string;
+  scoringVersion?: string;
+  checkRegistryVersion?: string;
   runtime?: string;
   supportedModes?: string[];
   deepAuditEnabled?: boolean;
@@ -87,6 +91,8 @@ function workerHeartbeatKey(workerId: string) {
   return `audit_worker:${workerId}`;
 }
 
+let workerDeploymentVersionRecorded = false;
+
 function isClaimableLock(row: DbRow, timestamp: string) {
   if (!row.locked_by) return true;
   if (!row.lease_expires_at) return true;
@@ -108,6 +114,9 @@ function toWorkerHeartbeat(row: DbRow): WorkerHeartbeat {
     pollIntervalMs: Number(value.pollIntervalMs || 0),
     currentAuditId: value.currentAuditId ?? null,
     version: String(value.version || 'unknown'),
+    auditEngineVersion: value.auditEngineVersion || undefined,
+    scoringVersion: value.scoringVersion || undefined,
+    checkRegistryVersion: value.checkRegistryVersion || undefined,
     runtime: value.runtime || undefined,
     supportedModes: Array.isArray(value.supportedModes) ? value.supportedModes : undefined,
     deepAuditEnabled: typeof value.deepAuditEnabled === 'boolean' ? value.deepAuditEnabled : undefined,
@@ -190,6 +199,10 @@ function toAuditDocument(row: DbRow | null | undefined): ResourceAuditDocument |
     usedHttpFallback: row.used_http_fallback ?? undefined,
     warningCount: row.warning_count ?? 0,
     failureCounts: row.failure_counts ?? {},
+    archivedAt: row.archived_at ?? null,
+    deletedAt: row.deleted_at ?? null,
+    recoveryAttempts: row.recovery_attempts ?? 0,
+    lastRecoveredAt: row.last_recovered_at ?? null,
   };
 }
 
@@ -285,6 +298,10 @@ function auditPatchToRow(patch: Partial<ResourceAuditDocument>) {
   if ('usedHttpFallback' in patch) row.used_http_fallback = patch.usedHttpFallback;
   if ('warningCount' in patch) row.warning_count = patch.warningCount;
   if ('failureCounts' in patch) row.failure_counts = patch.failureCounts;
+  if ('archivedAt' in patch) row.archived_at = patch.archivedAt;
+  if ('deletedAt' in patch) row.deleted_at = patch.deletedAt;
+  if ('recoveryAttempts' in patch) row.recovery_attempts = patch.recoveryAttempts;
+  if ('lastRecoveredAt' in patch) row.last_recovered_at = patch.lastRecoveredAt;
   return row;
 }
 
@@ -584,6 +601,9 @@ export const auditRepository = {
       pollIntervalMs: heartbeat.pollIntervalMs,
       currentAuditId: heartbeat.currentAuditId ?? null,
       version: heartbeat.version || 'unknown',
+      auditEngineVersion: heartbeat.auditEngineVersion,
+      scoringVersion: heartbeat.scoringVersion,
+      checkRegistryVersion: heartbeat.checkRegistryVersion,
       runtime: heartbeat.runtime,
       supportedModes: heartbeat.supportedModes,
       deepAuditEnabled: heartbeat.deepAuditEnabled,
@@ -606,6 +626,10 @@ export const auditRepository = {
         { onConflict: 'id' },
       );
     assertNoError(error, 'Upsert worker heartbeat');
+    if (!workerDeploymentVersionRecorded) {
+      const deployment = await client.from('deployment_versions').upsert(deploymentVersionRow('worker'), { onConflict: 'component' });
+      workerDeploymentVersionRecorded = !deployment.error;
+    }
     return payload;
   },
 
@@ -655,6 +679,7 @@ export const auditRepository = {
   },
 
   async createAuditJob(input: {
+    id?: string;
     submittedInput: string;
     normalizedUrl: string;
     hostname: string;
@@ -670,7 +695,7 @@ export const auditRepository = {
     guestKeyHash?: string | null;
     projectId?: string | null;
   }): Promise<ResourceAuditDocument> {
-    const id = randomUUID();
+    const id = input.id || randomUUID();
     const config = getAuditModeConfig(input.effectiveMode || input.mode);
     const timestamp = nowIso();
     const effectiveMode = input.effectiveMode || config.mode;
@@ -721,6 +746,10 @@ export const auditRepository = {
       leaseExpiresAt: null,
       warningCount: 0,
       failureCounts: {},
+      archivedAt: null,
+      deletedAt: null,
+      recoveryAttempts: 0,
+      lastRecoveredAt: null,
     };
 
     const client = getSupabaseAdminClient();
@@ -1248,6 +1277,7 @@ export const auditRepository = {
     userId: string;
     status?: string;
     hostname?: string;
+    includeArchived?: boolean;
     limit?: number;
     offset?: number;
   }): Promise<AuditHistoryPage> {
@@ -1263,6 +1293,7 @@ export const auditRepository = {
         .range(offset, offset + limit - 1);
       if (input.status) query = query.eq('status', input.status);
       if (input.hostname) query = query.eq('hostname', input.hostname);
+      if (!input.includeArchived) query = query.is('archived_at', null);
       const { data, error, count } = await query;
       assertNoError(error, 'List audit history');
       const audits = (data ?? []).map(toAuditDocument).filter((audit): audit is ResourceAuditDocument => Boolean(audit));
@@ -1287,6 +1318,7 @@ export const auditRepository = {
       .filter((audit) => audit.userId === input.userId)
       .filter((audit) => !input.status || audit.status === input.status)
       .filter((audit) => !input.hostname || audit.hostname === input.hostname)
+      .filter((audit) => input.includeArchived || !audit.archivedAt)
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
     return {
       items: all.slice(offset, offset + limit).map((audit) => ({ audit, finalReport: memory.reports.get(audit.id) ?? null })),
@@ -1335,6 +1367,20 @@ export const auditRepository = {
     const client = getSupabaseAdminClient();
 
     if (client) {
+      const abandonPatch = {
+        status: 'abandoned',
+        current_phase: 'Stopped after recovery attempts',
+        completed_at: timestamp,
+        locked_by: null,
+        locked_at: null,
+        lease_expires_at: null,
+        updated_at: timestamp,
+      };
+      const expiredAbandon = await client.from('audits').update(abandonPatch).eq('status', 'running').gte('recovery_attempts', AUDIT_LIMITS.maxRecoveryAttempts).lte('lease_expires_at', timestamp);
+      assertNoError(expiredAbandon.error, 'Abandon expired audit after recovery limit');
+      const missingLeaseAbandon = await client.from('audits').update(abandonPatch).eq('status', 'running').gte('recovery_attempts', AUDIT_LIMITS.maxRecoveryAttempts).is('lease_expires_at', null);
+      assertNoError(missingLeaseAbandon.error, 'Abandon unleased audit after recovery limit');
+
       const queued = await client
         .from('audits')
         .select('*')
@@ -1350,6 +1396,7 @@ export const auditRepository = {
           .from('audits')
           .select('*')
           .eq('status', 'running')
+          .lt('recovery_attempts', AUDIT_LIMITS.maxRecoveryAttempts)
           .order('lease_expires_at', { ascending: true, nullsFirst: true })
           .order('queue_priority', { ascending: false })
           .order('created_at', { ascending: true })
@@ -1370,6 +1417,8 @@ export const auditRepository = {
         lease_expires_at: leaseExpiresAt,
         worker_runtime: workerRuntime,
         started_at: candidate.started_at ?? timestamp,
+        recovery_attempts: candidate.status === 'running' ? Number(candidate.recovery_attempts || 0) + 1 : Number(candidate.recovery_attempts || 0),
+        last_recovered_at: candidate.status === 'running' ? timestamp : candidate.last_recovered_at ?? null,
         updated_at: timestamp,
       };
 
@@ -1402,10 +1451,15 @@ export const auditRepository = {
       return null;
     }
 
+    for (const audit of memory.audits.values()) {
+      if (audit.status === 'running' && (!audit.leaseExpiresAt || audit.leaseExpiresAt <= timestamp) && (audit.recoveryAttempts || 0) >= AUDIT_LIMITS.maxRecoveryAttempts) {
+        memory.audits.set(audit.id, { ...audit, status: 'abandoned', currentPhase: 'Stopped after recovery attempts', completedAt: timestamp, lockedBy: null, lockedAt: null, leaseExpiresAt: null, updatedAt: timestamp });
+      }
+    }
     const next = Array.from(memory.audits.values())
       .filter((audit) => {
         if (audit.status === 'queued') return !audit.lockedBy || !audit.leaseExpiresAt || audit.leaseExpiresAt <= timestamp;
-        return audit.status === 'running' && (!audit.leaseExpiresAt || audit.leaseExpiresAt <= timestamp);
+        return audit.status === 'running' && (audit.recoveryAttempts || 0) < AUDIT_LIMITS.maxRecoveryAttempts && (!audit.leaseExpiresAt || audit.leaseExpiresAt <= timestamp);
       })
       .sort((a, b) => (b.queuePriority - a.queuePriority) || a.createdAt.localeCompare(b.createdAt))[0];
     if (!next) return null;
@@ -1420,6 +1474,8 @@ export const auditRepository = {
       leaseExpiresAt,
       workerRuntime,
       startedAt: next.startedAt ?? timestamp,
+      recoveryAttempts: next.status === 'running' ? (next.recoveryAttempts || 0) + 1 : next.recoveryAttempts || 0,
+      lastRecoveredAt: next.status === 'running' ? timestamp : next.lastRecoveredAt ?? null,
       updatedAt: timestamp,
     };
     memory.audits.set(next.id, claimed);

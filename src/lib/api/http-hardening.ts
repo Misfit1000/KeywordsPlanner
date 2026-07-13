@@ -1,4 +1,5 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
+import { ApiError, requestIdFor, sendSafeApiError } from './errors';
 
 type RateLimitOptions = {
   namespace: string;
@@ -21,7 +22,46 @@ export function apiSecurityHeaders(_req: Request, res: Response, next: NextFunct
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
-  res.setHeader('Content-Security-Policy', "frame-ancestors 'none'; base-uri 'self'; object-src 'none'");
+  res.setHeader('Cache-Control', 'private, no-store');
+  next();
+}
+
+function configuredOrigins(req: Request) {
+  const values = [
+    process.env.APP_URL,
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '',
+    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '',
+    `${req.protocol}://${req.get('host')}`,
+  ].filter(Boolean);
+  if (process.env.NODE_ENV !== 'production') values.push('http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:4173', 'http://127.0.0.1:4173');
+  return new Set(values.map((value) => {
+    try { return new URL(String(value)).origin; } catch { return ''; }
+  }).filter(Boolean));
+}
+
+export function strictCorsAndOrigin(req: Request, res: Response, next: NextFunction) {
+  const origin = String(req.headers.origin || '');
+  const allowed = configuredOrigins(req);
+  res.setHeader('Vary', 'Origin');
+  if (origin && allowed.has(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Request-Id, X-SEOIntel-Guest-Id');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  }
+  if (req.method === 'OPTIONS') {
+    if (!origin || !allowed.has(origin)) return next(new ApiError('ORIGIN_NOT_ALLOWED', 'This request origin is not allowed.', 403));
+    return res.status(204).end();
+  }
+  if (origin && !allowed.has(origin)) return next(new ApiError('ORIGIN_NOT_ALLOWED', 'This request origin is not allowed.', 403));
+  next();
+}
+
+export function requireJsonContentType(req: Request, _res: Response, next: NextFunction) {
+  const contentLength = Number(req.headers['content-length'] || 0);
+  const hasBody = contentLength > 0 || Boolean(req.headers['transfer-encoding']);
+  if (!['POST', 'PUT', 'PATCH'].includes(req.method) || !hasBody) return next();
+  if (!req.is('application/json')) return next(new ApiError('UNSUPPORTED_CONTENT_TYPE', 'Requests with a body must use application/json.', 415));
   next();
 }
 
@@ -34,36 +74,18 @@ export function jsonBodyParser() {
 
 export function jsonParseErrorHandler(error: any, _req: Request, res: Response, next: NextFunction) {
   if (error?.type === 'entity.too.large') {
-    return res.status(413).json({
-      success: false,
-      error: 'Request body is too large',
-    });
+    return next(new ApiError('REQUEST_BODY_TOO_LARGE', 'Request body is too large.', 413));
   }
 
   if (error instanceof SyntaxError && 'body' in error) {
-    return res.status(400).json({
-      success: false,
-      error: 'Invalid JSON request body',
-    });
+    return next(new ApiError('INVALID_JSON', 'The request body is not valid JSON.', 400));
   }
 
   next(error);
 }
 
 export function apiErrorHandler(error: any, req: Request, res: Response, _next: NextFunction) {
-  console.error('[api] unhandled route error', {
-    message: error?.message,
-    stack: error?.stack,
-    method: req.method,
-    url: req.originalUrl || req.url,
-  });
-
-  if (!res.headersSent) {
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error',
-    });
-  }
+  if (!res.headersSent) return sendSafeApiError(req, res, error);
 }
 
 function clientIp(req: Request) {
@@ -123,7 +145,12 @@ export function createRateLimiter(options: RateLimitOptions) {
     res.setHeader('Retry-After', String(retryAfterSeconds));
     return res.status(429).json({
       success: false,
-      error: 'Too many requests. Please retry shortly.',
+      error: {
+        code: 'EDGE_RATE_LIMITED',
+        message: 'Too many requests. Please retry shortly.',
+        requestId: requestIdFor(res),
+        retryAfterSeconds,
+      },
     });
   };
 }

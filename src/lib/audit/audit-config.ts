@@ -45,6 +45,7 @@ export const AUDIT_LIMITS = {
   workerPollIntervalMs: 4000,
   livePollIntervalMs: 2000,
   noWorkerWarningMs: 20000,
+  maxRecoveryAttempts: 2,
 };
 
 export function getAuditModeConfig(mode: unknown): AuditModeConfig {

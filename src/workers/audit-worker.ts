@@ -23,6 +23,7 @@ import {
   type ResourceAuditReport,
 } from '../lib/audit/resource-types';
 import { AUDIT_LIMITS } from '../lib/audit/audit-config';
+import { isTerminalAuditStatus } from '../lib/audit/audit-time';
 import type { AuditIssue } from '../lib/audit/types';
 import { safePublicFetch, type SafePublicFetchOptions } from '../lib/security/safe-public-fetch';
 import { calculateTransparentAuditScore, toReportScoreRecord } from '../lib/audit/audit-scoring';
@@ -921,6 +922,12 @@ export async function runOneAudit(
       if (runtimeState) {
         await writeWorkerHeartbeat(runtimeState, { status: 'idle', currentAuditId: null });
       }
+      return true;
+    }
+    const terminalAudit = await auditRepository.getAudit(audit.id).catch(() => null);
+    if (terminalAudit && isTerminalAuditStatus(terminalAudit.status)) {
+      console.error(`Audit ${audit.id} post-finalisation cleanup failed without changing terminal status: ${error instanceof Error ? error.message : String(error)}`);
+      if (runtimeState) await writeWorkerHeartbeat(runtimeState, { status: 'idle', currentAuditId: null, queuePollingStatus: 'active' });
       return true;
     }
     const failure = classifyAuditFailure(error, { affectedUrl: audit.currentUrl || audit.normalizedUrl });

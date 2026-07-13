@@ -23951,904 +23951,6 @@ var require_express2 = __commonJS({
   }
 });
 
-// src/lib/api/http-hardening.ts
-function apiSecurityHeaders(_req, res, next) {
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("X-Frame-Options", "DENY");
-  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
-  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
-  res.setHeader("Content-Security-Policy", "frame-ancestors 'none'; base-uri 'self'; object-src 'none'");
-  next();
-}
-function jsonBodyParser() {
-  return import_express.default.json({
-    limit: process.env.API_JSON_BODY_LIMIT || "64kb",
-    strict: true
-  });
-}
-function jsonParseErrorHandler(error, _req, res, next) {
-  if (error?.type === "entity.too.large") {
-    return res.status(413).json({
-      success: false,
-      error: "Request body is too large"
-    });
-  }
-  if (error instanceof SyntaxError && "body" in error) {
-    return res.status(400).json({
-      success: false,
-      error: "Invalid JSON request body"
-    });
-  }
-  next(error);
-}
-function apiErrorHandler(error, req, res, _next) {
-  console.error("[api] unhandled route error", {
-    message: error?.message,
-    stack: error?.stack,
-    method: req.method,
-    url: req.originalUrl || req.url
-  });
-  if (!res.headersSent) {
-    res.status(500).json({
-      success: false,
-      error: "Internal server error"
-    });
-  }
-}
-function clientIp(req) {
-  const forwardedFor = req.headers["x-forwarded-for"];
-  const forwardedValue = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
-  return req.ip || req.socket.remoteAddress || forwardedValue?.split(",")[0]?.trim() || "unknown";
-}
-function storeFor(namespace) {
-  let store = stores.get(namespace);
-  if (!store) {
-    store = /* @__PURE__ */ new Map();
-    stores.set(namespace, store);
-  }
-  return store;
-}
-function pruneStore(store, now, maxKeys) {
-  if (store.size <= maxKeys) {
-    return;
-  }
-  for (const [key, entry] of store) {
-    if (entry.resetAt <= now) {
-      store.delete(key);
-    }
-  }
-  while (store.size > maxKeys) {
-    const oldestKey = store.keys().next().value;
-    if (!oldestKey) {
-      break;
-    }
-    store.delete(oldestKey);
-  }
-}
-function createRateLimiter(options) {
-  return (req, res, next) => {
-    const now = Date.now();
-    const store = storeFor(options.namespace);
-    pruneStore(store, now, options.maxKeys || DEFAULT_RATE_LIMIT_MAX_KEYS);
-    const key = `${clientIp(req)}:${req.method}:${req.path}`;
-    const current = store.get(key);
-    if (!current || current.resetAt <= now) {
-      store.set(key, { count: 1, resetAt: now + options.windowMs });
-      return next();
-    }
-    current.count += 1;
-    if (current.count <= options.maxRequests) {
-      return next();
-    }
-    const retryAfterSeconds = Math.max(1, Math.ceil((current.resetAt - now) / 1e3));
-    res.setHeader("Retry-After", String(retryAfterSeconds));
-    return res.status(429).json({
-      success: false,
-      error: "Too many requests. Please retry shortly."
-    });
-  };
-}
-var import_express, stores, DEFAULT_RATE_LIMIT_MAX_KEYS;
-var init_http_hardening = __esm({
-  "src/lib/api/http-hardening.ts"() {
-    import_express = __toESM(require_express2(), 1);
-    stores = /* @__PURE__ */ new Map();
-    DEFAULT_RATE_LIMIT_MAX_KEYS = 1e4;
-  }
-});
-
-// src/lib/url/normalize-audit-target.ts
-function cleanAuditInput(value) {
-  let cleaned = String(value || "").replace(/[\s\u00a0\u2000-\u200b\u2028\u2029\u202f\u205f\u3000\ufeff]+/gu, " ").trim();
-  const pairs = [['"', '"'], ["'", "'"], ["\u201C", "\u201D"], ["\u2018", "\u2019"]];
-  for (const [open, close] of pairs) {
-    if (cleaned.startsWith(open) && cleaned.endsWith(close) && cleaned.length > 1) {
-      cleaned = cleaned.slice(open.length, -close.length).trim();
-      break;
-    }
-  }
-  return cleaned;
-}
-function ipv4Number(address) {
-  const parts = address.split(".").map(Number);
-  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return null;
-  return (parts[0] << 24 >>> 0) + (parts[1] << 16) + (parts[2] << 8) + parts[3] >>> 0;
-}
-function inIpv4Cidr(address, network, prefix) {
-  const value = ipv4Number(address);
-  const base = ipv4Number(network);
-  if (value == null || base == null) return false;
-  const mask = prefix === 0 ? 0 : 4294967295 << 32 - prefix >>> 0;
-  return (value & mask) === (base & mask);
-}
-function isClearlyPrivateAuditHostname(hostname) {
-  const value = hostname.toLowerCase().replace(/^\[|\]$/g, "").split("%")[0];
-  if (value === "localhost" || value.endsWith(".localhost") || value.endsWith(".local") || value.endsWith(".internal") || value.endsWith(".lan")) return true;
-  const mapped = value.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1];
-  if (mapped) return isClearlyPrivateAuditHostname(mapped);
-  if (ipv4Number(value) != null) {
-    return [
-      ["0.0.0.0", 8],
-      ["10.0.0.0", 8],
-      ["100.64.0.0", 10],
-      ["127.0.0.0", 8],
-      ["169.254.0.0", 16],
-      ["172.16.0.0", 12],
-      ["192.0.0.0", 24],
-      ["192.0.2.0", 24],
-      ["192.168.0.0", 16],
-      ["198.18.0.0", 15],
-      ["198.51.100.0", 24],
-      ["203.0.113.0", 24],
-      ["224.0.0.0", 4],
-      ["240.0.0.0", 4]
-    ].some(([network, prefix]) => inIpv4Cidr(value, String(network), Number(prefix)));
-  }
-  return value === "::" || value === "::1" || /^(?:fc|fd)/.test(value) || /^fe[89ab]/.test(value) || /^ff/.test(value) || /^2001:db8(?:[:]|$)/.test(value);
-}
-function hasPublicDomainShape(hostname) {
-  if (ipv4Number(hostname) != null || hostname.includes(":")) return true;
-  if (!hostname || hostname.startsWith(".") || hostname.endsWith(".") || !hostname.includes(".")) return false;
-  return hostname.split(".").every((label) => label.length > 0 && label.length <= 63 && /^[a-z0-9-]+$/i.test(label) && !label.startsWith("-") && !label.endsWith("-"));
-}
-function invalid(input, error, errorCode) {
-  return { input, ...EMPTY_RESULT, error, errorCode };
-}
-function normalizeAuditTarget(rawInput, options = {}) {
-  const input = cleanAuditInput(rawInput);
-  if (!input) return invalid(input, "Enter a valid public website or domain.", "REQUIRED");
-  const explicitScheme = input.match(/^([a-z][a-z0-9+.-]*):/i)?.[1]?.toLowerCase();
-  if (explicitScheme && explicitScheme !== "http" && explicitScheme !== "https") {
-    return invalid(input, "Only public HTTP and HTTPS websites can be audited.", "UNSUPPORTED_SCHEME");
-  }
-  try {
-    const parsed = new URL(explicitScheme ? input : `https://${input}`);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return invalid(input, "Only public HTTP and HTTPS websites can be audited.", "UNSUPPORTED_SCHEME");
-    }
-    if (parsed.username || parsed.password) {
-      return invalid(input, "Website addresses containing usernames or passwords cannot be audited.", "EMBEDDED_CREDENTIALS");
-    }
-    parsed.hostname = parsed.hostname.toLowerCase();
-    if (!hasPublicDomainShape(parsed.hostname)) {
-      return invalid(input, "The domain name could not be understood.", "INVALID_DOMAIN");
-    }
-    if (!options.allowPrivateForTesting && isClearlyPrivateAuditHostname(parsed.hostname)) {
-      return invalid(input, "This address points to a private network and cannot be audited.", "PRIVATE_NETWORK");
-    }
-    if (parsed.protocol === "https:" && parsed.port === "443" || parsed.protocol === "http:" && parsed.port === "80") parsed.port = "";
-    parsed.hash = "";
-    return {
-      input,
-      normalizedUrl: parsed.toString(),
-      origin: parsed.origin,
-      hostname: parsed.hostname,
-      protocol: parsed.protocol,
-      pathname: parsed.pathname,
-      isValid: true
-    };
-  } catch {
-    return invalid(input, "The domain name could not be understood.", "INVALID_DOMAIN");
-  }
-}
-var EMPTY_RESULT;
-var init_normalize_audit_target = __esm({
-  "src/lib/url/normalize-audit-target.ts"() {
-    EMPTY_RESULT = {
-      normalizedUrl: "",
-      origin: "",
-      hostname: "",
-      protocol: "https:",
-      pathname: "",
-      isValid: false
-    };
-  }
-});
-
-// src/lib/seo/url-utils.ts
-function normalizeUserUrl(input, options) {
-  return normalizeAuditTarget(input, options);
-}
-var init_url_utils = __esm({
-  "src/lib/seo/url-utils.ts"() {
-    init_normalize_audit_target();
-  }
-});
-
-// src/lib/audit/audit-time.ts
-function isCompletedAuditStatus(status) {
-  return status === "completed" || status === "completed_with_warnings";
-}
-var init_audit_time = __esm({
-  "src/lib/audit/audit-time.ts"() {
-  }
-});
-
-// src/lib/keywords/intent.ts
-function classifyIntent(keyword) {
-  const normalized = keyword.toLowerCase();
-  const informational = ["how", "what", "why", "guide", "tips", "tutorial", "learn", "examples", "ideas", "ways"];
-  const commercial = ["best", "top", "review", "compare", "vs", "versus", "alternatives"];
-  const transactional = ["buy", "price", "cost", "hire", "service", "near me", "cheap", "coupon", "discount", "software"];
-  const navigational = ["login", "sign in", "app", "dashboard"];
-  if (navigational.some((word) => normalized.includes(word))) return "Navigational";
-  if (transactional.some((word) => normalized.includes(word))) return "Transactional";
-  if (commercial.some((word) => normalized.includes(word))) return "Commercial";
-  if (informational.some((word) => normalized.includes(word))) return "Informational";
-  return "Informational";
-}
-function getFunnelStage(intent) {
-  switch (intent) {
-    case "Navigational":
-      return "Awareness";
-    case "Informational":
-      return "Awareness";
-    case "Commercial":
-      return "Consideration";
-    case "Transactional":
-      return "Decision";
-    default:
-      return "Awareness";
-  }
-}
-var init_intent = __esm({
-  "src/lib/keywords/intent.ts"() {
-  }
-});
-
-// src/lib/keywords/difficulty.ts
-function estimateDifficulty(keyword) {
-  let score = 50;
-  const words = keyword.trim().split(/\s+/).length;
-  if (words >= 4) score -= 15;
-  if (words >= 6) score -= 10;
-  if (words === 1) score += 20;
-  if (words === 2) score += 10;
-  const normalized = keyword.toLowerCase();
-  const highComp = ["best", "top", "software", "service", "buy", "hire"];
-  if (highComp.some((w) => normalized.includes(w))) {
-    score += 15;
-  }
-  return Math.min(Math.max(Math.round(score), 0), 100);
-}
-var init_difficulty = __esm({
-  "src/lib/keywords/difficulty.ts"() {
-  }
-});
-
-// src/lib/keywords/opportunity.ts
-function calculateOpportunityScore(keyword, relevance = 70, importedVolume, importedDifficulty) {
-  const intent = classifyIntent(keyword);
-  let intentValue = 50;
-  if (intent === "Transactional") intentValue = 100;
-  if (intent === "Commercial") intentValue = 80;
-  if (intent === "Informational") intentValue = 60;
-  const words = keyword.trim().split(/\s+/).length;
-  const longTailScore = words >= 4 ? 100 : words === 3 ? 70 : 40;
-  let volumeScore = 50;
-  if (importedVolume) {
-    if (importedVolume > 1e4) volumeScore = 100;
-    else if (importedVolume > 1e3) volumeScore = 80;
-    else if (importedVolume > 100) volumeScore = 60;
-    else volumeScore = 30;
-  }
-  const difficulty = importedDifficulty ?? estimateDifficulty(keyword);
-  const difficultyPenalty = difficulty * 0.5;
-  let score = 0;
-  if (importedVolume) {
-    score = relevance * 0.35 + intentValue * 0.2 + longTailScore * 0.15 + volumeScore * 0.3 - difficultyPenalty;
-  } else {
-    score = relevance * 0.5 + intentValue * 0.3 + longTailScore * 0.2 - difficultyPenalty;
-  }
-  return Math.min(Math.max(Math.round(score), 0), 100);
-}
-var init_opportunity = __esm({
-  "src/lib/keywords/opportunity.ts"() {
-    init_intent();
-    init_difficulty();
-  }
-});
-
-// src/lib/keywords/generator.ts
-function generateKeywords(seed) {
-  const normalizedSeed = seed.toLowerCase().trim();
-  const results = [];
-  let idCounter = 1;
-  const addResult = (kw, source, rel = 70) => {
-    if (!kw || kw.trim() === "") return;
-    const diff = estimateDifficulty(kw);
-    const intent = classifyIntent(kw);
-    let contentType = "Blog Post";
-    if (intent === "Transactional") contentType = "Service/Product Page";
-    if (intent === "Commercial") contentType = "Comparison/Review Page";
-    results.push({
-      id: String(idCounter++),
-      keyword: kw,
-      intent,
-      funnelStage: getFunnelStage(intent),
-      relevanceScore: rel,
-      estimatedDifficulty: diff,
-      opportunityScore: calculateOpportunityScore(kw, rel),
-      suggestedContentType: contentType,
-      source
-    });
-  };
-  const prefixes = {
-    questions: ["what is", "how to", "why", "when", "where", "who", "is", "can", "do", "are"],
-    commercial: ["best", "top", "affordable", "cheap", "custom", "professional", "expert", "reliable", "certified"],
-    transactional: ["buy", "hire", "find", "get", "order", "download"],
-    local: ["local"],
-    comparisons: ["best"],
-    industry: ["for small business", "for startups", "for enterprise", "for beginners"]
-  };
-  const suffixes = {
-    questions: ["explained", "definition", "meaning"],
-    commercial: ["services", "software", "tools", "agency", "company", "consultant", "experts", "platform", "app"],
-    transactional: ["price", "cost", "pricing", "quote", "packages"],
-    local: ["near me", "in my area", "nearby"],
-    comparisons: ["alternatives", "competitors", "vs", "compared", "reviews", "pros and cons"],
-    problem: ["mistakes", "issues", "problems", "challenges", "examples"],
-    resources: ["template", "checklist", "calculator", "guide", "pdf", "tutorial"]
-  };
-  addResult(normalizedSeed, "Seed", 100);
-  for (const p of prefixes.questions) addResult(`${p} ${normalizedSeed}`, "Question Modifier", 85);
-  for (const p of prefixes.commercial) addResult(`${p} ${normalizedSeed}`, "Commercial Modifier", 80);
-  for (const p of prefixes.transactional) addResult(`${p} ${normalizedSeed}`, "Transactional Modifier", 80);
-  for (const s of suffixes.commercial) addResult(`${normalizedSeed} ${s}`, "Commercial Modifier", 80);
-  for (const s of suffixes.transactional) addResult(`${normalizedSeed} ${s}`, "Transactional Modifier", 85);
-  for (const s of suffixes.local) addResult(`${normalizedSeed} ${s}`, "Local Modifier", 75);
-  for (const s of suffixes.comparisons) {
-    if (s === "vs") {
-      addResult(`${normalizedSeed} vs alternative`, "Comparison Modifier", 70);
-    } else {
-      addResult(`${normalizedSeed} ${s}`, "Comparison Modifier", 70);
-    }
-  }
-  for (const s of suffixes.problem) addResult(`${normalizedSeed} ${s}`, "Problem/Solution Modifier", 85);
-  for (const s of suffixes.resources) addResult(`${normalizedSeed} ${s}`, "Resource Modifier", 85);
-  for (const s of prefixes.industry) addResult(`${normalizedSeed} ${s}`, "Industry Modifier", 75);
-  const alphabet = "abcdefghijklmnopqrstuvwxyz".split("");
-  for (const letter of alphabet) {
-    addResult(`${normalizedSeed} ${letter}`, "Alphabet Expansion", 60);
-  }
-  const uniqueResults = Array.from(new Map(results.map((item) => [item.keyword, item])).values());
-  return uniqueResults;
-}
-var init_generator = __esm({
-  "src/lib/keywords/generator.ts"() {
-    init_intent();
-    init_difficulty();
-    init_opportunity();
-  }
-});
-
-// src/lib/keywords/stopwords.ts
-function removeStopwords(text) {
-  return text.split(/\s+/).filter((word) => !STOPWORDS.has(word.toLowerCase())).join(" ");
-}
-var STOPWORDS;
-var init_stopwords = __esm({
-  "src/lib/keywords/stopwords.ts"() {
-    STOPWORDS = /* @__PURE__ */ new Set([
-      "a",
-      "about",
-      "above",
-      "after",
-      "again",
-      "against",
-      "all",
-      "am",
-      "an",
-      "and",
-      "any",
-      "are",
-      "aren't",
-      "as",
-      "at",
-      "be",
-      "because",
-      "been",
-      "before",
-      "being",
-      "below",
-      "between",
-      "both",
-      "but",
-      "by",
-      "can't",
-      "cannot",
-      "could",
-      "couldn't",
-      "did",
-      "didn't",
-      "do",
-      "does",
-      "doesn't",
-      "doing",
-      "don't",
-      "down",
-      "during",
-      "each",
-      "few",
-      "for",
-      "from",
-      "further",
-      "had",
-      "hadn't",
-      "has",
-      "hasn't",
-      "have",
-      "haven't",
-      "having",
-      "he",
-      "he'd",
-      "he'll",
-      "he's",
-      "her",
-      "here",
-      "here's",
-      "hers",
-      "herself",
-      "him",
-      "himself",
-      "his",
-      "how",
-      "how's",
-      "i",
-      "i'd",
-      "i'll",
-      "i'm",
-      "i've",
-      "if",
-      "in",
-      "into",
-      "is",
-      "isn't",
-      "it",
-      "it's",
-      "its",
-      "itself",
-      "let's",
-      "me",
-      "more",
-      "most",
-      "mustn't",
-      "my",
-      "myself",
-      "no",
-      "nor",
-      "not",
-      "of",
-      "off",
-      "on",
-      "once",
-      "only",
-      "or",
-      "other",
-      "ought",
-      "our",
-      "ours",
-      "ourselves",
-      "out",
-      "over",
-      "own",
-      "same",
-      "shan't",
-      "she",
-      "she'd",
-      "she'll",
-      "she's",
-      "should",
-      "shouldn't",
-      "so",
-      "some",
-      "such",
-      "than",
-      "that",
-      "that's",
-      "the",
-      "their",
-      "theirs",
-      "them",
-      "themselves",
-      "then",
-      "there",
-      "there's",
-      "these",
-      "they",
-      "they'd",
-      "they'll",
-      "they're",
-      "they've",
-      "this",
-      "those",
-      "through",
-      "to",
-      "too",
-      "under",
-      "until",
-      "up",
-      "very",
-      "was",
-      "wasn't",
-      "we",
-      "we'd",
-      "we'll",
-      "we're",
-      "we've",
-      "were",
-      "weren't",
-      "what",
-      "what's",
-      "when",
-      "when's",
-      "where",
-      "where's",
-      "which",
-      "while",
-      "who",
-      "who's",
-      "whom",
-      "why",
-      "why's",
-      "with",
-      "won't",
-      "would",
-      "wouldn't",
-      "you",
-      "you'd",
-      "you'll",
-      "you're",
-      "you've",
-      "your",
-      "yours",
-      "yourself",
-      "yourselves"
-    ]);
-  }
-});
-
-// src/lib/keywords/clustering.ts
-function jaccardSimilarity(str1, str2) {
-  const set1 = new Set(str1.split(/\s+/));
-  const set2 = new Set(str2.split(/\s+/));
-  const intersection = new Set([...set1].filter((x) => set2.has(x)));
-  const union = /* @__PURE__ */ new Set([...set1, ...set2]);
-  return intersection.size / union.size;
-}
-function clusterKeywords(keywords) {
-  const clusters = [];
-  const processed = /* @__PURE__ */ new Set();
-  for (const kw of keywords) {
-    if (processed.has(kw.keyword)) continue;
-    const currentCluster = [kw.keyword];
-    processed.add(kw.keyword);
-    const kwClean = removeStopwords(kw.keyword.toLowerCase());
-    for (const other of keywords) {
-      if (processed.has(other.keyword)) continue;
-      const otherClean = removeStopwords(other.keyword.toLowerCase());
-      if (jaccardSimilarity(kwClean, otherClean) > 0.4 || kwClean.includes(otherClean) || otherClean.includes(kwClean)) {
-        currentCluster.push(other.keyword);
-        processed.add(other.keyword);
-      }
-    }
-    const primary = currentCluster.reduce((a, b) => a.length <= b.length ? a : b);
-    const primaryResult = keywords.find((k) => k.keyword === primary) || kw;
-    const clusterResults = keywords.filter((k) => currentCluster.includes(k.keyword));
-    const avgOpp = clusterResults.reduce((sum, k) => sum + k.opportunityScore, 0) / currentCluster.length;
-    const avgDiff = clusterResults.reduce((sum, k) => sum + k.estimatedDifficulty, 0) / currentCluster.length;
-    clusters.push({
-      id: `cluster-${clusters.length + 1}`,
-      name: primary,
-      primaryKeyword: primary,
-      keywords: currentCluster.filter((k) => k !== primary),
-      intent: primaryResult.intent,
-      opportunityScore: Math.round(avgOpp),
-      difficulty: Math.round(avgDiff),
-      suggestedContentType: primaryResult.suggestedContentType
-    });
-  }
-  return clusters;
-}
-var init_clustering = __esm({
-  "src/lib/keywords/clustering.ts"() {
-    init_stopwords();
-  }
-});
-
-// src/lib/keywords/content-brief.ts
-function buildContentBrief(cluster) {
-  const primary = cluster.primaryKeyword;
-  const capitalized = primary.split(" ").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
-  const brief = {
-    titleTemplates: [],
-    metaDescriptionTemplates: [],
-    h1Suggestions: [],
-    h2Outline: [],
-    faqs: [],
-    relatedKeywords: cluster.keywords,
-    targetIntent: cluster.intent,
-    suggestedFormat: cluster.suggestedContentType,
-    wordCount: "1000 - 1500 words"
-  };
-  if (cluster.intent === "Informational") {
-    brief.titleTemplates = [
-      `What is ${capitalized}? A Complete Guide`,
-      `The Ultimate Guide to ${capitalized} in ${(/* @__PURE__ */ new Date()).getFullYear()}`
-    ];
-    brief.metaDescriptionTemplates = [
-      `Learn everything you need to know about ${primary}. Discover how it works, benefits, and common mistakes to avoid.`
-    ];
-    brief.h1Suggestions = [`What is ${capitalized}?`, `Complete Guide to ${capitalized}`];
-    brief.h2Outline = [
-      `Introduction to ${capitalized}`,
-      `How ${capitalized} Works`,
-      `Key Benefits of ${capitalized}`,
-      `Common Mistakes to Avoid`,
-      `Conclusion`
-    ];
-    brief.faqs = [
-      `What is the main purpose of ${primary}?`,
-      `How do I get started with ${primary}?`,
-      `Is ${primary} worth the investment?`
-    ];
-  } else if (cluster.intent === "Commercial") {
-    brief.titleTemplates = [
-      `Best ${capitalized} Services in ${(/* @__PURE__ */ new Date()).getFullYear()}`,
-      `Top 10 ${capitalized} Options Compared`
-    ];
-    brief.metaDescriptionTemplates = [
-      `Comparing the best ${primary} options? Read our comprehensive review to find the perfect fit for your needs and budget.`
-    ];
-    brief.h1Suggestions = [`Best ${capitalized} Options`, `Comparing ${capitalized} Services`];
-    brief.h2Outline = [
-      `Top ${capitalized} Reviews`,
-      `Comparison Table`,
-      `Key Features to Look For`,
-      `Pricing Guide`,
-      `Final Verdict`
-    ];
-    brief.faqs = [
-      `Which ${primary} is the best overall?`,
-      `How much does ${primary} typically cost?`,
-      `What are the alternatives to ${primary}?`
-    ];
-  } else if (cluster.intent === "Transactional") {
-    brief.titleTemplates = [
-      `${capitalized} Services - Expert Help`,
-      `Affordable ${capitalized} Near You`
-    ];
-    brief.metaDescriptionTemplates = [
-      `Need professional ${primary}? We offer expert services at competitive prices. Contact us today for a free quote.`
-    ];
-    brief.h1Suggestions = [`Professional ${capitalized} Services`, `Expert ${capitalized}`];
-    brief.h2Outline = [
-      `Our ${capitalized} Services`,
-      `Why Choose Us for ${capitalized}?`,
-      `Pricing Plans`,
-      `Client Testimonials`,
-      `Get a Free Quote`
-    ];
-    brief.faqs = [
-      `How long does the ${primary} process take?`,
-      `What is included in your ${primary} service?`,
-      `Do you offer guarantees for ${primary}?`
-    ];
-    brief.wordCount = "500 - 800 words";
-  } else {
-    brief.titleTemplates = [`${capitalized}`];
-    brief.metaDescriptionTemplates = [`Official page for ${primary}.`];
-    brief.h1Suggestions = [`${capitalized}`];
-    brief.h2Outline = [`About ${capitalized}`];
-    brief.faqs = [];
-    brief.wordCount = "300 - 500 words";
-  }
-  return brief;
-}
-var init_content_brief = __esm({
-  "src/lib/keywords/content-brief.ts"() {
-  }
-});
-
-// src/lib/audit/audit-store.ts
-var jobs, eventsStore, subscriptions, auditStore;
-var init_audit_store = __esm({
-  "src/lib/audit/audit-store.ts"() {
-    jobs = /* @__PURE__ */ new Map();
-    eventsStore = /* @__PURE__ */ new Map();
-    subscriptions = /* @__PURE__ */ new Map();
-    auditStore = {
-      createAudit(input) {
-        const id = Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
-        const newJob = {
-          id,
-          jobId: id,
-          url: input.url,
-          type: input.type,
-          status: "queued",
-          progress: 0,
-          currentStep: "Initializing",
-          pagesDiscovered: 0,
-          pagesCrawled: 0,
-          checksTotal: 0,
-          checksCompleted: 0,
-          issuesFound: 0,
-          startedAt: (/* @__PURE__ */ new Date()).toISOString()
-        };
-        jobs.set(id, newJob);
-        eventsStore.set(id, []);
-        subscriptions.set(id, /* @__PURE__ */ new Set());
-        this.appendAuditEvent(id, {
-          type: "audit_queued",
-          message: "Audit added to queue",
-          progress: 0
-        });
-        return id;
-      },
-      createJob(targetUrl) {
-        return this.createAudit({ url: targetUrl, type: "seo" });
-      },
-      getAudit(id) {
-        return jobs.get(id);
-      },
-      getJob(id) {
-        return jobs.get(id);
-      },
-      updateAudit(id, patch) {
-        const job = jobs.get(id);
-        if (job) {
-          jobs.set(id, { ...job, ...patch });
-        }
-      },
-      updateJob(id, patch) {
-        this.updateAudit(id, patch);
-      },
-      appendAuditEvent(id, eventData) {
-        const job = jobs.get(id);
-        if (!job) return;
-        const event = {
-          id: Math.random().toString(36).substring(2, 15),
-          auditId: id,
-          type: eventData.type || "audit_warning",
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          message: eventData.message || "",
-          progress: eventData.progress ?? (job.progress || 0),
-          step: eventData.step || job.currentStep,
-          pagesDiscovered: eventData.pagesDiscovered ?? job.pagesDiscovered,
-          pagesCrawled: eventData.pagesCrawled ?? job.pagesCrawled,
-          checksTotal: eventData.checksTotal ?? job.checksTotal,
-          checksCompleted: eventData.checksCompleted ?? (eventData.type === "check_completed" ? (job.checksCompleted || 0) + 1 : job.checksCompleted),
-          issuesFound: eventData.issuesFound ?? (eventData.type === "issue_found" ? (job.issuesFound || 0) + 1 : job.issuesFound),
-          ...eventData
-        };
-        this.updateAudit(id, {
-          progress: event.progress,
-          currentStep: event.step,
-          pagesDiscovered: event.pagesDiscovered,
-          pagesCrawled: event.pagesCrawled,
-          checksTotal: event.checksTotal,
-          checksCompleted: event.checksCompleted,
-          issuesFound: event.issuesFound,
-          ...event.type === "audit_started" ? { status: "running" } : {},
-          ...event.type === "audit_completed" ? { status: "completed" } : {},
-          ...event.type === "audit_failed" ? { status: "failed", error: event.message } : {}
-        });
-        const events = eventsStore.get(id) || [];
-        events.push(event);
-        if (events.length > 500) {
-          events.shift();
-        }
-        const subs = subscriptions.get(id);
-        if (subs) {
-          subs.forEach((cb) => {
-            try {
-              cb(event);
-            } catch (err) {
-            }
-          });
-        }
-      },
-      getAuditEvents(id) {
-        return eventsStore.get(id) || [];
-      },
-      subscribeToAudit(id, callback) {
-        let subs = subscriptions.get(id);
-        if (!subs) {
-          subs = /* @__PURE__ */ new Set();
-          subscriptions.set(id, subs);
-        }
-        subs.add(callback);
-      },
-      unsubscribeFromAudit(id, callback) {
-        const subs = subscriptions.get(id);
-        if (subs) {
-          subs.delete(callback);
-        }
-      },
-      getAllJobs() {
-        return Array.from(jobs.values()).sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
-      }
-    };
-  }
-});
-
-// src/lib/audit/audit-config.ts
-function getAuditModeConfig(mode) {
-  if (mode === "standard" || mode === "deep") {
-    return AUDIT_MODE_CONFIG[mode];
-  }
-  return AUDIT_MODE_CONFIG.quick;
-}
-var AUDIT_MODE_CONFIG, AUDIT_LIMITS;
-var init_audit_config = __esm({
-  "src/lib/audit/audit-config.ts"() {
-    AUDIT_MODE_CONFIG = {
-      quick: {
-        mode: "quick",
-        label: "Free Quick - 5 pages",
-        pageLimit: 5,
-        concurrency: 2,
-        timeoutMs: 6e3,
-        description: "Default resource-light audit for fast feedback."
-      },
-      standard: {
-        mode: "standard",
-        label: "Full Standard - 25 pages",
-        pageLimit: 25,
-        concurrency: 3,
-        timeoutMs: 8e3,
-        description: "Balanced crawl depth and resource use."
-      },
-      deep: {
-        mode: "deep",
-        label: "Deep - 75+ pages",
-        pageLimit: 75,
-        concurrency: 4,
-        timeoutMs: 12e3,
-        description: "Manual opt-in audit for expanded sitemap, crawl graph, page-level, and issue clustering coverage."
-      }
-    };
-    AUDIT_LIMITS = {
-      maxEvents: 300,
-      maxIssues: 1e3,
-      lockLeaseMs: 5 * 60 * 1e3,
-      staleLockRecoveryMs: 5 * 60 * 1e3,
-      defaultExpiresInDays: 30,
-      workerPollIntervalMs: 4e3,
-      livePollIntervalMs: 2e3,
-      noWorkerWarningMs: 2e4
-    };
-  }
-});
-
-// src/lib/audit/resource-types.ts
-var init_resource_types = __esm({
-  "src/lib/audit/resource-types.ts"() {
-    init_audit_config();
-  }
-});
-
 // node_modules/tslib/tslib.es6.mjs
 var tslib_es6_exports = {};
 __export(tslib_es6_exports, {
@@ -46168,8 +45270,1081 @@ var init_server = __esm({
   }
 });
 
+// src/lib/platform/version.ts
+function firstDefined(...values) {
+  return values.find((value) => value?.trim())?.trim() || "local";
+}
+function getCommitIdentifier() {
+  return firstDefined(
+    process.env.VERCEL_GIT_COMMIT_SHA,
+    process.env.RENDER_GIT_COMMIT,
+    process.env.GIT_COMMIT_SHA,
+    process.env.COMMIT_SHA
+  ).slice(0, 40);
+}
+function getBuildTimestamp() {
+  const configured = [process.env.BUILD_TIMESTAMP, process.env.VERCEL_DEPLOYMENT_CREATED_AT, process.env.RENDER_DEPLOYED_AT].find((value) => value?.trim())?.trim();
+  return configured && Number.isFinite(new Date(configured).getTime()) ? new Date(configured).toISOString() : (/* @__PURE__ */ new Date()).toISOString();
+}
+function publicVersionPayload() {
+  return {
+    applicationVersion: APPLICATION_VERSION,
+    commitIdentifier: getCommitIdentifier(),
+    buildTimestamp: getBuildTimestamp(),
+    apiSchemaVersion: API_SCHEMA_VERSION,
+    auditEngineVersion: AUDIT_ENGINE_VERSION,
+    scoringVersion: SCORING_VERSION,
+    checkRegistryVersion: CHECK_REGISTRY_VERSION
+  };
+}
+function deploymentVersionRow(component) {
+  const value = publicVersionPayload();
+  return {
+    component,
+    application_version: value.applicationVersion,
+    commit_identifier: value.commitIdentifier,
+    build_timestamp: value.buildTimestamp,
+    api_schema_version: value.apiSchemaVersion,
+    audit_engine_version: value.auditEngineVersion,
+    scoring_version: value.scoringVersion,
+    check_registry_version: value.checkRegistryVersion,
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+var APPLICATION_VERSION, API_SCHEMA_VERSION, AUDIT_ENGINE_VERSION, SCORING_VERSION, CHECK_REGISTRY_VERSION;
+var init_version = __esm({
+  "src/lib/platform/version.ts"() {
+    APPLICATION_VERSION = "1.0.0-beta";
+    API_SCHEMA_VERSION = 11;
+    AUDIT_ENGINE_VERSION = "2026.07";
+    SCORING_VERSION = "2.0";
+    CHECK_REGISTRY_VERSION = "2.0";
+  }
+});
+
+// src/lib/api/errors.ts
+import { randomUUID } from "node:crypto";
+function requestIdMiddleware(req, res, next) {
+  const incoming = String(req.headers["x-request-id"] || "");
+  const requestId = /^[a-zA-Z0-9_-]{8,80}$/.test(incoming) ? incoming : randomUUID();
+  res.locals.requestId = requestId;
+  res.setHeader("X-Request-Id", requestId);
+  next();
+}
+function requestIdFor(res) {
+  return String(res.locals.requestId || randomUUID());
+}
+function safeApiError(error, requestId) {
+  if (error instanceof ApiError) {
+    return {
+      status: error.status,
+      body: {
+        success: false,
+        error: {
+          code: error.code,
+          message: error.message,
+          requestId,
+          ...error.retryAfterSeconds ? { retryAfterSeconds: error.retryAfterSeconds } : {}
+        }
+      }
+    };
+  }
+  return {
+    status: 500,
+    body: {
+      success: false,
+      error: {
+        code: "INTERNAL_REQUEST_FAILURE",
+        message: "The request could not be completed. Please try again.",
+        requestId
+      }
+    }
+  };
+}
+function redactInternalDetails(value) {
+  const text = value instanceof Error ? `${value.name}: ${value.message}
+${value.stack || ""}` : String(value || "Unknown error");
+  return text.replace(/Bearer\s+[A-Za-z0-9._~-]+/gi, "Bearer [redacted]").replace(/(service[_-]?role|api[_-]?key|password|authorization)\s*[:=]\s*\S+/gi, "$1=[redacted]").slice(0, 12e3);
+}
+async function recordApiError(req, requestId, error, internalCode = "UNEXPECTED_API_ERROR") {
+  const client = getSupabaseAdminClient();
+  if (!client) return;
+  try {
+    await client.from("api_error_logs").insert({
+      request_id: requestId,
+      route: String(req.route?.path || req.path || "").slice(0, 300),
+      method: req.method,
+      user_id: resUserId(req),
+      internal_code: internalCode,
+      internal_details: redactInternalDetails(error),
+      deployment_version: getCommitIdentifier()
+    });
+  } catch {
+  }
+}
+function resUserId(req) {
+  const value = req.requesterUserId;
+  return value || null;
+}
+function sendSafeApiError(req, res, error) {
+  const requestId = requestIdFor(res);
+  const mapped = safeApiError(error, requestId);
+  if (error instanceof ApiError && error.retryAfterSeconds) {
+    res.setHeader("Retry-After", String(error.retryAfterSeconds));
+  }
+  if (!(error instanceof ApiError) || !error.expose) {
+    void recordApiError(req, requestId, error);
+  }
+  return res.status(mapped.status).json(mapped.body);
+}
+var ApiError;
+var init_errors = __esm({
+  "src/lib/api/errors.ts"() {
+    init_server();
+    init_version();
+    ApiError = class extends Error {
+      constructor(code, message, status = 400, options = {}) {
+        super(message);
+        this.name = "ApiError";
+        this.status = status;
+        this.code = code;
+        this.retryAfterSeconds = options.retryAfterSeconds;
+        this.expose = options.expose ?? true;
+      }
+    };
+  }
+});
+
+// src/lib/api/http-hardening.ts
+function apiSecurityHeaders(_req, res, next) {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
+  res.setHeader("Cache-Control", "private, no-store");
+  next();
+}
+function configuredOrigins(req) {
+  const values = [
+    process.env.APP_URL,
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "",
+    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "",
+    `${req.protocol}://${req.get("host")}`
+  ].filter(Boolean);
+  if (process.env.NODE_ENV !== "production") values.push("http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:4173", "http://127.0.0.1:4173");
+  return new Set(values.map((value) => {
+    try {
+      return new URL(String(value)).origin;
+    } catch {
+      return "";
+    }
+  }).filter(Boolean));
+}
+function strictCorsAndOrigin(req, res, next) {
+  const origin = String(req.headers.origin || "");
+  const allowed = configuredOrigins(req);
+  res.setHeader("Vary", "Origin");
+  if (origin && allowed.has(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-Id, X-SEOIntel-Guest-Id");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  }
+  if (req.method === "OPTIONS") {
+    if (!origin || !allowed.has(origin)) return next(new ApiError("ORIGIN_NOT_ALLOWED", "This request origin is not allowed.", 403));
+    return res.status(204).end();
+  }
+  if (origin && !allowed.has(origin)) return next(new ApiError("ORIGIN_NOT_ALLOWED", "This request origin is not allowed.", 403));
+  next();
+}
+function requireJsonContentType(req, _res, next) {
+  const contentLength = Number(req.headers["content-length"] || 0);
+  const hasBody = contentLength > 0 || Boolean(req.headers["transfer-encoding"]);
+  if (!["POST", "PUT", "PATCH"].includes(req.method) || !hasBody) return next();
+  if (!req.is("application/json")) return next(new ApiError("UNSUPPORTED_CONTENT_TYPE", "Requests with a body must use application/json.", 415));
+  next();
+}
+function jsonBodyParser() {
+  return import_express.default.json({
+    limit: process.env.API_JSON_BODY_LIMIT || "64kb",
+    strict: true
+  });
+}
+function jsonParseErrorHandler(error, _req, res, next) {
+  if (error?.type === "entity.too.large") {
+    return next(new ApiError("REQUEST_BODY_TOO_LARGE", "Request body is too large.", 413));
+  }
+  if (error instanceof SyntaxError && "body" in error) {
+    return next(new ApiError("INVALID_JSON", "The request body is not valid JSON.", 400));
+  }
+  next(error);
+}
+function apiErrorHandler(error, req, res, _next) {
+  if (!res.headersSent) return sendSafeApiError(req, res, error);
+}
+function clientIp(req) {
+  const forwardedFor = req.headers["x-forwarded-for"];
+  const forwardedValue = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
+  return req.ip || req.socket.remoteAddress || forwardedValue?.split(",")[0]?.trim() || "unknown";
+}
+function storeFor(namespace) {
+  let store = stores.get(namespace);
+  if (!store) {
+    store = /* @__PURE__ */ new Map();
+    stores.set(namespace, store);
+  }
+  return store;
+}
+function pruneStore(store, now, maxKeys) {
+  if (store.size <= maxKeys) {
+    return;
+  }
+  for (const [key, entry] of store) {
+    if (entry.resetAt <= now) {
+      store.delete(key);
+    }
+  }
+  while (store.size > maxKeys) {
+    const oldestKey = store.keys().next().value;
+    if (!oldestKey) {
+      break;
+    }
+    store.delete(oldestKey);
+  }
+}
+function createRateLimiter(options) {
+  return (req, res, next) => {
+    const now = Date.now();
+    const store = storeFor(options.namespace);
+    pruneStore(store, now, options.maxKeys || DEFAULT_RATE_LIMIT_MAX_KEYS);
+    const key = `${clientIp(req)}:${req.method}:${req.path}`;
+    const current = store.get(key);
+    if (!current || current.resetAt <= now) {
+      store.set(key, { count: 1, resetAt: now + options.windowMs });
+      return next();
+    }
+    current.count += 1;
+    if (current.count <= options.maxRequests) {
+      return next();
+    }
+    const retryAfterSeconds = Math.max(1, Math.ceil((current.resetAt - now) / 1e3));
+    res.setHeader("Retry-After", String(retryAfterSeconds));
+    return res.status(429).json({
+      success: false,
+      error: {
+        code: "EDGE_RATE_LIMITED",
+        message: "Too many requests. Please retry shortly.",
+        requestId: requestIdFor(res),
+        retryAfterSeconds
+      }
+    });
+  };
+}
+var import_express, stores, DEFAULT_RATE_LIMIT_MAX_KEYS;
+var init_http_hardening = __esm({
+  "src/lib/api/http-hardening.ts"() {
+    import_express = __toESM(require_express2(), 1);
+    init_errors();
+    stores = /* @__PURE__ */ new Map();
+    DEFAULT_RATE_LIMIT_MAX_KEYS = 1e4;
+  }
+});
+
+// src/lib/url/normalize-audit-target.ts
+function cleanAuditInput(value) {
+  let cleaned = String(value || "").replace(/[\s\u00a0\u2000-\u200b\u2028\u2029\u202f\u205f\u3000\ufeff]+/gu, " ").trim();
+  const pairs = [['"', '"'], ["'", "'"], ["\u201C", "\u201D"], ["\u2018", "\u2019"]];
+  for (const [open, close] of pairs) {
+    if (cleaned.startsWith(open) && cleaned.endsWith(close) && cleaned.length > 1) {
+      cleaned = cleaned.slice(open.length, -close.length).trim();
+      break;
+    }
+  }
+  return cleaned;
+}
+function ipv4Number(address) {
+  const parts = address.split(".").map(Number);
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return null;
+  return (parts[0] << 24 >>> 0) + (parts[1] << 16) + (parts[2] << 8) + parts[3] >>> 0;
+}
+function inIpv4Cidr(address, network, prefix) {
+  const value = ipv4Number(address);
+  const base = ipv4Number(network);
+  if (value == null || base == null) return false;
+  const mask = prefix === 0 ? 0 : 4294967295 << 32 - prefix >>> 0;
+  return (value & mask) === (base & mask);
+}
+function isClearlyPrivateAuditHostname(hostname) {
+  const value = hostname.toLowerCase().replace(/^\[|\]$/g, "").split("%")[0];
+  if (value === "localhost" || value.endsWith(".localhost") || value.endsWith(".local") || value.endsWith(".internal") || value.endsWith(".lan")) return true;
+  const mapped = value.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1];
+  if (mapped) return isClearlyPrivateAuditHostname(mapped);
+  if (ipv4Number(value) != null) {
+    return [
+      ["0.0.0.0", 8],
+      ["10.0.0.0", 8],
+      ["100.64.0.0", 10],
+      ["127.0.0.0", 8],
+      ["169.254.0.0", 16],
+      ["172.16.0.0", 12],
+      ["192.0.0.0", 24],
+      ["192.0.2.0", 24],
+      ["192.168.0.0", 16],
+      ["198.18.0.0", 15],
+      ["198.51.100.0", 24],
+      ["203.0.113.0", 24],
+      ["224.0.0.0", 4],
+      ["240.0.0.0", 4]
+    ].some(([network, prefix]) => inIpv4Cidr(value, String(network), Number(prefix)));
+  }
+  return value === "::" || value === "::1" || /^(?:fc|fd)/.test(value) || /^fe[89ab]/.test(value) || /^ff/.test(value) || /^2001:db8(?:[:]|$)/.test(value);
+}
+function hasPublicDomainShape(hostname) {
+  if (ipv4Number(hostname) != null || hostname.includes(":")) return true;
+  if (!hostname || hostname.startsWith(".") || hostname.endsWith(".") || !hostname.includes(".")) return false;
+  return hostname.split(".").every((label) => label.length > 0 && label.length <= 63 && /^[a-z0-9-]+$/i.test(label) && !label.startsWith("-") && !label.endsWith("-"));
+}
+function invalid(input, error, errorCode) {
+  return { input, ...EMPTY_RESULT, error, errorCode };
+}
+function normalizeAuditTarget(rawInput, options = {}) {
+  const input = cleanAuditInput(rawInput);
+  if (!input) return invalid(input, "Enter a valid public website or domain.", "REQUIRED");
+  const explicitScheme = input.match(/^([a-z][a-z0-9+.-]*):/i)?.[1]?.toLowerCase();
+  if (explicitScheme && explicitScheme !== "http" && explicitScheme !== "https") {
+    return invalid(input, "Only public HTTP and HTTPS websites can be audited.", "UNSUPPORTED_SCHEME");
+  }
+  try {
+    const parsed = new URL(explicitScheme ? input : `https://${input}`);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return invalid(input, "Only public HTTP and HTTPS websites can be audited.", "UNSUPPORTED_SCHEME");
+    }
+    if (parsed.username || parsed.password) {
+      return invalid(input, "Website addresses containing usernames or passwords cannot be audited.", "EMBEDDED_CREDENTIALS");
+    }
+    parsed.hostname = parsed.hostname.toLowerCase();
+    if (!hasPublicDomainShape(parsed.hostname)) {
+      return invalid(input, "The domain name could not be understood.", "INVALID_DOMAIN");
+    }
+    if (!options.allowPrivateForTesting && isClearlyPrivateAuditHostname(parsed.hostname)) {
+      return invalid(input, "This address points to a private network and cannot be audited.", "PRIVATE_NETWORK");
+    }
+    if (parsed.protocol === "https:" && parsed.port === "443" || parsed.protocol === "http:" && parsed.port === "80") parsed.port = "";
+    parsed.hash = "";
+    return {
+      input,
+      normalizedUrl: parsed.toString(),
+      origin: parsed.origin,
+      hostname: parsed.hostname,
+      protocol: parsed.protocol,
+      pathname: parsed.pathname,
+      isValid: true
+    };
+  } catch {
+    return invalid(input, "The domain name could not be understood.", "INVALID_DOMAIN");
+  }
+}
+var EMPTY_RESULT;
+var init_normalize_audit_target = __esm({
+  "src/lib/url/normalize-audit-target.ts"() {
+    EMPTY_RESULT = {
+      normalizedUrl: "",
+      origin: "",
+      hostname: "",
+      protocol: "https:",
+      pathname: "",
+      isValid: false
+    };
+  }
+});
+
+// src/lib/seo/url-utils.ts
+function normalizeUserUrl(input, options) {
+  return normalizeAuditTarget(input, options);
+}
+var init_url_utils = __esm({
+  "src/lib/seo/url-utils.ts"() {
+    init_normalize_audit_target();
+  }
+});
+
+// src/lib/audit/audit-time.ts
+function isCompletedAuditStatus(status) {
+  return status === "completed" || status === "completed_with_warnings";
+}
+var init_audit_time = __esm({
+  "src/lib/audit/audit-time.ts"() {
+  }
+});
+
+// src/lib/keywords/intent.ts
+function classifyIntent(keyword) {
+  const normalized = keyword.toLowerCase();
+  const informational = ["how", "what", "why", "guide", "tips", "tutorial", "learn", "examples", "ideas", "ways"];
+  const commercial = ["best", "top", "review", "compare", "vs", "versus", "alternatives"];
+  const transactional = ["buy", "price", "cost", "hire", "service", "near me", "cheap", "coupon", "discount", "software"];
+  const navigational = ["login", "sign in", "app", "dashboard"];
+  if (navigational.some((word) => normalized.includes(word))) return "Navigational";
+  if (transactional.some((word) => normalized.includes(word))) return "Transactional";
+  if (commercial.some((word) => normalized.includes(word))) return "Commercial";
+  if (informational.some((word) => normalized.includes(word))) return "Informational";
+  return "Informational";
+}
+function getFunnelStage(intent) {
+  switch (intent) {
+    case "Navigational":
+      return "Awareness";
+    case "Informational":
+      return "Awareness";
+    case "Commercial":
+      return "Consideration";
+    case "Transactional":
+      return "Decision";
+    default:
+      return "Awareness";
+  }
+}
+var init_intent = __esm({
+  "src/lib/keywords/intent.ts"() {
+  }
+});
+
+// src/lib/keywords/difficulty.ts
+function estimateDifficulty(keyword) {
+  let score = 50;
+  const words = keyword.trim().split(/\s+/).length;
+  if (words >= 4) score -= 15;
+  if (words >= 6) score -= 10;
+  if (words === 1) score += 20;
+  if (words === 2) score += 10;
+  const normalized = keyword.toLowerCase();
+  const highComp = ["best", "top", "software", "service", "buy", "hire"];
+  if (highComp.some((w) => normalized.includes(w))) {
+    score += 15;
+  }
+  return Math.min(Math.max(Math.round(score), 0), 100);
+}
+var init_difficulty = __esm({
+  "src/lib/keywords/difficulty.ts"() {
+  }
+});
+
+// src/lib/keywords/opportunity.ts
+function calculateOpportunityScore(keyword, relevance = 70, importedVolume, importedDifficulty) {
+  const intent = classifyIntent(keyword);
+  let intentValue = 50;
+  if (intent === "Transactional") intentValue = 100;
+  if (intent === "Commercial") intentValue = 80;
+  if (intent === "Informational") intentValue = 60;
+  const words = keyword.trim().split(/\s+/).length;
+  const longTailScore = words >= 4 ? 100 : words === 3 ? 70 : 40;
+  let volumeScore = 50;
+  if (importedVolume) {
+    if (importedVolume > 1e4) volumeScore = 100;
+    else if (importedVolume > 1e3) volumeScore = 80;
+    else if (importedVolume > 100) volumeScore = 60;
+    else volumeScore = 30;
+  }
+  const difficulty = importedDifficulty ?? estimateDifficulty(keyword);
+  const difficultyPenalty = difficulty * 0.5;
+  let score = 0;
+  if (importedVolume) {
+    score = relevance * 0.35 + intentValue * 0.2 + longTailScore * 0.15 + volumeScore * 0.3 - difficultyPenalty;
+  } else {
+    score = relevance * 0.5 + intentValue * 0.3 + longTailScore * 0.2 - difficultyPenalty;
+  }
+  return Math.min(Math.max(Math.round(score), 0), 100);
+}
+var init_opportunity = __esm({
+  "src/lib/keywords/opportunity.ts"() {
+    init_intent();
+    init_difficulty();
+  }
+});
+
+// src/lib/keywords/generator.ts
+function generateKeywords(seed) {
+  const normalizedSeed = seed.toLowerCase().trim();
+  const results = [];
+  let idCounter = 1;
+  const addResult = (kw, source, rel = 70) => {
+    if (!kw || kw.trim() === "") return;
+    const diff = estimateDifficulty(kw);
+    const intent = classifyIntent(kw);
+    let contentType = "Blog Post";
+    if (intent === "Transactional") contentType = "Service/Product Page";
+    if (intent === "Commercial") contentType = "Comparison/Review Page";
+    results.push({
+      id: String(idCounter++),
+      keyword: kw,
+      intent,
+      funnelStage: getFunnelStage(intent),
+      relevanceScore: rel,
+      estimatedDifficulty: diff,
+      opportunityScore: calculateOpportunityScore(kw, rel),
+      suggestedContentType: contentType,
+      source
+    });
+  };
+  const prefixes = {
+    questions: ["what is", "how to", "why", "when", "where", "who", "is", "can", "do", "are"],
+    commercial: ["best", "top", "affordable", "cheap", "custom", "professional", "expert", "reliable", "certified"],
+    transactional: ["buy", "hire", "find", "get", "order", "download"],
+    local: ["local"],
+    comparisons: ["best"],
+    industry: ["for small business", "for startups", "for enterprise", "for beginners"]
+  };
+  const suffixes = {
+    questions: ["explained", "definition", "meaning"],
+    commercial: ["services", "software", "tools", "agency", "company", "consultant", "experts", "platform", "app"],
+    transactional: ["price", "cost", "pricing", "quote", "packages"],
+    local: ["near me", "in my area", "nearby"],
+    comparisons: ["alternatives", "competitors", "vs", "compared", "reviews", "pros and cons"],
+    problem: ["mistakes", "issues", "problems", "challenges", "examples"],
+    resources: ["template", "checklist", "calculator", "guide", "pdf", "tutorial"]
+  };
+  addResult(normalizedSeed, "Seed", 100);
+  for (const p of prefixes.questions) addResult(`${p} ${normalizedSeed}`, "Question Modifier", 85);
+  for (const p of prefixes.commercial) addResult(`${p} ${normalizedSeed}`, "Commercial Modifier", 80);
+  for (const p of prefixes.transactional) addResult(`${p} ${normalizedSeed}`, "Transactional Modifier", 80);
+  for (const s of suffixes.commercial) addResult(`${normalizedSeed} ${s}`, "Commercial Modifier", 80);
+  for (const s of suffixes.transactional) addResult(`${normalizedSeed} ${s}`, "Transactional Modifier", 85);
+  for (const s of suffixes.local) addResult(`${normalizedSeed} ${s}`, "Local Modifier", 75);
+  for (const s of suffixes.comparisons) {
+    if (s === "vs") {
+      addResult(`${normalizedSeed} vs alternative`, "Comparison Modifier", 70);
+    } else {
+      addResult(`${normalizedSeed} ${s}`, "Comparison Modifier", 70);
+    }
+  }
+  for (const s of suffixes.problem) addResult(`${normalizedSeed} ${s}`, "Problem/Solution Modifier", 85);
+  for (const s of suffixes.resources) addResult(`${normalizedSeed} ${s}`, "Resource Modifier", 85);
+  for (const s of prefixes.industry) addResult(`${normalizedSeed} ${s}`, "Industry Modifier", 75);
+  const alphabet = "abcdefghijklmnopqrstuvwxyz".split("");
+  for (const letter of alphabet) {
+    addResult(`${normalizedSeed} ${letter}`, "Alphabet Expansion", 60);
+  }
+  const uniqueResults = Array.from(new Map(results.map((item) => [item.keyword, item])).values());
+  return uniqueResults;
+}
+var init_generator = __esm({
+  "src/lib/keywords/generator.ts"() {
+    init_intent();
+    init_difficulty();
+    init_opportunity();
+  }
+});
+
+// src/lib/keywords/stopwords.ts
+function removeStopwords(text) {
+  return text.split(/\s+/).filter((word) => !STOPWORDS.has(word.toLowerCase())).join(" ");
+}
+var STOPWORDS;
+var init_stopwords = __esm({
+  "src/lib/keywords/stopwords.ts"() {
+    STOPWORDS = /* @__PURE__ */ new Set([
+      "a",
+      "about",
+      "above",
+      "after",
+      "again",
+      "against",
+      "all",
+      "am",
+      "an",
+      "and",
+      "any",
+      "are",
+      "aren't",
+      "as",
+      "at",
+      "be",
+      "because",
+      "been",
+      "before",
+      "being",
+      "below",
+      "between",
+      "both",
+      "but",
+      "by",
+      "can't",
+      "cannot",
+      "could",
+      "couldn't",
+      "did",
+      "didn't",
+      "do",
+      "does",
+      "doesn't",
+      "doing",
+      "don't",
+      "down",
+      "during",
+      "each",
+      "few",
+      "for",
+      "from",
+      "further",
+      "had",
+      "hadn't",
+      "has",
+      "hasn't",
+      "have",
+      "haven't",
+      "having",
+      "he",
+      "he'd",
+      "he'll",
+      "he's",
+      "her",
+      "here",
+      "here's",
+      "hers",
+      "herself",
+      "him",
+      "himself",
+      "his",
+      "how",
+      "how's",
+      "i",
+      "i'd",
+      "i'll",
+      "i'm",
+      "i've",
+      "if",
+      "in",
+      "into",
+      "is",
+      "isn't",
+      "it",
+      "it's",
+      "its",
+      "itself",
+      "let's",
+      "me",
+      "more",
+      "most",
+      "mustn't",
+      "my",
+      "myself",
+      "no",
+      "nor",
+      "not",
+      "of",
+      "off",
+      "on",
+      "once",
+      "only",
+      "or",
+      "other",
+      "ought",
+      "our",
+      "ours",
+      "ourselves",
+      "out",
+      "over",
+      "own",
+      "same",
+      "shan't",
+      "she",
+      "she'd",
+      "she'll",
+      "she's",
+      "should",
+      "shouldn't",
+      "so",
+      "some",
+      "such",
+      "than",
+      "that",
+      "that's",
+      "the",
+      "their",
+      "theirs",
+      "them",
+      "themselves",
+      "then",
+      "there",
+      "there's",
+      "these",
+      "they",
+      "they'd",
+      "they'll",
+      "they're",
+      "they've",
+      "this",
+      "those",
+      "through",
+      "to",
+      "too",
+      "under",
+      "until",
+      "up",
+      "very",
+      "was",
+      "wasn't",
+      "we",
+      "we'd",
+      "we'll",
+      "we're",
+      "we've",
+      "were",
+      "weren't",
+      "what",
+      "what's",
+      "when",
+      "when's",
+      "where",
+      "where's",
+      "which",
+      "while",
+      "who",
+      "who's",
+      "whom",
+      "why",
+      "why's",
+      "with",
+      "won't",
+      "would",
+      "wouldn't",
+      "you",
+      "you'd",
+      "you'll",
+      "you're",
+      "you've",
+      "your",
+      "yours",
+      "yourself",
+      "yourselves"
+    ]);
+  }
+});
+
+// src/lib/keywords/clustering.ts
+function jaccardSimilarity(str1, str2) {
+  const set1 = new Set(str1.split(/\s+/));
+  const set2 = new Set(str2.split(/\s+/));
+  const intersection = new Set([...set1].filter((x) => set2.has(x)));
+  const union = /* @__PURE__ */ new Set([...set1, ...set2]);
+  return intersection.size / union.size;
+}
+function clusterKeywords(keywords) {
+  const clusters = [];
+  const processed = /* @__PURE__ */ new Set();
+  for (const kw of keywords) {
+    if (processed.has(kw.keyword)) continue;
+    const currentCluster = [kw.keyword];
+    processed.add(kw.keyword);
+    const kwClean = removeStopwords(kw.keyword.toLowerCase());
+    for (const other of keywords) {
+      if (processed.has(other.keyword)) continue;
+      const otherClean = removeStopwords(other.keyword.toLowerCase());
+      if (jaccardSimilarity(kwClean, otherClean) > 0.4 || kwClean.includes(otherClean) || otherClean.includes(kwClean)) {
+        currentCluster.push(other.keyword);
+        processed.add(other.keyword);
+      }
+    }
+    const primary = currentCluster.reduce((a, b) => a.length <= b.length ? a : b);
+    const primaryResult = keywords.find((k) => k.keyword === primary) || kw;
+    const clusterResults = keywords.filter((k) => currentCluster.includes(k.keyword));
+    const avgOpp = clusterResults.reduce((sum, k) => sum + k.opportunityScore, 0) / currentCluster.length;
+    const avgDiff = clusterResults.reduce((sum, k) => sum + k.estimatedDifficulty, 0) / currentCluster.length;
+    clusters.push({
+      id: `cluster-${clusters.length + 1}`,
+      name: primary,
+      primaryKeyword: primary,
+      keywords: currentCluster.filter((k) => k !== primary),
+      intent: primaryResult.intent,
+      opportunityScore: Math.round(avgOpp),
+      difficulty: Math.round(avgDiff),
+      suggestedContentType: primaryResult.suggestedContentType
+    });
+  }
+  return clusters;
+}
+var init_clustering = __esm({
+  "src/lib/keywords/clustering.ts"() {
+    init_stopwords();
+  }
+});
+
+// src/lib/keywords/content-brief.ts
+function buildContentBrief(cluster) {
+  const primary = cluster.primaryKeyword;
+  const capitalized = primary.split(" ").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+  const brief = {
+    titleTemplates: [],
+    metaDescriptionTemplates: [],
+    h1Suggestions: [],
+    h2Outline: [],
+    faqs: [],
+    relatedKeywords: cluster.keywords,
+    targetIntent: cluster.intent,
+    suggestedFormat: cluster.suggestedContentType,
+    wordCount: "1000 - 1500 words"
+  };
+  if (cluster.intent === "Informational") {
+    brief.titleTemplates = [
+      `What is ${capitalized}? A Complete Guide`,
+      `The Ultimate Guide to ${capitalized} in ${(/* @__PURE__ */ new Date()).getFullYear()}`
+    ];
+    brief.metaDescriptionTemplates = [
+      `Learn everything you need to know about ${primary}. Discover how it works, benefits, and common mistakes to avoid.`
+    ];
+    brief.h1Suggestions = [`What is ${capitalized}?`, `Complete Guide to ${capitalized}`];
+    brief.h2Outline = [
+      `Introduction to ${capitalized}`,
+      `How ${capitalized} Works`,
+      `Key Benefits of ${capitalized}`,
+      `Common Mistakes to Avoid`,
+      `Conclusion`
+    ];
+    brief.faqs = [
+      `What is the main purpose of ${primary}?`,
+      `How do I get started with ${primary}?`,
+      `Is ${primary} worth the investment?`
+    ];
+  } else if (cluster.intent === "Commercial") {
+    brief.titleTemplates = [
+      `Best ${capitalized} Services in ${(/* @__PURE__ */ new Date()).getFullYear()}`,
+      `Top 10 ${capitalized} Options Compared`
+    ];
+    brief.metaDescriptionTemplates = [
+      `Comparing the best ${primary} options? Read our comprehensive review to find the perfect fit for your needs and budget.`
+    ];
+    brief.h1Suggestions = [`Best ${capitalized} Options`, `Comparing ${capitalized} Services`];
+    brief.h2Outline = [
+      `Top ${capitalized} Reviews`,
+      `Comparison Table`,
+      `Key Features to Look For`,
+      `Pricing Guide`,
+      `Final Verdict`
+    ];
+    brief.faqs = [
+      `Which ${primary} is the best overall?`,
+      `How much does ${primary} typically cost?`,
+      `What are the alternatives to ${primary}?`
+    ];
+  } else if (cluster.intent === "Transactional") {
+    brief.titleTemplates = [
+      `${capitalized} Services - Expert Help`,
+      `Affordable ${capitalized} Near You`
+    ];
+    brief.metaDescriptionTemplates = [
+      `Need professional ${primary}? We offer expert services at competitive prices. Contact us today for a free quote.`
+    ];
+    brief.h1Suggestions = [`Professional ${capitalized} Services`, `Expert ${capitalized}`];
+    brief.h2Outline = [
+      `Our ${capitalized} Services`,
+      `Why Choose Us for ${capitalized}?`,
+      `Pricing Plans`,
+      `Client Testimonials`,
+      `Get a Free Quote`
+    ];
+    brief.faqs = [
+      `How long does the ${primary} process take?`,
+      `What is included in your ${primary} service?`,
+      `Do you offer guarantees for ${primary}?`
+    ];
+    brief.wordCount = "500 - 800 words";
+  } else {
+    brief.titleTemplates = [`${capitalized}`];
+    brief.metaDescriptionTemplates = [`Official page for ${primary}.`];
+    brief.h1Suggestions = [`${capitalized}`];
+    brief.h2Outline = [`About ${capitalized}`];
+    brief.faqs = [];
+    brief.wordCount = "300 - 500 words";
+  }
+  return brief;
+}
+var init_content_brief = __esm({
+  "src/lib/keywords/content-brief.ts"() {
+  }
+});
+
+// src/lib/audit/audit-store.ts
+var jobs, eventsStore, subscriptions, auditStore;
+var init_audit_store = __esm({
+  "src/lib/audit/audit-store.ts"() {
+    jobs = /* @__PURE__ */ new Map();
+    eventsStore = /* @__PURE__ */ new Map();
+    subscriptions = /* @__PURE__ */ new Map();
+    auditStore = {
+      createAudit(input) {
+        const id = Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+        const newJob = {
+          id,
+          jobId: id,
+          url: input.url,
+          type: input.type,
+          status: "queued",
+          progress: 0,
+          currentStep: "Initializing",
+          pagesDiscovered: 0,
+          pagesCrawled: 0,
+          checksTotal: 0,
+          checksCompleted: 0,
+          issuesFound: 0,
+          startedAt: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        jobs.set(id, newJob);
+        eventsStore.set(id, []);
+        subscriptions.set(id, /* @__PURE__ */ new Set());
+        this.appendAuditEvent(id, {
+          type: "audit_queued",
+          message: "Audit added to queue",
+          progress: 0
+        });
+        return id;
+      },
+      createJob(targetUrl) {
+        return this.createAudit({ url: targetUrl, type: "seo" });
+      },
+      getAudit(id) {
+        return jobs.get(id);
+      },
+      getJob(id) {
+        return jobs.get(id);
+      },
+      updateAudit(id, patch) {
+        const job = jobs.get(id);
+        if (job) {
+          jobs.set(id, { ...job, ...patch });
+        }
+      },
+      updateJob(id, patch) {
+        this.updateAudit(id, patch);
+      },
+      appendAuditEvent(id, eventData) {
+        const job = jobs.get(id);
+        if (!job) return;
+        const event = {
+          id: Math.random().toString(36).substring(2, 15),
+          auditId: id,
+          type: eventData.type || "audit_warning",
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          message: eventData.message || "",
+          progress: eventData.progress ?? (job.progress || 0),
+          step: eventData.step || job.currentStep,
+          pagesDiscovered: eventData.pagesDiscovered ?? job.pagesDiscovered,
+          pagesCrawled: eventData.pagesCrawled ?? job.pagesCrawled,
+          checksTotal: eventData.checksTotal ?? job.checksTotal,
+          checksCompleted: eventData.checksCompleted ?? (eventData.type === "check_completed" ? (job.checksCompleted || 0) + 1 : job.checksCompleted),
+          issuesFound: eventData.issuesFound ?? (eventData.type === "issue_found" ? (job.issuesFound || 0) + 1 : job.issuesFound),
+          ...eventData
+        };
+        this.updateAudit(id, {
+          progress: event.progress,
+          currentStep: event.step,
+          pagesDiscovered: event.pagesDiscovered,
+          pagesCrawled: event.pagesCrawled,
+          checksTotal: event.checksTotal,
+          checksCompleted: event.checksCompleted,
+          issuesFound: event.issuesFound,
+          ...event.type === "audit_started" ? { status: "running" } : {},
+          ...event.type === "audit_completed" ? { status: "completed" } : {},
+          ...event.type === "audit_failed" ? { status: "failed", error: event.message } : {}
+        });
+        const events = eventsStore.get(id) || [];
+        events.push(event);
+        if (events.length > 500) {
+          events.shift();
+        }
+        const subs = subscriptions.get(id);
+        if (subs) {
+          subs.forEach((cb) => {
+            try {
+              cb(event);
+            } catch (err) {
+            }
+          });
+        }
+      },
+      getAuditEvents(id) {
+        return eventsStore.get(id) || [];
+      },
+      subscribeToAudit(id, callback) {
+        let subs = subscriptions.get(id);
+        if (!subs) {
+          subs = /* @__PURE__ */ new Set();
+          subscriptions.set(id, subs);
+        }
+        subs.add(callback);
+      },
+      unsubscribeFromAudit(id, callback) {
+        const subs = subscriptions.get(id);
+        if (subs) {
+          subs.delete(callback);
+        }
+      },
+      getAllJobs() {
+        return Array.from(jobs.values()).sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+      }
+    };
+  }
+});
+
+// src/lib/audit/audit-config.ts
+function getAuditModeConfig(mode) {
+  if (mode === "standard" || mode === "deep") {
+    return AUDIT_MODE_CONFIG[mode];
+  }
+  return AUDIT_MODE_CONFIG.quick;
+}
+var AUDIT_MODE_CONFIG, AUDIT_LIMITS;
+var init_audit_config = __esm({
+  "src/lib/audit/audit-config.ts"() {
+    AUDIT_MODE_CONFIG = {
+      quick: {
+        mode: "quick",
+        label: "Free Quick - 5 pages",
+        pageLimit: 5,
+        concurrency: 2,
+        timeoutMs: 6e3,
+        description: "Default resource-light audit for fast feedback."
+      },
+      standard: {
+        mode: "standard",
+        label: "Full Standard - 25 pages",
+        pageLimit: 25,
+        concurrency: 3,
+        timeoutMs: 8e3,
+        description: "Balanced crawl depth and resource use."
+      },
+      deep: {
+        mode: "deep",
+        label: "Deep - 75+ pages",
+        pageLimit: 75,
+        concurrency: 4,
+        timeoutMs: 12e3,
+        description: "Manual opt-in audit for expanded sitemap, crawl graph, page-level, and issue clustering coverage."
+      }
+    };
+    AUDIT_LIMITS = {
+      maxEvents: 300,
+      maxIssues: 1e3,
+      lockLeaseMs: 5 * 60 * 1e3,
+      staleLockRecoveryMs: 5 * 60 * 1e3,
+      defaultExpiresInDays: 30,
+      workerPollIntervalMs: 4e3,
+      livePollIntervalMs: 2e3,
+      noWorkerWarningMs: 2e4,
+      maxRecoveryAttempts: 2
+    };
+  }
+});
+
+// src/lib/audit/resource-types.ts
+var init_resource_types = __esm({
+  "src/lib/audit/resource-types.ts"() {
+    init_audit_config();
+  }
+});
+
 // src/lib/supabase/audit-repository.ts
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomUUID as randomUUID2 } from "node:crypto";
 function nowIso() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
@@ -46203,6 +46378,9 @@ function toWorkerHeartbeat(row) {
     pollIntervalMs: Number(value.pollIntervalMs || 0),
     currentAuditId: value.currentAuditId ?? null,
     version: String(value.version || "unknown"),
+    auditEngineVersion: value.auditEngineVersion || void 0,
+    scoringVersion: value.scoringVersion || void 0,
+    checkRegistryVersion: value.checkRegistryVersion || void 0,
     runtime: value.runtime || void 0,
     supportedModes: Array.isArray(value.supportedModes) ? value.supportedModes : void 0,
     deepAuditEnabled: typeof value.deepAuditEnabled === "boolean" ? value.deepAuditEnabled : void 0,
@@ -46281,7 +46459,11 @@ function toAuditDocument(row) {
     leaseExpiresAt: row.lease_expires_at ?? null,
     usedHttpFallback: row.used_http_fallback ?? void 0,
     warningCount: row.warning_count ?? 0,
-    failureCounts: row.failure_counts ?? {}
+    failureCounts: row.failure_counts ?? {},
+    archivedAt: row.archived_at ?? null,
+    deletedAt: row.deleted_at ?? null,
+    recoveryAttempts: row.recovery_attempts ?? 0,
+    lastRecoveredAt: row.last_recovered_at ?? null
   };
 }
 function auditToRow(audit) {
@@ -46375,6 +46557,10 @@ function auditPatchToRow(patch) {
   if ("usedHttpFallback" in patch) row.used_http_fallback = patch.usedHttpFallback;
   if ("warningCount" in patch) row.warning_count = patch.warningCount;
   if ("failureCounts" in patch) row.failure_counts = patch.failureCounts;
+  if ("archivedAt" in patch) row.archived_at = patch.archivedAt;
+  if ("deletedAt" in patch) row.deleted_at = patch.deletedAt;
+  if ("recoveryAttempts" in patch) row.recovery_attempts = patch.recoveryAttempts;
+  if ("lastRecoveredAt" in patch) row.last_recovered_at = patch.lastRecoveredAt;
   return row;
 }
 function toAuditEvent(row) {
@@ -46594,11 +46780,13 @@ function comparisonIssueKey(issue) {
   }
   return `${issue.category}|${issue.title}|${path}`.toLowerCase().replace(/\s+/g, " ").trim();
 }
-var PREVIEW_METADATA_COLUMNS, RESILIENCE_PAGE_COLUMNS, RESILIENCE_ISSUE_COLUMNS, memory, auditRepository;
+var workerDeploymentVersionRecorded, PREVIEW_METADATA_COLUMNS, RESILIENCE_PAGE_COLUMNS, RESILIENCE_ISSUE_COLUMNS, memory, auditRepository;
 var init_audit_repository = __esm({
   "src/lib/supabase/audit-repository.ts"() {
     init_resource_types();
     init_server();
+    init_version();
+    workerDeploymentVersionRecorded = false;
     PREVIEW_METADATA_COLUMNS = /* @__PURE__ */ new Set([
       "canonical_url",
       "site_name",
@@ -46648,6 +46836,9 @@ var init_audit_repository = __esm({
           pollIntervalMs: heartbeat.pollIntervalMs,
           currentAuditId: heartbeat.currentAuditId ?? null,
           version: heartbeat.version || "unknown",
+          auditEngineVersion: heartbeat.auditEngineVersion,
+          scoringVersion: heartbeat.scoringVersion,
+          checkRegistryVersion: heartbeat.checkRegistryVersion,
           runtime: heartbeat.runtime,
           supportedModes: heartbeat.supportedModes,
           deepAuditEnabled: heartbeat.deepAuditEnabled,
@@ -46667,6 +46858,10 @@ var init_audit_repository = __esm({
           { onConflict: "id" }
         );
         assertNoError(error, "Upsert worker heartbeat");
+        if (!workerDeploymentVersionRecorded) {
+          const deployment = await client.from("deployment_versions").upsert(deploymentVersionRow("worker"), { onConflict: "component" });
+          workerDeploymentVersionRecorded = !deployment.error;
+        }
         return payload;
       },
       async getWorkerHeartbeats() {
@@ -46704,7 +46899,7 @@ var init_audit_repository = __esm({
         return diagnostic;
       },
       async createAuditJob(input) {
-        const id = randomUUID();
+        const id = input.id || randomUUID2();
         const config = getAuditModeConfig(input.effectiveMode || input.mode);
         const timestamp = nowIso();
         const effectiveMode = input.effectiveMode || config.mode;
@@ -46754,7 +46949,11 @@ var init_audit_repository = __esm({
           lockedAt: null,
           leaseExpiresAt: null,
           warningCount: 0,
-          failureCounts: {}
+          failureCounts: {},
+          archivedAt: null,
+          deletedAt: null,
+          recoveryAttempts: 0,
+          lastRecoveredAt: null
         };
         const client = getSupabaseAdminClient();
         if (client) {
@@ -46874,7 +47073,7 @@ var init_audit_repository = __esm({
         return this.cancelAuditJob(id);
       },
       async appendAuditEvent(auditId, event) {
-        const id = randomUUID();
+        const id = randomUUID2();
         const audit = await this.getAuditJob(auditId);
         const fullEvent = {
           id,
@@ -46920,7 +47119,7 @@ var init_audit_repository = __esm({
         if (!events.length) return [];
         const audit = await this.getAuditJob(auditId);
         const fullEvents = events.map((event) => ({
-          id: randomUUID(),
+          id: randomUUID2(),
           type: event.type || "progress_update",
           timestamp: event.timestamp || nowIso(),
           message: event.message || "",
@@ -47002,7 +47201,7 @@ var init_audit_repository = __esm({
       },
       async addIssue(auditId, issue) {
         const fullIssue = {
-          id: issue.id || randomUUID(),
+          id: issue.id || randomUUID2(),
           severity: issue.severity,
           category: issue.category,
           title: issue.title,
@@ -47060,7 +47259,7 @@ var init_audit_repository = __esm({
       async appendIssues(auditId, issues) {
         if (!issues.length) return [];
         const fullIssues = issues.map((issue) => ({
-          id: issue.id || randomUUID(),
+          id: issue.id || randomUUID2(),
           severity: issue.severity,
           category: issue.category,
           title: issue.title,
@@ -47188,6 +47387,7 @@ var init_audit_repository = __esm({
           let query = client.from("audits").select("*", { count: "exact" }).eq("user_id", input.userId).order("created_at", { ascending: false }).range(offset, offset + limit - 1);
           if (input.status) query = query.eq("status", input.status);
           if (input.hostname) query = query.eq("hostname", input.hostname);
+          if (!input.includeArchived) query = query.is("archived_at", null);
           const { data, error, count } = await query;
           assertNoError(error, "List audit history");
           const audits = (data ?? []).map(toAuditDocument).filter((audit) => Boolean(audit));
@@ -47207,7 +47407,7 @@ var init_audit_repository = __esm({
             offset
           };
         }
-        const all = Array.from(memory.audits.values()).filter((audit) => audit.userId === input.userId).filter((audit) => !input.status || audit.status === input.status).filter((audit) => !input.hostname || audit.hostname === input.hostname).sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+        const all = Array.from(memory.audits.values()).filter((audit) => audit.userId === input.userId).filter((audit) => !input.status || audit.status === input.status).filter((audit) => !input.hostname || audit.hostname === input.hostname).filter((audit) => input.includeArchived || !audit.archivedAt).sort((left, right) => right.createdAt.localeCompare(left.createdAt));
         return {
           items: all.slice(offset, offset + limit).map((audit) => ({ audit, finalReport: memory.reports.get(audit.id) ?? null })),
           total: all.length,
@@ -47250,11 +47450,24 @@ var init_audit_repository = __esm({
         const timestamp = nowIso();
         const client = getSupabaseAdminClient();
         if (client) {
+          const abandonPatch = {
+            status: "abandoned",
+            current_phase: "Stopped after recovery attempts",
+            completed_at: timestamp,
+            locked_by: null,
+            locked_at: null,
+            lease_expires_at: null,
+            updated_at: timestamp
+          };
+          const expiredAbandon = await client.from("audits").update(abandonPatch).eq("status", "running").gte("recovery_attempts", AUDIT_LIMITS.maxRecoveryAttempts).lte("lease_expires_at", timestamp);
+          assertNoError(expiredAbandon.error, "Abandon expired audit after recovery limit");
+          const missingLeaseAbandon = await client.from("audits").update(abandonPatch).eq("status", "running").gte("recovery_attempts", AUDIT_LIMITS.maxRecoveryAttempts).is("lease_expires_at", null);
+          assertNoError(missingLeaseAbandon.error, "Abandon unleased audit after recovery limit");
           const queued = await client.from("audits").select("*").eq("status", "queued").order("queue_priority", { ascending: false }).order("created_at", { ascending: true }).limit(100);
           assertNoError(queued.error, "Find queued audit job");
           let candidate = (queued.data ?? []).find((row) => isClaimableLock(row, timestamp)) ?? null;
           if (!candidate) {
-            const stale = await client.from("audits").select("*").eq("status", "running").order("lease_expires_at", { ascending: true, nullsFirst: true }).order("queue_priority", { ascending: false }).order("created_at", { ascending: true }).limit(100);
+            const stale = await client.from("audits").select("*").eq("status", "running").lt("recovery_attempts", AUDIT_LIMITS.maxRecoveryAttempts).order("lease_expires_at", { ascending: true, nullsFirst: true }).order("queue_priority", { ascending: false }).order("created_at", { ascending: true }).limit(100);
             assertNoError(stale.error, "Find stale audit job");
             candidate = (stale.data ?? []).find((row) => isStaleRunningLock(row, timestamp)) ?? null;
           }
@@ -47269,6 +47482,8 @@ var init_audit_repository = __esm({
             lease_expires_at: leaseExpiresAt,
             worker_runtime: workerRuntime,
             started_at: candidate.started_at ?? timestamp,
+            recovery_attempts: candidate.status === "running" ? Number(candidate.recovery_attempts || 0) + 1 : Number(candidate.recovery_attempts || 0),
+            last_recovered_at: candidate.status === "running" ? timestamp : candidate.last_recovered_at ?? null,
             updated_at: timestamp
           };
           const attempts = [];
@@ -47293,9 +47508,14 @@ var init_audit_repository = __esm({
           }
           return null;
         }
+        for (const audit of memory.audits.values()) {
+          if (audit.status === "running" && (!audit.leaseExpiresAt || audit.leaseExpiresAt <= timestamp) && (audit.recoveryAttempts || 0) >= AUDIT_LIMITS.maxRecoveryAttempts) {
+            memory.audits.set(audit.id, { ...audit, status: "abandoned", currentPhase: "Stopped after recovery attempts", completedAt: timestamp, lockedBy: null, lockedAt: null, leaseExpiresAt: null, updatedAt: timestamp });
+          }
+        }
         const next = Array.from(memory.audits.values()).filter((audit) => {
           if (audit.status === "queued") return !audit.lockedBy || !audit.leaseExpiresAt || audit.leaseExpiresAt <= timestamp;
-          return audit.status === "running" && (!audit.leaseExpiresAt || audit.leaseExpiresAt <= timestamp);
+          return audit.status === "running" && (audit.recoveryAttempts || 0) < AUDIT_LIMITS.maxRecoveryAttempts && (!audit.leaseExpiresAt || audit.leaseExpiresAt <= timestamp);
         }).sort((a, b) => b.queuePriority - a.queuePriority || a.createdAt.localeCompare(b.createdAt))[0];
         if (!next) return null;
         const claimed = {
@@ -47308,6 +47528,8 @@ var init_audit_repository = __esm({
           leaseExpiresAt,
           workerRuntime,
           startedAt: next.startedAt ?? timestamp,
+          recoveryAttempts: next.status === "running" ? (next.recoveryAttempts || 0) + 1 : next.recoveryAttempts || 0,
+          lastRecoveredAt: next.status === "running" ? timestamp : next.lastRecoveredAt ?? null,
           updatedAt: timestamp
         };
         memory.audits.set(next.id, claimed);
@@ -47463,7 +47685,6 @@ var init_audit_repository = __esm({
 });
 
 // src/lib/billing/entitlements.ts
-import { randomUUID as randomUUID2 } from "node:crypto";
 function nextDailyResetMs() {
   const date = /* @__PURE__ */ new Date();
   date.setUTCHours(24, 0, 0, 0);
@@ -47563,6 +47784,9 @@ async function ensureUserProfileFromAuthUser(user) {
       role: nextRole,
       plan: nextPlan,
       subscription_status: nextSubscriptionStatus,
+      terms_accepted_at: existing?.terms_accepted_at ?? metadata.terms_accepted_at ?? null,
+      privacy_accepted_at: existing?.privacy_accepted_at ?? metadata.privacy_accepted_at ?? null,
+      legal_version: existing?.legal_version ?? metadata.legal_consent_version ?? null,
       quota_reset_daily_at: existing?.quota_reset_daily_at ?? new Date(nextDailyResetMs()).toISOString(),
       quota_reset_monthly_at: existing?.quota_reset_monthly_at ?? new Date(nextMonthlyResetMs()).toISOString(),
       updated_at: timestamp
@@ -47616,33 +47840,10 @@ async function getActiveAuditCount(userId) {
   if (error) throw error;
   return count ?? 0;
 }
-function getGuestUsage(guestKey) {
-  const now = Date.now();
-  const existing = guestUsage.get(guestKey) ?? {
-    daily: 0,
-    monthly: 0,
-    dailyResetAt: nextDailyResetMs(),
-    monthlyResetAt: nextMonthlyResetMs()
-  };
-  if (existing.dailyResetAt <= now) {
-    existing.daily = 0;
-    existing.dailyResetAt = nextDailyResetMs();
-  }
-  if (existing.monthlyResetAt <= now) {
-    existing.monthly = 0;
-    existing.monthlyResetAt = nextMonthlyResetMs();
-  }
-  guestUsage.set(guestKey, existing);
-  return existing;
-}
 async function canStartAudit(userId, requestedMode, options = {}) {
   const effectiveMode = resolveEffectiveAuditMode(userId ? (await getUserEntitlements(userId)).profile.plan : "free", requestedMode, options);
   if (!userId) {
     const limits2 = DEFAULT_PLAN_LIMITS.free;
-    const usage = getGuestUsage(options.guestKey || "guest:unknown");
-    if (usage.daily >= limits2.dailyAudits || usage.monthly >= limits2.monthlyAudits) {
-      throw new EntitlementError("You have reached your free audit limit. Upgrade for more audits.", { status: 429, upgradeRequired: true });
-    }
     return {
       userId: null,
       plan: "free",
@@ -47654,8 +47855,8 @@ async function canStartAudit(userId, requestedMode, options = {}) {
       pageLimit: limits2.maxPagesQuick,
       queuePriority: limits2.priority,
       quotaRemaining: {
-        daily: Math.max(0, limits2.dailyAudits - usage.daily - 1),
-        monthly: Math.max(0, limits2.monthlyAudits - usage.monthly - 1)
+        daily: limits2.dailyAudits,
+        monthly: limits2.monthlyAudits
       },
       limits: limits2
     };
@@ -47695,30 +47896,17 @@ async function canStartAudit(userId, requestedMode, options = {}) {
 }
 async function consumeAuditQuota(userId, auditId, mode, options = {}) {
   if (!userId) {
-    const usage = getGuestUsage(options.guestKey || "guest:unknown");
-    usage.daily += 1;
-    usage.monthly += 1;
     return;
   }
   const client = requireSupabaseAdminClient();
-  const { data: profile, error: readError } = await client.from("user_profiles").select("audit_quota_used_daily,audit_quota_used_monthly,plan").eq("id", userId).maybeSingle();
-  if (readError) throw readError;
-  const plan = normalizePlan(options.plan || profile?.plan);
-  const { error: updateError } = await client.from("user_profiles").update({
-    audit_quota_used_daily: Number(profile?.audit_quota_used_daily ?? 0) + 1,
-    audit_quota_used_monthly: Number(profile?.audit_quota_used_monthly ?? 0) + 1,
-    updated_at: (/* @__PURE__ */ new Date()).toISOString()
-  }).eq("id", userId);
-  if (updateError) throw updateError;
-  const { error: insertError } = await client.from("audit_usage_events").insert({
-    id: randomUUID2(),
-    user_id: userId,
-    audit_id: auditId,
-    plan,
-    mode,
-    pages_limit: options.pagesLimit ?? null
+  const { error } = await client.rpc("consume_user_audit_quota", {
+    p_user_id: userId,
+    p_audit_id: auditId,
+    p_plan: normalizePlan(options.plan),
+    p_mode: mode,
+    p_pages_limit: options.pagesLimit ?? null
   });
-  if (insertError) throw insertError;
+  if (error) throw error;
 }
 async function resetQuotaIfNeeded(userId) {
   const client = requireSupabaseAdminClient();
@@ -47743,7 +47931,7 @@ async function resetQuotaIfNeeded(userId) {
     if (updateError) throw updateError;
   }
 }
-var EntitlementError, DEFAULT_PLAN_LIMITS, guestUsage;
+var EntitlementError, DEFAULT_PLAN_LIMITS;
 var init_entitlements = __esm({
   "src/lib/billing/entitlements.ts"() {
     init_server();
@@ -47841,7 +48029,6 @@ var init_entitlements = __esm({
         scheduledAuditsEnabled: true
       }
     };
-    guestUsage = /* @__PURE__ */ new Map();
   }
 });
 
@@ -59527,6 +59714,11 @@ async function renderBlogSitemap(origin) {
   const urls = [
     { loc: `${origin}/`, changefreq: "weekly", priority: "1.0", lastmod: null },
     { loc: `${origin}/blog`, changefreq: "weekly", priority: "0.8", lastmod: null },
+    { loc: `${origin}/privacy`, changefreq: "yearly", priority: "0.3", lastmod: null },
+    { loc: `${origin}/terms`, changefreq: "yearly", priority: "0.3", lastmod: null },
+    { loc: `${origin}/acceptable-use`, changefreq: "yearly", priority: "0.3", lastmod: null },
+    { loc: `${origin}/cookies`, changefreq: "yearly", priority: "0.2", lastmod: null },
+    { loc: `${origin}/contact`, changefreq: "yearly", priority: "0.4", lastmod: null },
     ...posts.map((post2) => ({ loc: `${origin}/blog/${encodeURIComponent(post2.slug)}`, changefreq: "monthly", priority: "0.7", lastmod: post2.updatedAt }))
   ];
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -59543,6 +59735,137 @@ ${urls.map((url) => `  <url>
 var init_sitemap = __esm({
   "src/lib/blog/sitemap.ts"() {
     init_repository();
+  }
+});
+
+// src/lib/api/production-controls.ts
+import { createHash as createHash2, randomUUID as randomUUID4 } from "node:crypto";
+function privacyHash(value) {
+  const secret = process.env.RATE_LIMIT_HASH_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || "seointel-local-rate-limit";
+  return createHash2("sha256").update(`${secret}:${value}`).digest("hex");
+}
+function requestNetworkHash(req) {
+  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  const address = forwarded || req.ip || req.socket.remoteAddress || "unknown";
+  return privacyHash(address);
+}
+async function consumeDurableRateLimit(input) {
+  const client = getSupabaseAdminClient();
+  if (!client) {
+    if (process.env.NODE_ENV === "production") throw new ApiError("REQUEST_CONTROLS_UNAVAILABLE", "Request controls are temporarily unavailable. Please try again.", 503);
+    return { allowed: true, localDevelopmentBypass: true };
+  }
+  const { data, error } = await client.rpc("consume_api_rate_limit", {
+    p_namespace: input.namespace,
+    p_identifier_hash: input.identifierHash,
+    p_limit: input.limit,
+    p_window_seconds: input.windowSeconds
+  });
+  if (error) throw new ApiError("REQUEST_CONTROLS_UNAVAILABLE", "Request controls are temporarily unavailable. Please try again.", 503);
+  const result = data;
+  if (!result?.allowed) {
+    const retryAfterSeconds = Math.max(1, Number(result?.retry_after_seconds || input.windowSeconds));
+    throw new ApiError("RATE_LIMITED", "Too many requests. Please try again later.", 429, { retryAfterSeconds });
+  }
+  return result;
+}
+function durableRateLimit(options) {
+  return async (req, res, next) => {
+    try {
+      const identity = options.identity?.(req) || requestNetworkHash(req);
+      await consumeDurableRateLimit({ ...options, identifierHash: privacyHash(identity) });
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+async function admitAuditSubmission(input) {
+  const client = requireSupabaseAdminClient("Audit admission is temporarily unavailable.");
+  const auditId = input.auditId || randomUUID4();
+  const { data, error } = await client.rpc("admit_audit_submission", {
+    p_audit_id: auditId,
+    p_user_id: input.userId,
+    p_guest_key_hash: input.guestKeyHash,
+    p_ip_hash: input.ipHash,
+    p_normalized_domain: input.normalizedDomain,
+    p_normalized_url: input.normalizedUrl,
+    p_audit_mode: input.auditMode,
+    p_plan: input.plan,
+    p_daily_limit: input.dailyLimit,
+    p_domain_daily_limit: input.domainDailyLimit,
+    p_active_limit: input.activeLimit,
+    p_global_active_limit: input.globalActiveLimit,
+    p_bot_verified: Boolean(input.botVerified)
+  });
+  if (error) throw new ApiError("AUDIT_ADMISSION_UNAVAILABLE", "The audit service is being updated. Please try again shortly.", 503);
+  return data;
+}
+async function verifyBotToken(token) {
+  const secret = process.env.TURNSTILE_SECRET_KEY;
+  if (!secret || !token) return false;
+  const body = new URLSearchParams({ secret, response: token.slice(0, 4096) });
+  try {
+    const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+      signal: AbortSignal.timeout(5e3)
+    });
+    if (!response.ok) return false;
+    const result = await response.json();
+    return result.success === true;
+  } catch {
+    return false;
+  }
+}
+async function releaseAuditAdmission(auditId, reason) {
+  const client = getSupabaseAdminClient();
+  if (!client) return;
+  await client.rpc("release_audit_admission", { p_audit_id: auditId, p_reason: reason.slice(0, 120) });
+}
+async function getDeploymentCompatibility() {
+  const expected = publicVersionPayload();
+  const client = getSupabaseAdminClient();
+  if (!client) {
+    return { compatible: false, status: "database_unavailable", expected, database: null, worker: null };
+  }
+  if (Date.now() - lastApiVersionWriteAt > 6e4) {
+    const deployment = await client.from("deployment_versions").upsert(deploymentVersionRow("api"), { onConflict: "component" });
+    if (!deployment.error) lastApiVersionWriteAt = Date.now();
+  }
+  const [{ data: databaseRow, error: databaseError }, { data: workerRows }] = await Promise.all([
+    client.from("deployment_versions").select("*").eq("component", "database").maybeSingle(),
+    client.from("platform_settings").select("value,updated_at").like("key", "audit_worker:%").order("updated_at", { ascending: false }).limit(1)
+  ]);
+  if (databaseError || !databaseRow) {
+    return { compatible: false, status: "migration_required", expected, database: null, worker: null };
+  }
+  const worker = Array.isArray(workerRows) ? workerRows[0]?.value || null : null;
+  const databaseCompatible = Number(databaseRow.api_schema_version || 0) >= API_SCHEMA_VERSION;
+  const workerCompatible = !worker || String(worker.auditEngineVersion || "") === expected.auditEngineVersion && String(worker.scoringVersion || "") === expected.scoringVersion && String(worker.checkRegistryVersion || "") === expected.checkRegistryVersion;
+  return {
+    compatible: databaseCompatible && workerCompatible,
+    status: databaseCompatible ? workerCompatible ? "compatible" : "worker_version_mismatch" : "migration_required",
+    expected,
+    database: databaseRow,
+    worker
+  };
+}
+async function assertAuditDeploymentCompatible() {
+  const result = await getDeploymentCompatibility();
+  if (!result.compatible) {
+    throw new ApiError("AUDIT_SERVICE_UPDATING", "The audit service is being updated. Please try again shortly.", 503, { retryAfterSeconds: 120 });
+  }
+  return result;
+}
+var lastApiVersionWriteAt;
+var init_production_controls = __esm({
+  "src/lib/api/production-controls.ts"() {
+    init_errors();
+    init_server();
+    init_version();
+    lastApiVersionWriteAt = 0;
   }
 });
 
@@ -59905,19 +60228,13 @@ var index_exports = {};
 __export(index_exports, {
   apiRouter: () => apiRouter
 });
-import { createHash as createHash2 } from "node:crypto";
+import { createHash as createHash3 } from "node:crypto";
 function asyncJsonRoute(handler2) {
   return async (req, res, next) => {
     try {
       await handler2(req, res, next);
     } catch (error) {
-      console.error(error);
-      if (!res.headersSent) {
-        res.status(500).json({
-          success: false,
-          error: error instanceof Error ? error.message : "Internal server error"
-        });
-      }
+      next(error);
     }
   };
 }
@@ -59925,7 +60242,7 @@ function firstHeaderValue(value) {
   return Array.isArray(value) ? String(value[0] || "") : String(value || "");
 }
 function hashGuestValue(value) {
-  return createHash2("sha256").update(value).digest("hex");
+  return createHash3("sha256").update(value).digest("hex");
 }
 function getCookieValue(req, name) {
   if (req.cookies?.[name]) return String(req.cookies[name]);
@@ -59951,6 +60268,7 @@ function isDeepAuditEnabled() {
 async function getRequester(req) {
   const authUser = await getAuthenticatedUserFromRequest(req);
   if (!authUser) return { userId: null, profile: null };
+  req.requesterUserId = authUser.id;
   const profile = await ensureUserProfileFromAuthUser(authUser);
   return { userId: authUser.id, profile };
 }
@@ -59989,13 +60307,25 @@ async function canAccessAudit(req, audit) {
 }
 function sendEntitlementError(res, error) {
   if (error instanceof EntitlementError) {
-    return res.status(error.status).json({
-      success: false,
-      error: error.message,
-      upgradeRequired: error.upgradeRequired
-    });
+    throw new ApiError(error.upgradeRequired ? "PLAN_LIMIT_REACHED" : "AUDIT_LIMIT_REACHED", error.message, error.status);
   }
   throw error;
+}
+function admissionError(decision) {
+  const retryAfterSeconds = Math.max(1, Number(decision.retryAfterSeconds || 60));
+  const mapping = {
+    DAILY_QUOTA_REACHED: ["DAILY_QUOTA_REACHED", "You have reached today's audit limit.", 429],
+    DOMAIN_DAILY_LIMIT: ["DOMAIN_DAILY_LIMIT", "This website has reached its audit limit for today.", 429],
+    QUEUE_FULL: ["AUDIT_QUEUE_FULL", "The audit queue is currently full. Please try again later.", 429],
+    MAINTENANCE: ["AUDIT_MAINTENANCE", "The audit service is temporarily unavailable for maintenance.", 503],
+    FREE_SUBMISSIONS_PAUSED: ["FREE_AUDITS_PAUSED", "New Free audits are temporarily paused.", 503],
+    BOT_VERIFICATION_REQUIRED: ["BOT_VERIFICATION_REQUIRED", "Please complete the verification check before starting another audit.", 403],
+    GUEST_AUDITS_DISABLED: ["GUEST_AUDITS_DISABLED", "Guest audits are temporarily unavailable. Sign in and try again.", 403],
+    AUDIT_MODE_DISABLED: ["AUDIT_MODE_DISABLED", "This audit type is temporarily unavailable.", 503],
+    ACTIVE_AUDIT_EXISTS: ["ACTIVE_AUDIT_EXISTS", "You already have an audit in progress.", 429]
+  };
+  const [code, message, status] = mapping[decision.code] || ["AUDIT_ADMISSION_DENIED", "The audit could not be admitted right now.", 429];
+  return new ApiError(code, message, status, { retryAfterSeconds });
 }
 function auditStartResponseData(audit, extras = {}) {
   return {
@@ -60018,34 +60348,13 @@ async function startQueuedAudit(req, res, defaultMode = "quick") {
     allowPrivateForTesting: process.env.SEOINTEL_ALLOW_PRIVATE_TEST_TARGETS === "true"
   });
   if (!normalized.isValid) {
-    return res.status(400).json({ success: false, error: normalized.error || "Invalid URL" });
+    throw new ApiError("INVALID_AUDIT_TARGET", normalized.error || "Enter a valid public website or domain.", 400);
   }
   const requestedMode = getAuditModeConfig(mode).mode;
   const { userId } = await getRequester(req);
   const guestIdentity = guestIdentityForRequest(req);
   const ownerLookup = userId ? { userId, guestKeyHash: null } : { userId: null, guestKeyHash: guestIdentity.guestKeyHash };
   const createdAfterIso = new Date(Date.now() - DUPLICATE_AUDIT_WINDOW_MS).toISOString();
-  const duplicateAudit = await auditRepository.findActiveDuplicateAudit({
-    ...ownerLookup,
-    normalizedUrl: normalized.normalizedUrl,
-    createdAfterIso
-  });
-  if (duplicateAudit) {
-    return res.json({
-      success: true,
-      data: auditStartResponseData(duplicateAudit, { reusedExistingAudit: true })
-    });
-  }
-  if (!userId) {
-    const activeGuestAudit = await auditRepository.findActiveAuditForOwner(ownerLookup);
-    if (activeGuestAudit) {
-      return res.json({
-        success: true,
-        message: "You already have an audit in progress.",
-        data: auditStartResponseData(activeGuestAudit, { reusedExistingAudit: true })
-      });
-    }
-  }
   let decision;
   try {
     decision = await canStartAudit(userId, requestedMode, {
@@ -60065,34 +60374,109 @@ async function startQueuedAudit(req, res, defaultMode = "quick") {
     }
     return sendEntitlementError(res, error);
   }
-  const audit = await auditRepository.createAuditJob({
-    submittedInput: String(url || "").trim(),
-    normalizedUrl: normalized.normalizedUrl,
-    hostname: normalized.hostname,
-    mode: decision.effectiveMode,
-    requestedMode: decision.requestedMode,
-    effectiveMode: decision.effectiveMode,
-    plan: decision.plan,
-    processingTier: decision.processingTier,
-    pageLimit: decision.pageLimit,
-    queuePriority: decision.queuePriority,
-    userId: decision.userId,
-    guestKeyHash: decision.userId ? null : guestIdentity.guestKeyHash,
-    projectId
-  });
-  await consumeAuditQuota(decision.userId, audit.id, decision.effectiveMode, {
-    plan: decision.plan,
-    pagesLimit: decision.pageLimit,
-    guestKey: guestIdentity.guestKey
-  });
-  await auditRepository.updateAudit(audit.id, { quotaCounted: true });
-  console.info(`Audit start using Supabase project: ${getSupabaseProjectHostname() || "not configured"}`);
+  let admission = null;
+  if (isSupabaseAdminEnabled()) {
+    await assertAuditDeploymentCompatible();
+    admission = await admitAuditSubmission({
+      userId,
+      guestKeyHash: userId ? null : guestIdentity.guestKeyHash,
+      ipHash: requestNetworkHash(req),
+      normalizedDomain: normalized.hostname,
+      normalizedUrl: normalized.normalizedUrl,
+      auditMode: decision.effectiveMode,
+      plan: decision.plan,
+      dailyLimit: userId ? decision.limits.dailyAudits : Number(process.env.GUEST_DAILY_AUDIT_LIMIT || 2),
+      domainDailyLimit: Number(process.env.DOMAIN_DAILY_AUDIT_LIMIT || 2),
+      activeLimit: decision.plan === "free" ? 1 : Math.max(1, decision.limits.concurrency),
+      globalActiveLimit: Number(process.env.GLOBAL_ACTIVE_AUDIT_LIMIT || 50),
+      botVerified: await verifyBotToken(String(req.body?.botToken || ""))
+    });
+    if (admission.reusedExistingAudit) {
+      let existing = null;
+      for (let attempt = 0; attempt < 20 && !existing; attempt += 1) {
+        existing = await auditRepository.getAudit(admission.auditId);
+        if (!existing) await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      if (existing) return res.json({ success: true, data: auditStartResponseData(existing, { reusedExistingAudit: true }) });
+      return res.status(202).json({ success: true, data: {
+        auditId: admission.auditId,
+        status: "queued",
+        submittedInput: String(url || "").trim(),
+        normalizedUrl: normalized.normalizedUrl,
+        hostname: normalized.hostname,
+        requestedMode: decision.requestedMode,
+        effectiveMode: decision.effectiveMode,
+        plan: decision.plan,
+        pageLimit: decision.pageLimit,
+        queuePriority: decision.queuePriority,
+        reusedExistingAudit: true
+      } });
+    }
+    if (!admission.allowed) {
+      if (admission.code === "ACTIVE_AUDIT_EXISTS" && admission.auditId) {
+        const existing = await auditRepository.getAudit(admission.auditId);
+        if (existing) {
+          return res.json({ success: true, message: "You already have an audit in progress.", data: auditStartResponseData(existing, { reusedExistingAudit: true }) });
+        }
+      }
+      throw admissionError(admission);
+    }
+  } else if (process.env.NODE_ENV === "production") {
+    throw new ApiError("AUDIT_ADMISSION_UNAVAILABLE", "The audit service is being updated. Please try again shortly.", 503, { retryAfterSeconds: 120 });
+  } else {
+    const duplicateAudit = await auditRepository.findActiveDuplicateAudit({ ...ownerLookup, normalizedUrl: normalized.normalizedUrl, createdAfterIso });
+    if (duplicateAudit) return res.json({ success: true, data: auditStartResponseData(duplicateAudit, { reusedExistingAudit: true }) });
+    const activeAudit = await auditRepository.findActiveAuditForOwner(ownerLookup);
+    if (activeAudit) return res.json({ success: true, message: "You already have an audit in progress.", data: auditStartResponseData(activeAudit, { reusedExistingAudit: true }) });
+  }
+  let audit;
+  try {
+    audit = await auditRepository.createAuditJob({
+      id: admission?.auditId,
+      submittedInput: String(url || "").trim(),
+      normalizedUrl: normalized.normalizedUrl,
+      hostname: normalized.hostname,
+      mode: decision.effectiveMode,
+      requestedMode: decision.requestedMode,
+      effectiveMode: decision.effectiveMode,
+      plan: decision.plan,
+      processingTier: decision.processingTier,
+      pageLimit: decision.pageLimit,
+      queuePriority: decision.queuePriority,
+      estimatedWaitSeconds: admission?.queueDepth ? Math.max(0, admission.queueDepth - 1) * 45 : null,
+      userId: decision.userId,
+      guestKeyHash: decision.userId ? null : guestIdentity.guestKeyHash,
+      projectId
+    });
+  } catch (error) {
+    if (admission?.auditId) await releaseAuditAdmission(admission.auditId, "AUDIT_CREATE_FAILED");
+    throw error;
+  }
+  try {
+    await consumeAuditQuota(decision.userId, audit.id, decision.effectiveMode, {
+      plan: decision.plan,
+      pagesLimit: decision.pageLimit,
+      guestKey: guestIdentity.guestKey
+    });
+    await auditRepository.updateAudit(audit.id, { quotaCounted: true });
+  } catch (error) {
+    await auditRepository.addInternalDiagnostic({
+      auditId: audit.id,
+      affectedUrl: audit.normalizedUrl,
+      failureCode: "QUOTA_COUNTER_SYNC_FAILED",
+      phase: "admission",
+      attemptCount: 1,
+      internalDetails: error instanceof Error ? error.message : String(error)
+    }).catch(() => void 0);
+  }
   res.json({
     success: true,
     data: {
       ...auditStartResponseData(audit),
       quotaRemaining: decision.quotaRemaining,
-      reusedExistingAudit: false
+      reusedExistingAudit: false,
+      queueDepth: admission?.queueDepth ?? null,
+      softQueueWarning: admission?.softQueueWarning ?? false
     }
   });
 }
@@ -60117,9 +60501,16 @@ var init_index = __esm({
     init_slug();
     init_validation();
     init_sitemap();
+    init_errors();
+    init_production_controls();
+    init_version();
     DUPLICATE_AUDIT_WINDOW_MS = 10 * 60 * 1e3;
     apiRouter = (0, import_express2.Router)();
     apiRouter.use("/admin/blog/generate", createRateLimiter({ namespace: "blog-gemini", windowMs: 6e4, maxRequests: 5 }));
+    apiRouter.use("/admin", durableRateLimit({ namespace: "admin-api", limit: 120, windowSeconds: 60 }));
+    apiRouter.use("/admin/blog/generate", durableRateLimit({ namespace: "blog-generation", limit: 5, windowSeconds: 3600 }));
+    apiRouter.use("/audit/export", durableRateLimit({ namespace: "report-export", limit: 10, windowSeconds: 300 }));
+    apiRouter.use("/audit/cancel", durableRateLimit({ namespace: "audit-cancel", limit: 10, windowSeconds: 300 }));
     apiRouter.get("/me/profile", asyncJsonRoute(async (req, res) => {
       const authUser = await getAuthenticatedUserFromRequest(req);
       if (!authUser) {
@@ -60128,6 +60519,230 @@ var init_index = __esm({
       const profile = await ensureUserProfileFromAuthUser(authUser);
       const limits = await getPlanLimits(profile.plan);
       res.json({ success: true, data: { profile, limits } });
+    }));
+    apiRouter.get("/me/export", asyncJsonRoute(async (req, res) => {
+      const requester = await getRequester(req);
+      if (!requester.userId) throw new ApiError("AUTHENTICATION_REQUIRED", "Authentication is required.", 401);
+      const client = requireSupabaseAdminClient();
+      const [profile, audits, projects, keywords, competitors] = await Promise.all([
+        client.from("user_profiles").select("id,email,full_name,display_name,plan,role,created_at,terms_accepted_at,privacy_accepted_at,legal_version").eq("id", requester.userId).maybeSingle(),
+        client.from("audits").select("id,submitted_input,normalized_url,final_url,hostname,status,requested_mode,effective_mode,page_limit,warning_count,failure_counts,created_at,completed_at,archived_at").eq("user_id", requester.userId).order("created_at", { ascending: false }).limit(500),
+        client.from("projects").select("id,name,description,created_at").eq("user_id", requester.userId).limit(500),
+        client.from("keywords").select("id,term,project_id,group,intent,created_at").eq("user_id", requester.userId).limit(1e3),
+        client.from("competitors").select("id,domain_url,niche,created_at").eq("user_id", requester.userId).limit(500)
+      ]);
+      const firstError = [profile.error, audits.error, projects.error, keywords.error, competitors.error].find(Boolean);
+      if (firstError) throw firstError;
+      res.setHeader("Content-Disposition", 'attachment; filename="seointel-account-export.json"');
+      res.setHeader("Cache-Control", "private, no-store");
+      res.json({
+        exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        profile: profile.data,
+        audits: audits.data || [],
+        projects: projects.data || [],
+        keywords: keywords.data || [],
+        competitors: competitors.data || [],
+        storageNotice: "SEOIntel stores audit summaries and findings, not complete raw HTML."
+      });
+    }));
+    apiRouter.post("/me/delete", durableRateLimit({ namespace: "account-delete", limit: 3, windowSeconds: 3600 }), asyncJsonRoute(async (req, res) => {
+      const authUser = await getAuthenticatedUserFromRequest(req);
+      if (!authUser) throw new ApiError("AUTHENTICATION_REQUIRED", "Authentication is required.", 401);
+      req.requesterUserId = authUser.id;
+      if (req.body?.confirmation !== "DELETE") throw new ApiError("ACCOUNT_DELETE_CONFIRMATION_REQUIRED", "Enter DELETE to confirm account deletion.", 400);
+      const requester = await getRequester(req);
+      if (requester.profile?.role === "admin") throw new ApiError("ADMIN_TRANSFER_REQUIRED", "Transfer or remove administrator access before deleting this account.", 409);
+      const lastSignIn = new Date(authUser.last_sign_in_at || 0).getTime();
+      if (!Number.isFinite(lastSignIn) || Date.now() - lastSignIn > 30 * 60 * 1e3) {
+        throw new ApiError("RECENT_LOGIN_REQUIRED", "Sign in again before deleting your account.", 403);
+      }
+      const client = requireSupabaseAdminClient();
+      await client.from("user_profiles").update({ deletion_requested_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", authUser.id);
+      const { data, error } = await client.rpc("delete_user_owned_data", { p_user_id: authUser.id });
+      if (error) throw error;
+      const { error: authDeleteError } = await client.auth.admin.deleteUser(authUser.id);
+      if (authDeleteError) throw authDeleteError;
+      res.setHeader("Clear-Site-Data", '"cache", "cookies", "storage"');
+      res.json({ success: true, data });
+    }));
+    apiRouter.get("/version", asyncJsonRoute(async (_req, res) => {
+      res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
+      res.json({ success: true, data: publicVersionPayload() });
+    }));
+    apiRouter.get("/admin/diagnostics", asyncJsonRoute(async (req, res) => {
+      if (!await requireAdminRequester(req, res)) return;
+      const client = requireSupabaseAdminClient();
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1e3).toISOString();
+      const [compatibility, auditsResult, workersResult, errorsResult, diagnosticsResult, actionsResult] = await Promise.all([
+        getDeploymentCompatibility(),
+        client.from("audits").select("id,status,created_at,started_at,completed_at,lease_expires_at,warning_count,failure_counts,pages_discovered,pages_crawled").gte("created_at", since).order("created_at", { ascending: false }).limit(500),
+        client.from("platform_settings").select("key,value,updated_at").like("key", "audit_worker:%").order("updated_at", { ascending: false }).limit(20),
+        client.from("api_error_logs").select("request_id,route,method,user_id,internal_code,internal_details,deployment_version,created_at").order("created_at", { ascending: false }).limit(50),
+        client.from("audit_diagnostics").select("id,audit_id,affected_url,failure_code,phase,attempt_count,request_duration_ms,worker_id,internal_details,created_at").order("created_at", { ascending: false }).limit(100),
+        client.from("admin_actions").select("*").order("created_at", { ascending: false }).limit(50)
+      ]);
+      const error = [auditsResult.error, workersResult.error, errorsResult.error, diagnosticsResult.error, actionsResult.error].find(Boolean);
+      if (error) throw error;
+      const rows = auditsResult.data || [];
+      const durations = rows.map((row) => row.started_at && row.completed_at ? new Date(row.completed_at).getTime() - new Date(row.started_at).getTime() : 0).filter((value) => value > 0);
+      const waits = rows.map((row) => row.started_at ? new Date(row.started_at).getTime() - new Date(row.created_at).getTime() : 0).filter((value) => value >= 0);
+      const failureGroups = {};
+      rows.forEach((row) => Object.entries(row.failure_counts || {}).forEach(([code, count]) => {
+        failureGroups[code] = (failureGroups[code] || 0) + Number(count || 0);
+      }));
+      res.setHeader("Cache-Control", "private, no-store");
+      res.json({ success: true, data: {
+        compatibility,
+        metrics: {
+          queued: rows.filter((row) => row.status === "queued").length,
+          running: rows.filter((row) => row.status === "running").length,
+          completed: rows.filter((row) => row.status === "completed").length,
+          completedWithWarnings: rows.filter((row) => row.status === "completed_with_warnings").length,
+          failed: rows.filter((row) => row.status === "failed").length,
+          abandoned: rows.filter((row) => row.status === "abandoned").length,
+          staleLeases: rows.filter((row) => row.status === "running" && row.lease_expires_at && new Date(row.lease_expires_at).getTime() < Date.now()).length,
+          averageQueueWaitMs: waits.length ? Math.round(waits.reduce((sum, value) => sum + value, 0) / waits.length) : null,
+          averageAuditDurationMs: durations.length ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length) : null,
+          pageFailureRate: rows.reduce((sum, row) => sum + Object.values(row.failure_counts || {}).reduce((inner, value) => inner + Number(value || 0), 0), 0) / Math.max(1, rows.reduce((sum, row) => sum + Number(row.pages_discovered || 0), 0)),
+          failuresByCode: failureGroups,
+          oldestQueuedAt: rows.filter((row) => row.status === "queued").map((row) => row.created_at).sort()[0] || null
+        },
+        workers: workersResult.data || [],
+        recentApiErrors: errorsResult.data || [],
+        recentAuditDiagnostics: diagnosticsResult.data || [],
+        adminActions: actionsResult.data || [],
+        usageAvailability: { databaseStorage: "provider-dashboard-only", realtime: "provider-dashboard-only" }
+      } });
+    }));
+    apiRouter.post("/admin/audits/:id/action", asyncJsonRoute(async (req, res) => {
+      const requester = await requireAdminRequester(req, res);
+      if (!requester) return;
+      const reason = String(req.body?.reason || "").trim();
+      if (reason.length < 4 || reason.length > 500) throw new ApiError("ADMIN_REASON_REQUIRED", "Provide a reason between 4 and 500 characters.", 400);
+      const action = String(req.body?.action || "");
+      const audit = await auditRepository.getAudit(req.params.id);
+      if (!audit) throw new ApiError("AUDIT_NOT_FOUND", "Audit not found.", 404);
+      const before = { status: audit.status, phase: audit.currentPhase, leaseExpiresAt: audit.leaseExpiresAt, queuePriority: audit.queuePriority };
+      const patches = {
+        cancel: { status: "cancelled", currentPhase: "Cancelled by administrator", cancelledAt: (/* @__PURE__ */ new Date()).toISOString(), lockedBy: null, lockedAt: null, leaseExpiresAt: null },
+        retry: { status: "queued", currentPhase: "Retry queued", error: null, progress: 0, lockedBy: null, lockedAt: null, leaseExpiresAt: null },
+        requeue: { status: "queued", currentPhase: "Recovered and requeued", error: null, lockedBy: null, lockedAt: null, leaseExpiresAt: null },
+        abandon: { status: "abandoned", currentPhase: "Marked abandoned", completedAt: (/* @__PURE__ */ new Date()).toISOString(), lockedBy: null, lockedAt: null, leaseExpiresAt: null },
+        priority: { queuePriority: Math.max(0, Math.min(1e3, Math.floor(Number(req.body?.queuePriority || 0)))) }
+      };
+      const patch = patches[action];
+      if (!patch) throw new ApiError("UNSUPPORTED_ADMIN_ACTION", "This administrator action is not supported.", 400);
+      if (action === "retry" && !["failed", "abandoned"].includes(audit.status)) throw new ApiError("AUDIT_NOT_RETRYABLE", "Only failed or abandoned audits can be retried.", 409);
+      if (action === "cancel" && !["queued", "running"].includes(audit.status)) throw new ApiError("AUDIT_NOT_CANCELLABLE", "Only queued or running audits can be cancelled.", 409);
+      if (action === "abandon" && audit.status !== "running") throw new ApiError("AUDIT_NOT_ABANDONABLE", "Only a running audit can be marked abandoned.", 409);
+      if (action === "requeue" && !(audit.status === "running" && (!audit.leaseExpiresAt || new Date(audit.leaseExpiresAt).getTime() < Date.now()))) throw new ApiError("AUDIT_NOT_STALE", "Only a running audit with an expired lease can be requeued.", 409);
+      if (action === "priority" && (!Number.isFinite(Number(req.body?.queuePriority)) || !["queued", "running"].includes(audit.status))) throw new ApiError("INVALID_QUEUE_PRIORITY", "Queue priority can be changed only for an active audit.", 400);
+      await auditRepository.updateAudit(audit.id, patch);
+      const client = requireSupabaseAdminClient();
+      await client.from("admin_actions").insert({ admin_user_id: requester.userId, action: `audit_${action}`, target_type: "audit", target_id: audit.id, metadata: { reason, before, after: patch } });
+      res.json({ success: true, data: { auditId: audit.id, action, before, after: patch } });
+    }));
+    apiRouter.post("/admin/users/:id/reset-quota", asyncJsonRoute(async (req, res) => {
+      const requester = await requireAdminRequester(req, res);
+      if (!requester) return;
+      const reason = String(req.body?.reason || "").trim();
+      if (reason.length < 4 || reason.length > 500) throw new ApiError("ADMIN_REASON_REQUIRED", "Provide a reason between 4 and 500 characters.", 400);
+      const client = requireSupabaseAdminClient();
+      const { data: before, error: readError } = await client.from("user_profiles").select("audit_quota_used_daily,audit_quota_used_monthly").eq("id", req.params.id).maybeSingle();
+      if (readError) throw readError;
+      if (!before) throw new ApiError("USER_NOT_FOUND", "User not found.", 404);
+      const { error } = await client.from("user_profiles").update({ audit_quota_used_daily: 0, audit_quota_used_monthly: 0, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", req.params.id);
+      if (error) throw error;
+      await client.from("admin_actions").insert({ admin_user_id: requester.userId, action: "reset_user_quota", target_type: "user", target_id: req.params.id, metadata: { reason, before, after: { daily: 0, monthly: 0 } } });
+      res.json({ success: true, data: { userId: req.params.id, daily: 0, monthly: 0 } });
+    }));
+    apiRouter.post("/admin/users/:id/update", asyncJsonRoute(async (req, res) => {
+      const requester = await requireAdminRequester(req, res);
+      if (!requester) return;
+      const reason = String(req.body?.reason || "").trim();
+      if (reason.length < 4 || reason.length > 500) throw new ApiError("ADMIN_REASON_REQUIRED", "Provide a reason between 4 and 500 characters.", 400);
+      const allowed = {
+        role: /* @__PURE__ */ new Set(["user", "support", "admin"]),
+        plan: /* @__PURE__ */ new Set(["free", "paid", "agency", "admin"]),
+        subscription_status: /* @__PURE__ */ new Set(["inactive", "trialing", "active", "past_due", "cancelled"])
+      };
+      const patch = {};
+      for (const [key, values] of Object.entries(allowed)) {
+        if (key in (req.body?.patch || {})) {
+          const value = String(req.body.patch[key]);
+          if (!values.has(value)) throw new ApiError("INVALID_ADMIN_UPDATE", `Invalid ${key.replace(/_/g, " ")} value.`, 400);
+          patch[key] = value;
+        }
+      }
+      if (!Object.keys(patch).length) throw new ApiError("EMPTY_ADMIN_UPDATE", "No supported user fields were provided.", 400);
+      const client = requireSupabaseAdminClient();
+      const { data: before, error: readError } = await client.from("user_profiles").select("role,plan,subscription_status").eq("id", req.params.id).maybeSingle();
+      if (readError) throw readError;
+      if (!before) throw new ApiError("USER_NOT_FOUND", "User not found.", 404);
+      const { error } = await client.from("user_profiles").update({ ...patch, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", req.params.id);
+      if (error) throw error;
+      await client.from("admin_actions").insert({ admin_user_id: requester.userId, action: "update_user_access", target_type: "user", target_id: req.params.id, metadata: { reason, before, after: patch } });
+      res.json({ success: true, data: { userId: req.params.id, before, after: patch } });
+    }));
+    apiRouter.post("/admin/plans/:plan", asyncJsonRoute(async (req, res) => {
+      const requester = await requireAdminRequester(req, res);
+      if (!requester) return;
+      const reason = String(req.body?.reason || "").trim();
+      if (reason.length < 4 || reason.length > 500) throw new ApiError("ADMIN_REASON_REQUIRED", "Provide a reason between 4 and 500 characters.", 400);
+      const allowedKeys = /* @__PURE__ */ new Set(["daily_audits", "monthly_audits", "max_pages_quick", "max_pages_standard", "max_pages_deep", "audit_timeout_seconds", "concurrency", "max_events_per_audit", "max_issues_per_audit", "priority"]);
+      const patch = Object.fromEntries(Object.entries(req.body?.patch || {}).filter(([key, value]) => allowedKeys.has(key) && Number.isFinite(Number(value))).map(([key, value]) => [key, Number(value)]));
+      if (!Object.keys(patch).length) throw new ApiError("EMPTY_ADMIN_UPDATE", "No supported plan fields were provided.", 400);
+      const client = requireSupabaseAdminClient();
+      const { data: before, error: readError } = await client.from("plan_limits").select("*").eq("plan", req.params.plan).maybeSingle();
+      if (readError) throw readError;
+      if (!before) throw new ApiError("PLAN_NOT_FOUND", "Plan not found.", 404);
+      const { error } = await client.from("plan_limits").update({ ...patch, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("plan", req.params.plan);
+      if (error) throw error;
+      await client.from("admin_actions").insert({ admin_user_id: requester.userId, action: "update_plan_limits", target_type: "plan", target_id: req.params.plan, metadata: { reason, before, after: patch } });
+      res.json({ success: true, data: { plan: req.params.plan, after: patch } });
+    }));
+    apiRouter.post("/admin/platform/settings", asyncJsonRoute(async (req, res) => {
+      const requester = await requireAdminRequester(req, res);
+      if (!requester) return;
+      const reason = String(req.body?.reason || "").trim();
+      if (reason.length < 4 || reason.length > 500) throw new ApiError("ADMIN_REASON_REQUIRED", "Provide a reason between 4 and 500 characters.", 400);
+      const client = requireSupabaseAdminClient();
+      const { data: before, error: readError } = await client.from("platform_settings").select("*").eq("id", "settings").maybeSingle();
+      if (readError) throw readError;
+      const patch = req.body?.patch || {};
+      const row = {
+        id: "settings",
+        key: "settings",
+        platform_name: String(patch.platformName || before?.platform_name || "SEOIntel").slice(0, 100),
+        support_email: String(patch.supportEmail || before?.support_email || "").slice(0, 254),
+        require_email_verification: Boolean(patch.requireEmailVerification ?? before?.require_email_verification),
+        public_registration: Boolean(patch.publicRegistration ?? before?.public_registration ?? true),
+        value: typeof patch.value === "object" && patch.value ? patch.value : before?.value || {},
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      const { error } = await client.from("platform_settings").upsert(row, { onConflict: "id" });
+      if (error) throw error;
+      await client.from("admin_actions").insert({ admin_user_id: requester.userId, action: "update_platform_settings", target_type: "platform_setting", target_id: "settings", metadata: { reason, before: before || null, after: row } });
+      res.json({ success: true, data: row });
+    }));
+    apiRouter.post("/admin/platform/control", asyncJsonRoute(async (req, res) => {
+      const requester = await requireAdminRequester(req, res);
+      if (!requester) return;
+      const reason = String(req.body?.reason || "").trim();
+      if (reason.length < 4 || reason.length > 500) throw new ApiError("ADMIN_REASON_REQUIRED", "Provide a reason between 4 and 500 characters.", 400);
+      const allowedKeys = /* @__PURE__ */ new Set(["maintenanceMode", "pauseFreeSubmissions", "captchaRequired", "hardQueueLimit", "softQueueWarning", "disabledAuditModes"]);
+      const key = String(req.body?.key || "");
+      if (!allowedKeys.has(key)) throw new ApiError("UNSUPPORTED_PLATFORM_CONTROL", "This platform control is not supported.", 400);
+      const client = requireSupabaseAdminClient();
+      const { data: row, error: readError } = await client.from("platform_settings").select("value").eq("id", "settings").maybeSingle();
+      if (readError) throw readError;
+      const before = row?.value?.[key] ?? null;
+      const value = req.body?.value;
+      const nextValue = { ...row?.value || {}, [key]: value };
+      const { error } = await client.from("platform_settings").upsert({ id: "settings", key: "settings", value: nextValue, updated_at: (/* @__PURE__ */ new Date()).toISOString() }, { onConflict: "id" });
+      if (error) throw error;
+      await client.from("admin_actions").insert({ admin_user_id: requester.userId, action: "update_platform_control", target_type: "platform_setting", target_id: key, metadata: { reason, before, after: value } });
+      res.json({ success: true, data: { key, value } });
     }));
     apiRouter.get("/blog/posts", asyncJsonRoute(async (req, res) => {
       const result = await blogRepository.listPublished({ query: String(req.query.q || ""), limit: Number(req.query.limit || 12), offset: Number(req.query.offset || 0) });
@@ -60203,20 +60818,15 @@ var init_index = __esm({
         res.json({ success: true, data: result });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Gemini draft generation failed.";
-        const status = /not configured/i.test(message) ? 503 : 502;
-        res.status(status).json({ success: false, error: message });
+        if (/not configured/i.test(message)) throw new ApiError("BLOG_GENERATION_NOT_CONFIGURED", "Automated draft generation is not configured.", 503);
+        throw error;
       }
     }));
-    apiRouter.post("/audit/start", asyncJsonRoute(async (req, res) => {
-      try {
-        return startQueuedAudit(req, res, "quick");
-      } catch (error) {
-        console.error("Audit status lookup failed", error);
-        res.status(500).json({ success: false, error: "The audit status is temporarily unavailable. Please try again." });
-      }
-    }));
-    apiRouter.get("/audit/events/:id", asyncJsonRoute((req, res) => {
+    apiRouter.post("/audit/start", asyncJsonRoute((req, res) => startQueuedAudit(req, res, "quick")));
+    apiRouter.get("/audit/events/:id", asyncJsonRoute(async (req, res) => {
       const auditId = req.params.id;
+      const resourceAudit = await auditRepository.getAudit(auditId);
+      if (!resourceAudit || !await canAccessAudit(req, resourceAudit)) throw new ApiError("AUDIT_NOT_FOUND", "Audit not found.", 404);
       const audit = typeof auditStore.getAudit === "function" ? auditStore.getAudit(auditId) : auditStore.getJob(auditId);
       if (!audit) {
         return res.status(404).json({ success: false, error: "Audit not found" });
@@ -60258,37 +60868,46 @@ var init_index = __esm({
       });
     }));
     apiRouter.get("/audit/status/:id", asyncJsonRoute(async (req, res) => {
-      try {
-        const liveData = await auditRepository.getLiveData(req.params.id);
-        if (!liveData.audit) return res.status(404).json({ success: false, error: "Audit not found" });
-        if (!await canAccessAudit(req, liveData.audit)) return res.status(404).json({ success: false, error: "Audit not found" });
-        res.json({ success: true, data: liveData });
-      } catch (error) {
-        console.error("Audit result lookup failed", error);
-        res.status(500).json({ success: false, error: "The audit result is temporarily unavailable. Please try again." });
-      }
+      const liveData = await auditRepository.getLiveData(req.params.id);
+      if (!liveData.audit || !await canAccessAudit(req, liveData.audit)) throw new ApiError("AUDIT_NOT_FOUND", "Audit not found.", 404);
+      res.setHeader("Cache-Control", "private, no-store");
+      res.json({ success: true, data: liveData });
     }));
     apiRouter.post("/audit/cancel/:id", asyncJsonRoute(async (req, res) => {
       const audit = await auditRepository.getAudit(req.params.id);
-      if (!audit) return res.status(404).json({ success: false, error: "Audit not found" });
-      if (!await canAccessAudit(req, audit)) return res.status(404).json({ success: false, error: "Audit not found" });
+      if (!audit || !await canAccessAudit(req, audit)) throw new ApiError("AUDIT_NOT_FOUND", "Audit not found.", 404);
       await auditRepository.cancelAudit(req.params.id);
       res.json({ success: true, data: { auditId: req.params.id, status: "cancelled" } });
     }));
     apiRouter.get("/audit/result/:id", asyncJsonRoute(async (req, res) => {
-      try {
-        const liveData = await auditRepository.getLiveData(req.params.id);
-        if (!liveData.audit) return res.status(404).json({ success: false, error: "Audit not found" });
-        if (!await canAccessAudit(req, liveData.audit)) return res.status(404).json({ success: false, error: "Audit not found" });
-        res.json({ success: true, data: liveData });
-      } catch (error) {
-        res.status(500).json({ success: false, error: error.message || "Internal Server Error" });
+      const liveData = await auditRepository.getLiveData(req.params.id);
+      if (!liveData.audit || !await canAccessAudit(req, liveData.audit)) throw new ApiError("AUDIT_NOT_FOUND", "Audit not found.", 404);
+      res.setHeader("Cache-Control", "private, no-store");
+      res.json({ success: true, data: liveData });
+    }));
+    apiRouter.post("/audit/archive/:id", asyncJsonRoute(async (req, res) => {
+      const audit = await auditRepository.getAudit(req.params.id);
+      if (!audit || !await canAccessAudit(req, audit)) throw new ApiError("AUDIT_NOT_FOUND", "Audit not found.", 404);
+      if (!isCompletedAuditStatus(audit.status) && !["failed", "cancelled", "abandoned"].includes(audit.status)) {
+        throw new ApiError("AUDIT_NOT_ARCHIVABLE", "Finish or cancel the audit before archiving it.", 409);
       }
+      const archivedAt = req.body?.archived === false ? null : (/* @__PURE__ */ new Date()).toISOString();
+      await auditRepository.updateAudit(audit.id, { archivedAt });
+      res.json({ success: true, data: { auditId: audit.id, archivedAt } });
+    }));
+    apiRouter.delete("/audit/:id", durableRateLimit({ namespace: "audit-delete", limit: 20, windowSeconds: 3600 }), asyncJsonRoute(async (req, res) => {
+      const audit = await auditRepository.getAudit(req.params.id);
+      if (!audit || !await canAccessAudit(req, audit)) throw new ApiError("AUDIT_NOT_FOUND", "Audit not found.", 404);
+      if (["queued", "running"].includes(audit.status)) throw new ApiError("ACTIVE_AUDIT_DELETE_BLOCKED", "Cancel the active audit before deleting it.", 409);
+      const client = requireSupabaseAdminClient();
+      const { error } = await client.from("audits").delete().eq("id", audit.id);
+      if (error) throw error;
+      res.json({ success: true, data: { auditId: audit.id, deleted: true } });
     }));
     apiRouter.get("/audits/history", asyncJsonRoute(async (req, res) => {
       const requester = await getRequester(req);
       if (!requester.userId) return res.status(401).json({ success: false, error: "Authentication required." });
-      const allowedStatuses = /* @__PURE__ */ new Set(["queued", "running", "completed", "completed_with_warnings", "failed", "cancelled"]);
+      const allowedStatuses = /* @__PURE__ */ new Set(["queued", "running", "completed", "completed_with_warnings", "failed", "cancelled", "abandoned"]);
       const requestedStatus = String(req.query.status || "");
       const status = allowedStatuses.has(requestedStatus) ? requestedStatus : void 0;
       const hostname = String(req.query.hostname || "").trim().toLowerCase().slice(0, 253) || void 0;
@@ -60296,6 +60915,7 @@ var init_index = __esm({
         userId: requester.userId,
         status,
         hostname,
+        includeArchived: req.query.archived === "true",
         limit: Number(req.query.limit || 25),
         offset: Number(req.query.offset || 0)
       });
@@ -60356,49 +60976,25 @@ var init_index = __esm({
       }
       return res.status(400).json({ success: false, error: "Unsupported export format" });
     }));
-    apiRouter.post("/audit/rerun/:id", asyncJsonRoute((req, res) => {
-      try {
-        return res.status(409).json({ success: false, error: "Rerun is disabled for worker-backed audits. Start a new audit instead." });
-      } catch (error) {
-        res.status(500).json({ success: false, error: error.message || "Internal Server Error" });
-      }
-    }));
+    apiRouter.post("/audit/rerun/:id", asyncJsonRoute((_req, res) => res.status(409).json({ success: false, error: "Rerun is disabled for worker-backed audits. Start a new audit instead." })));
     apiRouter.post("/keyword/research", asyncJsonRoute((req, res) => {
-      try {
-        const { seed } = req.body;
-        if (!seed) return res.status(400).json({ success: false, error: "Seed keyword is required" });
-        const keywords = generateKeywords(seed);
-        res.json({ success: true, data: { keywords } });
-      } catch (error) {
-        res.status(500).json({ success: false, error: error.message || "Internal Server Error" });
-      }
+      const seed = String(req.body?.seed || "").trim();
+      if (!seed || seed.length > 200) throw new ApiError("INVALID_KEYWORD_SEED", "Enter a keyword between 1 and 200 characters.", 400);
+      const keywords = generateKeywords(seed);
+      res.json({ success: true, data: { keywords } });
     }));
-    apiRouter.post("/website/analyze", asyncJsonRoute(async (req, res) => {
-      try {
-        return startQueuedAudit(req, res, "standard");
-      } catch (e) {
-        res.status(500).json({ success: false, error: e.message || "Internal Server Error" });
-      }
-    }));
+    apiRouter.post("/website/analyze", asyncJsonRoute((req, res) => startQueuedAudit(req, res, "standard")));
     apiRouter.post("/clusters", asyncJsonRoute((req, res) => {
-      try {
-        const { keywords } = req.body;
-        if (!keywords || !Array.isArray(keywords)) return res.status(400).json({ success: false, error: "Keywords array is required" });
-        const clusters = clusterKeywords(keywords);
-        res.json({ success: true, data: { clusters } });
-      } catch (error) {
-        res.status(500).json({ success: false, error: error.message || "Internal Server Error" });
-      }
+      const { keywords } = req.body || {};
+      if (!Array.isArray(keywords) || !keywords.length || keywords.length > 500) throw new ApiError("INVALID_KEYWORD_LIST", "Provide between 1 and 500 keywords.", 400);
+      const clusters = clusterKeywords(keywords.slice(0, 500));
+      res.json({ success: true, data: { clusters } });
     }));
     apiRouter.post("/content-brief", asyncJsonRoute((req, res) => {
-      try {
-        const { cluster } = req.body;
-        if (!cluster) return res.status(400).json({ success: false, error: "Cluster object is required" });
-        const brief = buildContentBrief(cluster);
-        res.json({ success: true, data: { brief } });
-      } catch (error) {
-        res.status(500).json({ success: false, error: error.message || "Internal Server Error" });
-      }
+      const { cluster } = req.body || {};
+      if (!cluster || typeof cluster !== "object") throw new ApiError("INVALID_CONTENT_CLUSTER", "A valid keyword cluster is required.", 400);
+      const brief = buildContentBrief(cluster);
+      res.json({ success: true, data: { brief } });
     }));
     apiRouter.post("/competitor-gap", asyncJsonRoute(async (req, res) => {
       return res.status(501).json({
@@ -60412,6 +61008,8 @@ var init_index = __esm({
 // src/api/vercel-handler.ts
 var import_express3 = __toESM(require_express2(), 1);
 init_http_hardening();
+init_errors();
+init_version();
 var cachedApp = null;
 function rewriteVercelPath(req) {
   const requestUrl = new URL(req.url || "/", "http://localhost");
@@ -60431,23 +61029,25 @@ async function getApp() {
     rewriteVercelPath(req);
     next();
   });
+  app.use(requestIdMiddleware);
   app.use(apiSecurityHeaders);
+  app.use(strictCorsAndOrigin);
   app.use(createRateLimiter({ namespace: "vercel-api", windowMs: 6e4, maxRequests: 300 }));
   app.use((req, res, next) => {
     if (req.body !== void 0) return next();
     return parseJsonBody(req, res, next);
   });
   app.use(jsonParseErrorHandler);
+  app.use(requireJsonContentType);
+  app.get(["/api/version", "/version"], (_req, res) => {
+    res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
+    res.json(publicVersionPayload());
+  });
   app.use("/api/tools/audit/start", createRateLimiter({ namespace: "audit-start", windowMs: 6e4, maxRequests: 20 }));
   app.use("/tools/audit/start", createRateLimiter({ namespace: "audit-start-direct", windowMs: 6e4, maxRequests: 20 }));
   app.use("/api/tools", apiRouter2);
   app.use("/tools", apiRouter2);
-  app.use((req, res) => {
-    res.status(404).json({
-      success: false,
-      error: `API route not found: ${req.method} ${req.originalUrl || req.url}`
-    });
-  });
+  app.use((_req, _res, next) => next(new ApiError("API_ROUTE_NOT_FOUND", "The requested API route was not found.", 404)));
   app.use(apiErrorHandler);
   cachedApp = app;
   return cachedApp;
@@ -60457,17 +61057,8 @@ async function handler(req, res) {
     const app = await getApp();
     return app(req, res);
   } catch (error) {
-    console.error("[api/index] function failed", {
-      message: error?.message,
-      stack: error?.stack,
-      url: req?.url,
-      method: req?.method
-    });
     if (!res.headersSent) {
-      return res.status(500).json({
-        success: false,
-        error: error?.message || "API function failed"
-      });
+      return sendSafeApiError(req, res, error);
     }
   }
 }

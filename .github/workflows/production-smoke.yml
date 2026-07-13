@@ -1,0 +1,38 @@
+name: Manual production smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: Production or preview application origin
+        required: true
+        default: https://keywordsintel.vercel.app
+      worker_url:
+        description: Audit engine origin
+        required: true
+        default: https://seointel-audit-worker.onrender.com
+      create_audit:
+        description: Create and follow one audit of the SEOIntel site
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/production-smoke.mjs
+        env:
+          APP_URL: ${{ inputs.app_url }}
+          WORKER_URL: ${{ inputs.worker_url }}
+          RUN_AUDIT_SMOKE: ${{ inputs.create_audit }}

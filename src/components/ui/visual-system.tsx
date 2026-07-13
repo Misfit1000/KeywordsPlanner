@@ -488,7 +488,7 @@ export function AuditStageTimeline({
   status,
 }: {
   progress: number;
-  status: 'queued' | 'running' | 'completed' | 'completed_with_warnings' | 'failed' | 'cancelled';
+  status: 'queued' | 'running' | 'completed' | 'completed_with_warnings' | 'failed' | 'cancelled' | 'abandoned';
 }) {
   const stages = [
     { label: 'Prepare', threshold: 5 },

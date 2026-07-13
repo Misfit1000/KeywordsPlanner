@@ -7,7 +7,7 @@ import { clusterKeywords } from '../lib/keywords/clustering';
 import { buildContentBrief } from '../lib/keywords/content-brief';
 import { auditStore } from '../lib/audit/audit-store';
 import { auditRepository } from '../lib/supabase/audit-repository';
-import { getSupabaseProjectHostname } from '../lib/supabase/server';
+import { isSupabaseAdminEnabled, requireSupabaseAdminClient } from '../lib/supabase/server';
 import { getAuditModeConfig, type AuditMode } from '../lib/audit/resource-types';
 import {
   EntitlementError,
@@ -25,6 +25,17 @@ import { generateBlogWithGemini } from '../lib/blog/gemini';
 import { normalizeBlogSlug } from '../lib/blog/slug';
 import { BlogValidationError, prepareBlogPost } from '../lib/blog/validation';
 import { canonicalSiteOrigin, renderBlogSitemap } from '../lib/blog/sitemap';
+import { ApiError } from '../lib/api/errors';
+import {
+  admitAuditSubmission,
+  assertAuditDeploymentCompatible,
+  durableRateLimit,
+  getDeploymentCompatibility,
+  releaseAuditAdmission,
+  requestNetworkHash,
+  verifyBotToken,
+} from '../lib/api/production-controls';
+import { publicVersionPayload } from '../lib/platform/version';
 
 const DUPLICATE_AUDIT_WINDOW_MS = 10 * 60 * 1000;
 
@@ -32,14 +43,8 @@ function asyncJsonRoute(handler: any) {
   return async (req: any, res: any, next: any) => {
     try {
       await handler(req, res, next);
-    } catch (error: any) {
-      console.error(error);
-      if (!res.headersSent) {
-        res.status(500).json({
-          success: false,
-          error: error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    } catch (error: unknown) {
+      next(error);
     }
   };
 }
@@ -47,6 +52,10 @@ function asyncJsonRoute(handler: any) {
 export const apiRouter = Router();
 
 apiRouter.use('/admin/blog/generate', createRateLimiter({ namespace: 'blog-gemini', windowMs: 60_000, maxRequests: 5 }));
+apiRouter.use('/admin', durableRateLimit({ namespace: 'admin-api', limit: 120, windowSeconds: 60 }));
+apiRouter.use('/admin/blog/generate', durableRateLimit({ namespace: 'blog-generation', limit: 5, windowSeconds: 3600 }));
+apiRouter.use('/audit/export', durableRateLimit({ namespace: 'report-export', limit: 10, windowSeconds: 300 }));
+apiRouter.use('/audit/cancel', durableRateLimit({ namespace: 'audit-cancel', limit: 10, windowSeconds: 300 }));
 
 function firstHeaderValue(value: unknown) {
   return Array.isArray(value) ? String(value[0] || '') : String(value || '');
@@ -84,6 +93,7 @@ function isDeepAuditEnabled() {
 async function getRequester(req: any) {
   const authUser = await getAuthenticatedUserFromRequest(req);
   if (!authUser) return { userId: null, profile: null };
+  req.requesterUserId = authUser.id;
   const profile = await ensureUserProfileFromAuthUser(authUser);
   return { userId: authUser.id, profile };
 }
@@ -127,13 +137,26 @@ async function canAccessAudit(req: any, audit: ResourceAuditDocument) {
 
 function sendEntitlementError(res: any, error: unknown) {
   if (error instanceof EntitlementError) {
-    return res.status(error.status).json({
-      success: false,
-      error: error.message,
-      upgradeRequired: error.upgradeRequired,
-    });
+    throw new ApiError(error.upgradeRequired ? 'PLAN_LIMIT_REACHED' : 'AUDIT_LIMIT_REACHED', error.message, error.status);
   }
   throw error;
+}
+
+function admissionError(decision: { code: string; retryAfterSeconds?: number }) {
+  const retryAfterSeconds = Math.max(1, Number(decision.retryAfterSeconds || 60));
+  const mapping: Record<string, [string, string, number]> = {
+    DAILY_QUOTA_REACHED: ['DAILY_QUOTA_REACHED', 'You have reached today\'s audit limit.', 429],
+    DOMAIN_DAILY_LIMIT: ['DOMAIN_DAILY_LIMIT', 'This website has reached its audit limit for today.', 429],
+    QUEUE_FULL: ['AUDIT_QUEUE_FULL', 'The audit queue is currently full. Please try again later.', 429],
+    MAINTENANCE: ['AUDIT_MAINTENANCE', 'The audit service is temporarily unavailable for maintenance.', 503],
+    FREE_SUBMISSIONS_PAUSED: ['FREE_AUDITS_PAUSED', 'New Free audits are temporarily paused.', 503],
+    BOT_VERIFICATION_REQUIRED: ['BOT_VERIFICATION_REQUIRED', 'Please complete the verification check before starting another audit.', 403],
+    GUEST_AUDITS_DISABLED: ['GUEST_AUDITS_DISABLED', 'Guest audits are temporarily unavailable. Sign in and try again.', 403],
+    AUDIT_MODE_DISABLED: ['AUDIT_MODE_DISABLED', 'This audit type is temporarily unavailable.', 503],
+    ACTIVE_AUDIT_EXISTS: ['ACTIVE_AUDIT_EXISTS', 'You already have an audit in progress.', 429],
+  };
+  const [code, message, status] = mapping[decision.code] || ['AUDIT_ADMISSION_DENIED', 'The audit could not be admitted right now.', 429];
+  return new ApiError(code, message, status, { retryAfterSeconds });
 }
 
 function auditStartResponseData(audit: ResourceAuditDocument, extras: Record<string, unknown> = {}) {
@@ -160,6 +183,238 @@ apiRouter.get('/me/profile', asyncJsonRoute(async (req, res) => {
   const profile = await ensureUserProfileFromAuthUser(authUser);
   const limits = await getPlanLimits(profile.plan);
   res.json({ success: true, data: { profile, limits } });
+}));
+
+apiRouter.get('/me/export', asyncJsonRoute(async (req, res) => {
+  const requester = await getRequester(req);
+  if (!requester.userId) throw new ApiError('AUTHENTICATION_REQUIRED', 'Authentication is required.', 401);
+  const client = requireSupabaseAdminClient();
+  const [profile, audits, projects, keywords, competitors] = await Promise.all([
+    client.from('user_profiles').select('id,email,full_name,display_name,plan,role,created_at,terms_accepted_at,privacy_accepted_at,legal_version').eq('id', requester.userId).maybeSingle(),
+    client.from('audits').select('id,submitted_input,normalized_url,final_url,hostname,status,requested_mode,effective_mode,page_limit,warning_count,failure_counts,created_at,completed_at,archived_at').eq('user_id', requester.userId).order('created_at', { ascending: false }).limit(500),
+    client.from('projects').select('id,name,description,created_at').eq('user_id', requester.userId).limit(500),
+    client.from('keywords').select('id,term,project_id,group,intent,created_at').eq('user_id', requester.userId).limit(1000),
+    client.from('competitors').select('id,domain_url,niche,created_at').eq('user_id', requester.userId).limit(500),
+  ]);
+  const firstError = [profile.error, audits.error, projects.error, keywords.error, competitors.error].find(Boolean);
+  if (firstError) throw firstError;
+  res.setHeader('Content-Disposition', 'attachment; filename="seointel-account-export.json"');
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({
+    exportedAt: new Date().toISOString(),
+    profile: profile.data,
+    audits: audits.data || [],
+    projects: projects.data || [],
+    keywords: keywords.data || [],
+    competitors: competitors.data || [],
+    storageNotice: 'SEOIntel stores audit summaries and findings, not complete raw HTML.',
+  });
+}));
+
+apiRouter.post('/me/delete', durableRateLimit({ namespace: 'account-delete', limit: 3, windowSeconds: 3600 }), asyncJsonRoute(async (req, res) => {
+  const authUser = await getAuthenticatedUserFromRequest(req);
+  if (!authUser) throw new ApiError('AUTHENTICATION_REQUIRED', 'Authentication is required.', 401);
+  req.requesterUserId = authUser.id;
+  if (req.body?.confirmation !== 'DELETE') throw new ApiError('ACCOUNT_DELETE_CONFIRMATION_REQUIRED', 'Enter DELETE to confirm account deletion.', 400);
+  const requester = await getRequester(req);
+  if (requester.profile?.role === 'admin') throw new ApiError('ADMIN_TRANSFER_REQUIRED', 'Transfer or remove administrator access before deleting this account.', 409);
+  const lastSignIn = new Date(authUser.last_sign_in_at || 0).getTime();
+  if (!Number.isFinite(lastSignIn) || Date.now() - lastSignIn > 30 * 60 * 1000) {
+    throw new ApiError('RECENT_LOGIN_REQUIRED', 'Sign in again before deleting your account.', 403);
+  }
+  const client = requireSupabaseAdminClient();
+  await client.from('user_profiles').update({ deletion_requested_at: new Date().toISOString() }).eq('id', authUser.id);
+  const { data, error } = await client.rpc('delete_user_owned_data', { p_user_id: authUser.id });
+  if (error) throw error;
+  const { error: authDeleteError } = await client.auth.admin.deleteUser(authUser.id);
+  if (authDeleteError) throw authDeleteError;
+  res.setHeader('Clear-Site-Data', '"cache", "cookies", "storage"');
+  res.json({ success: true, data });
+}));
+
+apiRouter.get('/version', asyncJsonRoute(async (_req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+  res.json({ success: true, data: publicVersionPayload() });
+}));
+
+apiRouter.get('/admin/diagnostics', asyncJsonRoute(async (req, res) => {
+  if (!(await requireAdminRequester(req, res))) return;
+  const client = requireSupabaseAdminClient();
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const [compatibility, auditsResult, workersResult, errorsResult, diagnosticsResult, actionsResult] = await Promise.all([
+    getDeploymentCompatibility(),
+    client.from('audits').select('id,status,created_at,started_at,completed_at,lease_expires_at,warning_count,failure_counts,pages_discovered,pages_crawled').gte('created_at', since).order('created_at', { ascending: false }).limit(500),
+    client.from('platform_settings').select('key,value,updated_at').like('key', 'audit_worker:%').order('updated_at', { ascending: false }).limit(20),
+    client.from('api_error_logs').select('request_id,route,method,user_id,internal_code,internal_details,deployment_version,created_at').order('created_at', { ascending: false }).limit(50),
+    client.from('audit_diagnostics').select('id,audit_id,affected_url,failure_code,phase,attempt_count,request_duration_ms,worker_id,internal_details,created_at').order('created_at', { ascending: false }).limit(100),
+    client.from('admin_actions').select('*').order('created_at', { ascending: false }).limit(50),
+  ]);
+  const error = [auditsResult.error, workersResult.error, errorsResult.error, diagnosticsResult.error, actionsResult.error].find(Boolean);
+  if (error) throw error;
+  const rows = auditsResult.data || [];
+  const durations = rows.map((row: any) => row.started_at && row.completed_at ? new Date(row.completed_at).getTime() - new Date(row.started_at).getTime() : 0).filter((value) => value > 0);
+  const waits = rows.map((row: any) => row.started_at ? new Date(row.started_at).getTime() - new Date(row.created_at).getTime() : 0).filter((value) => value >= 0);
+  const failureGroups: Record<string, number> = {};
+  rows.forEach((row: any) => Object.entries(row.failure_counts || {}).forEach(([code, count]) => { failureGroups[code] = (failureGroups[code] || 0) + Number(count || 0); }));
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: {
+    compatibility,
+    metrics: {
+      queued: rows.filter((row: any) => row.status === 'queued').length,
+      running: rows.filter((row: any) => row.status === 'running').length,
+      completed: rows.filter((row: any) => row.status === 'completed').length,
+      completedWithWarnings: rows.filter((row: any) => row.status === 'completed_with_warnings').length,
+      failed: rows.filter((row: any) => row.status === 'failed').length,
+      abandoned: rows.filter((row: any) => row.status === 'abandoned').length,
+      staleLeases: rows.filter((row: any) => row.status === 'running' && row.lease_expires_at && new Date(row.lease_expires_at).getTime() < Date.now()).length,
+      averageQueueWaitMs: waits.length ? Math.round(waits.reduce((sum, value) => sum + value, 0) / waits.length) : null,
+      averageAuditDurationMs: durations.length ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length) : null,
+      pageFailureRate: rows.reduce((sum: number, row: any) => sum + Object.values(row.failure_counts || {}).reduce<number>((inner, value) => inner + Number(value || 0), 0), 0) / Math.max(1, rows.reduce((sum: number, row: any) => sum + Number(row.pages_discovered || 0), 0)),
+      failuresByCode: failureGroups,
+      oldestQueuedAt: rows.filter((row: any) => row.status === 'queued').map((row: any) => row.created_at).sort()[0] || null,
+    },
+    workers: workersResult.data || [],
+    recentApiErrors: errorsResult.data || [],
+    recentAuditDiagnostics: diagnosticsResult.data || [],
+    adminActions: actionsResult.data || [],
+    usageAvailability: { databaseStorage: 'provider-dashboard-only', realtime: 'provider-dashboard-only' },
+  }});
+}));
+
+apiRouter.post('/admin/audits/:id/action', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 4 || reason.length > 500) throw new ApiError('ADMIN_REASON_REQUIRED', 'Provide a reason between 4 and 500 characters.', 400);
+  const action = String(req.body?.action || '');
+  const audit = await auditRepository.getAudit(req.params.id);
+  if (!audit) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
+  const before = { status: audit.status, phase: audit.currentPhase, leaseExpiresAt: audit.leaseExpiresAt, queuePriority: audit.queuePriority };
+  const patches: Record<string, Partial<ResourceAuditDocument>> = {
+    cancel: { status: 'cancelled', currentPhase: 'Cancelled by administrator', cancelledAt: new Date().toISOString(), lockedBy: null, lockedAt: null, leaseExpiresAt: null },
+    retry: { status: 'queued', currentPhase: 'Retry queued', error: null, progress: 0, lockedBy: null, lockedAt: null, leaseExpiresAt: null },
+    requeue: { status: 'queued', currentPhase: 'Recovered and requeued', error: null, lockedBy: null, lockedAt: null, leaseExpiresAt: null },
+    abandon: { status: 'abandoned', currentPhase: 'Marked abandoned', completedAt: new Date().toISOString(), lockedBy: null, lockedAt: null, leaseExpiresAt: null },
+    priority: { queuePriority: Math.max(0, Math.min(1000, Math.floor(Number(req.body?.queuePriority || 0)))) },
+  };
+  const patch = patches[action];
+  if (!patch) throw new ApiError('UNSUPPORTED_ADMIN_ACTION', 'This administrator action is not supported.', 400);
+  if (action === 'retry' && !['failed', 'abandoned'].includes(audit.status)) throw new ApiError('AUDIT_NOT_RETRYABLE', 'Only failed or abandoned audits can be retried.', 409);
+  if (action === 'cancel' && !['queued', 'running'].includes(audit.status)) throw new ApiError('AUDIT_NOT_CANCELLABLE', 'Only queued or running audits can be cancelled.', 409);
+  if (action === 'abandon' && audit.status !== 'running') throw new ApiError('AUDIT_NOT_ABANDONABLE', 'Only a running audit can be marked abandoned.', 409);
+  if (action === 'requeue' && !(audit.status === 'running' && (!audit.leaseExpiresAt || new Date(audit.leaseExpiresAt).getTime() < Date.now()))) throw new ApiError('AUDIT_NOT_STALE', 'Only a running audit with an expired lease can be requeued.', 409);
+  if (action === 'priority' && (!Number.isFinite(Number(req.body?.queuePriority)) || !['queued', 'running'].includes(audit.status))) throw new ApiError('INVALID_QUEUE_PRIORITY', 'Queue priority can be changed only for an active audit.', 400);
+  await auditRepository.updateAudit(audit.id, patch);
+  const client = requireSupabaseAdminClient();
+  await client.from('admin_actions').insert({ admin_user_id: requester.userId, action: `audit_${action}`, target_type: 'audit', target_id: audit.id, metadata: { reason, before, after: patch } });
+  res.json({ success: true, data: { auditId: audit.id, action, before, after: patch } });
+}));
+
+apiRouter.post('/admin/users/:id/reset-quota', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 4 || reason.length > 500) throw new ApiError('ADMIN_REASON_REQUIRED', 'Provide a reason between 4 and 500 characters.', 400);
+  const client = requireSupabaseAdminClient();
+  const { data: before, error: readError } = await client.from('user_profiles').select('audit_quota_used_daily,audit_quota_used_monthly').eq('id', req.params.id).maybeSingle();
+  if (readError) throw readError;
+  if (!before) throw new ApiError('USER_NOT_FOUND', 'User not found.', 404);
+  const { error } = await client.from('user_profiles').update({ audit_quota_used_daily: 0, audit_quota_used_monthly: 0, updated_at: new Date().toISOString() }).eq('id', req.params.id);
+  if (error) throw error;
+  await client.from('admin_actions').insert({ admin_user_id: requester.userId, action: 'reset_user_quota', target_type: 'user', target_id: req.params.id, metadata: { reason, before, after: { daily: 0, monthly: 0 } } });
+  res.json({ success: true, data: { userId: req.params.id, daily: 0, monthly: 0 } });
+}));
+
+apiRouter.post('/admin/users/:id/update', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 4 || reason.length > 500) throw new ApiError('ADMIN_REASON_REQUIRED', 'Provide a reason between 4 and 500 characters.', 400);
+  const allowed: Record<string, Set<string>> = {
+    role: new Set(['user', 'support', 'admin']),
+    plan: new Set(['free', 'paid', 'agency', 'admin']),
+    subscription_status: new Set(['inactive', 'trialing', 'active', 'past_due', 'cancelled']),
+  };
+  const patch: Record<string, unknown> = {};
+  for (const [key, values] of Object.entries(allowed)) {
+    if (key in (req.body?.patch || {})) {
+      const value = String(req.body.patch[key]);
+      if (!values.has(value)) throw new ApiError('INVALID_ADMIN_UPDATE', `Invalid ${key.replace(/_/g, ' ')} value.`, 400);
+      patch[key] = value;
+    }
+  }
+  if (!Object.keys(patch).length) throw new ApiError('EMPTY_ADMIN_UPDATE', 'No supported user fields were provided.', 400);
+  const client = requireSupabaseAdminClient();
+  const { data: before, error: readError } = await client.from('user_profiles').select('role,plan,subscription_status').eq('id', req.params.id).maybeSingle();
+  if (readError) throw readError;
+  if (!before) throw new ApiError('USER_NOT_FOUND', 'User not found.', 404);
+  const { error } = await client.from('user_profiles').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', req.params.id);
+  if (error) throw error;
+  await client.from('admin_actions').insert({ admin_user_id: requester.userId, action: 'update_user_access', target_type: 'user', target_id: req.params.id, metadata: { reason, before, after: patch } });
+  res.json({ success: true, data: { userId: req.params.id, before, after: patch } });
+}));
+
+apiRouter.post('/admin/plans/:plan', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 4 || reason.length > 500) throw new ApiError('ADMIN_REASON_REQUIRED', 'Provide a reason between 4 and 500 characters.', 400);
+  const allowedKeys = new Set(['daily_audits', 'monthly_audits', 'max_pages_quick', 'max_pages_standard', 'max_pages_deep', 'audit_timeout_seconds', 'concurrency', 'max_events_per_audit', 'max_issues_per_audit', 'priority']);
+  const patch = Object.fromEntries(Object.entries(req.body?.patch || {}).filter(([key, value]) => allowedKeys.has(key) && Number.isFinite(Number(value))).map(([key, value]) => [key, Number(value)]));
+  if (!Object.keys(patch).length) throw new ApiError('EMPTY_ADMIN_UPDATE', 'No supported plan fields were provided.', 400);
+  const client = requireSupabaseAdminClient();
+  const { data: before, error: readError } = await client.from('plan_limits').select('*').eq('plan', req.params.plan).maybeSingle();
+  if (readError) throw readError;
+  if (!before) throw new ApiError('PLAN_NOT_FOUND', 'Plan not found.', 404);
+  const { error } = await client.from('plan_limits').update({ ...patch, updated_at: new Date().toISOString() }).eq('plan', req.params.plan);
+  if (error) throw error;
+  await client.from('admin_actions').insert({ admin_user_id: requester.userId, action: 'update_plan_limits', target_type: 'plan', target_id: req.params.plan, metadata: { reason, before, after: patch } });
+  res.json({ success: true, data: { plan: req.params.plan, after: patch } });
+}));
+
+apiRouter.post('/admin/platform/settings', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 4 || reason.length > 500) throw new ApiError('ADMIN_REASON_REQUIRED', 'Provide a reason between 4 and 500 characters.', 400);
+  const client = requireSupabaseAdminClient();
+  const { data: before, error: readError } = await client.from('platform_settings').select('*').eq('id', 'settings').maybeSingle();
+  if (readError) throw readError;
+  const patch = req.body?.patch || {};
+  const row = {
+    id: 'settings',
+    key: 'settings',
+    platform_name: String(patch.platformName || before?.platform_name || 'SEOIntel').slice(0, 100),
+    support_email: String(patch.supportEmail || before?.support_email || '').slice(0, 254),
+    require_email_verification: Boolean(patch.requireEmailVerification ?? before?.require_email_verification),
+    public_registration: Boolean(patch.publicRegistration ?? before?.public_registration ?? true),
+    value: typeof patch.value === 'object' && patch.value ? patch.value : before?.value || {},
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await client.from('platform_settings').upsert(row, { onConflict: 'id' });
+  if (error) throw error;
+  await client.from('admin_actions').insert({ admin_user_id: requester.userId, action: 'update_platform_settings', target_type: 'platform_setting', target_id: 'settings', metadata: { reason, before: before || null, after: row } });
+  res.json({ success: true, data: row });
+}));
+
+apiRouter.post('/admin/platform/control', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 4 || reason.length > 500) throw new ApiError('ADMIN_REASON_REQUIRED', 'Provide a reason between 4 and 500 characters.', 400);
+  const allowedKeys = new Set(['maintenanceMode', 'pauseFreeSubmissions', 'captchaRequired', 'hardQueueLimit', 'softQueueWarning', 'disabledAuditModes']);
+  const key = String(req.body?.key || '');
+  if (!allowedKeys.has(key)) throw new ApiError('UNSUPPORTED_PLATFORM_CONTROL', 'This platform control is not supported.', 400);
+  const client = requireSupabaseAdminClient();
+  const { data: row, error: readError } = await client.from('platform_settings').select('value').eq('id', 'settings').maybeSingle();
+  if (readError) throw readError;
+  const before = row?.value?.[key] ?? null;
+  const value = req.body?.value;
+  const nextValue = { ...(row?.value || {}), [key]: value };
+  const { error } = await client.from('platform_settings').upsert({ id: 'settings', key: 'settings', value: nextValue, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+  if (error) throw error;
+  await client.from('admin_actions').insert({ admin_user_id: requester.userId, action: 'update_platform_control', target_type: 'platform_setting', target_id: key, metadata: { reason, before, after: value } });
+  res.json({ success: true, data: { key, value } });
 }));
 
 apiRouter.get('/blog/posts', asyncJsonRoute(async (req, res) => {
@@ -243,8 +498,8 @@ apiRouter.post('/admin/blog/generate', asyncJsonRoute(async (req, res) => {
     res.json({ success: true, data: result });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Gemini draft generation failed.';
-    const status = /not configured/i.test(message) ? 503 : 502;
-    res.status(status).json({ success: false, error: message });
+    if (/not configured/i.test(message)) throw new ApiError('BLOG_GENERATION_NOT_CONFIGURED', 'Automated draft generation is not configured.', 503);
+    throw error;
   }
 }));
 
@@ -254,7 +509,7 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
     allowPrivateForTesting: process.env.SEOINTEL_ALLOW_PRIVATE_TEST_TARGETS === 'true',
   });
   if (!normalized.isValid) {
-    return res.status(400).json({ success: false, error: normalized.error || 'Invalid URL' });
+    throw new ApiError('INVALID_AUDIT_TARGET', normalized.error || 'Enter a valid public website or domain.', 400);
   }
 
   const requestedMode = getAuditModeConfig(mode).mode as AuditMode;
@@ -264,29 +519,6 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
     ? { userId, guestKeyHash: null }
     : { userId: null, guestKeyHash: guestIdentity.guestKeyHash };
   const createdAfterIso = new Date(Date.now() - DUPLICATE_AUDIT_WINDOW_MS).toISOString();
-
-  const duplicateAudit = await auditRepository.findActiveDuplicateAudit({
-    ...ownerLookup,
-    normalizedUrl: normalized.normalizedUrl,
-    createdAfterIso,
-  });
-  if (duplicateAudit) {
-    return res.json({
-      success: true,
-      data: auditStartResponseData(duplicateAudit, { reusedExistingAudit: true }),
-    });
-  }
-
-  if (!userId) {
-    const activeGuestAudit = await auditRepository.findActiveAuditForOwner(ownerLookup);
-    if (activeGuestAudit) {
-      return res.json({
-        success: true,
-        message: 'You already have an audit in progress.',
-        data: auditStartResponseData(activeGuestAudit, { reusedExistingAudit: true }),
-      });
-    }
-  }
 
   let decision;
   try {
@@ -308,52 +540,124 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
     return sendEntitlementError(res, error);
   }
 
-  const audit = await auditRepository.createAuditJob({
-    submittedInput: String(url || '').trim(),
-    normalizedUrl: normalized.normalizedUrl,
-    hostname: normalized.hostname,
-    mode: decision.effectiveMode,
-    requestedMode: decision.requestedMode,
-    effectiveMode: decision.effectiveMode,
-    plan: decision.plan,
-    processingTier: decision.processingTier,
-    pageLimit: decision.pageLimit,
-    queuePriority: decision.queuePriority,
-    userId: decision.userId,
-    guestKeyHash: decision.userId ? null : guestIdentity.guestKeyHash,
-    projectId,
-  });
+  let admission: Awaited<ReturnType<typeof admitAuditSubmission>> | null = null;
+  if (isSupabaseAdminEnabled()) {
+    await assertAuditDeploymentCompatible();
+    admission = await admitAuditSubmission({
+      userId,
+      guestKeyHash: userId ? null : guestIdentity.guestKeyHash,
+      ipHash: requestNetworkHash(req),
+      normalizedDomain: normalized.hostname,
+      normalizedUrl: normalized.normalizedUrl,
+      auditMode: decision.effectiveMode,
+      plan: decision.plan,
+      dailyLimit: userId ? decision.limits.dailyAudits : Number(process.env.GUEST_DAILY_AUDIT_LIMIT || 2),
+      domainDailyLimit: Number(process.env.DOMAIN_DAILY_AUDIT_LIMIT || 2),
+      activeLimit: decision.plan === 'free' ? 1 : Math.max(1, decision.limits.concurrency),
+      globalActiveLimit: Number(process.env.GLOBAL_ACTIVE_AUDIT_LIMIT || 50),
+      botVerified: await verifyBotToken(String(req.body?.botToken || '')),
+    });
 
-  await consumeAuditQuota(decision.userId, audit.id, decision.effectiveMode, {
-    plan: decision.plan,
-    pagesLimit: decision.pageLimit,
-    guestKey: guestIdentity.guestKey,
-  });
-  await auditRepository.updateAudit(audit.id, { quotaCounted: true });
+    if (admission.reusedExistingAudit) {
+      let existing: ResourceAuditDocument | null = null;
+      for (let attempt = 0; attempt < 20 && !existing; attempt += 1) {
+        existing = await auditRepository.getAudit(admission.auditId);
+        if (!existing) await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      if (existing) return res.json({ success: true, data: auditStartResponseData(existing, { reusedExistingAudit: true }) });
+      return res.status(202).json({ success: true, data: {
+        auditId: admission.auditId,
+        status: 'queued',
+        submittedInput: String(url || '').trim(),
+        normalizedUrl: normalized.normalizedUrl,
+        hostname: normalized.hostname,
+        requestedMode: decision.requestedMode,
+        effectiveMode: decision.effectiveMode,
+        plan: decision.plan,
+        pageLimit: decision.pageLimit,
+        queuePriority: decision.queuePriority,
+        reusedExistingAudit: true,
+      }});
+    }
+    if (!admission.allowed) {
+      if (admission.code === 'ACTIVE_AUDIT_EXISTS' && admission.auditId) {
+        const existing = await auditRepository.getAudit(admission.auditId);
+        if (existing) {
+          return res.json({ success: true, message: 'You already have an audit in progress.', data: auditStartResponseData(existing, { reusedExistingAudit: true }) });
+        }
+      }
+      throw admissionError(admission);
+    }
+  } else if (process.env.NODE_ENV === 'production') {
+    throw new ApiError('AUDIT_ADMISSION_UNAVAILABLE', 'The audit service is being updated. Please try again shortly.', 503, { retryAfterSeconds: 120 });
+  } else {
+    const duplicateAudit = await auditRepository.findActiveDuplicateAudit({ ...ownerLookup, normalizedUrl: normalized.normalizedUrl, createdAfterIso });
+    if (duplicateAudit) return res.json({ success: true, data: auditStartResponseData(duplicateAudit, { reusedExistingAudit: true }) });
+    const activeAudit = await auditRepository.findActiveAuditForOwner(ownerLookup);
+    if (activeAudit) return res.json({ success: true, message: 'You already have an audit in progress.', data: auditStartResponseData(activeAudit, { reusedExistingAudit: true }) });
+  }
 
-  console.info(`Audit start using Supabase project: ${getSupabaseProjectHostname() || 'not configured'}`);
+  let audit: ResourceAuditDocument;
+  try {
+    audit = await auditRepository.createAuditJob({
+      id: admission?.auditId,
+      submittedInput: String(url || '').trim(),
+      normalizedUrl: normalized.normalizedUrl,
+      hostname: normalized.hostname,
+      mode: decision.effectiveMode,
+      requestedMode: decision.requestedMode,
+      effectiveMode: decision.effectiveMode,
+      plan: decision.plan,
+      processingTier: decision.processingTier,
+      pageLimit: decision.pageLimit,
+      queuePriority: decision.queuePriority,
+      estimatedWaitSeconds: admission?.queueDepth ? Math.max(0, admission.queueDepth - 1) * 45 : null,
+      userId: decision.userId,
+      guestKeyHash: decision.userId ? null : guestIdentity.guestKeyHash,
+      projectId,
+    });
+  } catch (error) {
+    if (admission?.auditId) await releaseAuditAdmission(admission.auditId, 'AUDIT_CREATE_FAILED');
+    throw error;
+  }
+
+  try {
+    await consumeAuditQuota(decision.userId, audit.id, decision.effectiveMode, {
+      plan: decision.plan,
+      pagesLimit: decision.pageLimit,
+      guestKey: guestIdentity.guestKey,
+    });
+    await auditRepository.updateAudit(audit.id, { quotaCounted: true });
+  } catch (error) {
+    await auditRepository.addInternalDiagnostic({
+      auditId: audit.id,
+      affectedUrl: audit.normalizedUrl,
+      failureCode: 'QUOTA_COUNTER_SYNC_FAILED',
+      phase: 'admission',
+      attemptCount: 1,
+      internalDetails: error instanceof Error ? error.message : String(error),
+    }).catch(() => undefined);
+  }
+
   res.json({
     success: true,
     data: {
       ...auditStartResponseData(audit),
       quotaRemaining: decision.quotaRemaining,
       reusedExistingAudit: false,
+      queueDepth: admission?.queueDepth ?? null,
+      softQueueWarning: admission?.softQueueWarning ?? false,
     },
   });
 }
 
 
-apiRouter.post('/audit/start', asyncJsonRoute(async (req, res) => {
-  try {
-    return startQueuedAudit(req, res, 'quick');
-  } catch (error: any) {
-    console.error('Audit status lookup failed', error);
-    res.status(500).json({ success: false, error: 'The audit status is temporarily unavailable. Please try again.' });
-  }
-}));
+apiRouter.post('/audit/start', asyncJsonRoute((req, res) => startQueuedAudit(req, res, 'quick')));
 
-apiRouter.get('/audit/events/:id', asyncJsonRoute((req, res) => {
+apiRouter.get('/audit/events/:id', asyncJsonRoute(async (req, res) => {
   const auditId = req.params.id;
+  const resourceAudit = await auditRepository.getAudit(auditId);
+  if (!resourceAudit || !(await canAccessAudit(req, resourceAudit))) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
   const audit = typeof auditStore.getAudit === 'function' ? auditStore.getAudit(auditId) : auditStore.getJob(auditId);
   
   if (!audit) {
@@ -404,40 +708,51 @@ apiRouter.get('/audit/events/:id', asyncJsonRoute((req, res) => {
 
 
 apiRouter.get('/audit/status/:id', asyncJsonRoute(async (req, res) => {
-  try {
-    const liveData = await auditRepository.getLiveData(req.params.id);
-    if (!liveData.audit) return res.status(404).json({ success: false, error: 'Audit not found' });
-    if (!(await canAccessAudit(req, liveData.audit))) return res.status(404).json({ success: false, error: 'Audit not found' });
-    res.json({ success: true, data: liveData });
-  } catch (error: any) {
-    console.error('Audit result lookup failed', error);
-    res.status(500).json({ success: false, error: 'The audit result is temporarily unavailable. Please try again.' });
-  }
+  const liveData = await auditRepository.getLiveData(req.params.id);
+  if (!liveData.audit || !(await canAccessAudit(req, liveData.audit))) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: liveData });
 }));
 
 apiRouter.post('/audit/cancel/:id', asyncJsonRoute(async (req, res) => {
   const audit = await auditRepository.getAudit(req.params.id);
-  if (!audit) return res.status(404).json({ success: false, error: 'Audit not found' });
-  if (!(await canAccessAudit(req, audit))) return res.status(404).json({ success: false, error: 'Audit not found' });
+  if (!audit || !(await canAccessAudit(req, audit))) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
   await auditRepository.cancelAudit(req.params.id);
   res.json({ success: true, data: { auditId: req.params.id, status: 'cancelled' } });
 }));
 
 apiRouter.get('/audit/result/:id', asyncJsonRoute(async (req, res) => {
-  try {
-    const liveData = await auditRepository.getLiveData(req.params.id);
-    if (!liveData.audit) return res.status(404).json({ success: false, error: 'Audit not found' });
-    if (!(await canAccessAudit(req, liveData.audit))) return res.status(404).json({ success: false, error: 'Audit not found' });
-    res.json({ success: true, data: liveData });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message || 'Internal Server Error' });
+  const liveData = await auditRepository.getLiveData(req.params.id);
+  if (!liveData.audit || !(await canAccessAudit(req, liveData.audit))) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: liveData });
+}));
+
+apiRouter.post('/audit/archive/:id', asyncJsonRoute(async (req, res) => {
+  const audit = await auditRepository.getAudit(req.params.id);
+  if (!audit || !(await canAccessAudit(req, audit))) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
+  if (!isCompletedAuditStatus(audit.status) && !['failed', 'cancelled', 'abandoned'].includes(audit.status)) {
+    throw new ApiError('AUDIT_NOT_ARCHIVABLE', 'Finish or cancel the audit before archiving it.', 409);
   }
+  const archivedAt = req.body?.archived === false ? null : new Date().toISOString();
+  await auditRepository.updateAudit(audit.id, { archivedAt });
+  res.json({ success: true, data: { auditId: audit.id, archivedAt } });
+}));
+
+apiRouter.delete('/audit/:id', durableRateLimit({ namespace: 'audit-delete', limit: 20, windowSeconds: 3600 }), asyncJsonRoute(async (req, res) => {
+  const audit = await auditRepository.getAudit(req.params.id);
+  if (!audit || !(await canAccessAudit(req, audit))) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
+  if (['queued', 'running'].includes(audit.status)) throw new ApiError('ACTIVE_AUDIT_DELETE_BLOCKED', 'Cancel the active audit before deleting it.', 409);
+  const client = requireSupabaseAdminClient();
+  const { error } = await client.from('audits').delete().eq('id', audit.id);
+  if (error) throw error;
+  res.json({ success: true, data: { auditId: audit.id, deleted: true } });
 }));
 
 apiRouter.get('/audits/history', asyncJsonRoute(async (req, res) => {
   const requester = await getRequester(req);
   if (!requester.userId) return res.status(401).json({ success: false, error: 'Authentication required.' });
-  const allowedStatuses = new Set(['queued', 'running', 'completed', 'completed_with_warnings', 'failed', 'cancelled']);
+  const allowedStatuses = new Set(['queued', 'running', 'completed', 'completed_with_warnings', 'failed', 'cancelled', 'abandoned']);
   const requestedStatus = String(req.query.status || '');
   const status = allowedStatuses.has(requestedStatus) ? requestedStatus : undefined;
   const hostname = String(req.query.hostname || '').trim().toLowerCase().slice(0, 253) || undefined;
@@ -445,6 +760,7 @@ apiRouter.get('/audits/history', asyncJsonRoute(async (req, res) => {
     userId: requester.userId,
     status,
     hostname,
+    includeArchived: req.query.archived === 'true',
     limit: Number(req.query.limit || 25),
     offset: Number(req.query.offset || 0),
   });
@@ -515,56 +831,29 @@ apiRouter.get('/audit/export/:id/:format', asyncJsonRoute(async (req, res) => {
   return res.status(400).json({ success: false, error: 'Unsupported export format' });
 }));
 
-apiRouter.post('/audit/rerun/:id', asyncJsonRoute((req, res) => {
-  try {
-    return res.status(409).json({ success: false, error: 'Rerun is disabled for worker-backed audits. Start a new audit instead.' });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message || 'Internal Server Error' });
-  }
-}));
+apiRouter.post('/audit/rerun/:id', asyncJsonRoute((_req, res) => res.status(409).json({ success: false, error: 'Rerun is disabled for worker-backed audits. Start a new audit instead.' })));
 
 apiRouter.post('/keyword/research', asyncJsonRoute((req, res) => {
-  try {
-    const { seed } = req.body;
-    if (!seed) return res.status(400).json({ success: false, error: 'Seed keyword is required' });
-    
-    const keywords = generateKeywords(seed);
-    res.json({ success: true, data: { keywords } });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message || 'Internal Server Error' });
-  }
+  const seed = String(req.body?.seed || '').trim();
+  if (!seed || seed.length > 200) throw new ApiError('INVALID_KEYWORD_SEED', 'Enter a keyword between 1 and 200 characters.', 400);
+  const keywords = generateKeywords(seed);
+  res.json({ success: true, data: { keywords } });
 }));
 
-apiRouter.post('/website/analyze', asyncJsonRoute(async (req, res) => {
-  try {
-    return startQueuedAudit(req, res, 'standard');
-  } catch(e: any) {
-    res.status(500).json({ success: false, error: e.message || 'Internal Server Error' });
-  }
-}));
+apiRouter.post('/website/analyze', asyncJsonRoute((req, res) => startQueuedAudit(req, res, 'standard')));
 
 apiRouter.post('/clusters', asyncJsonRoute((req, res) => {
-  try {
-    const { keywords } = req.body;
-    if (!keywords || !Array.isArray(keywords)) return res.status(400).json({ success: false, error: 'Keywords array is required' });
-    
-    const clusters = clusterKeywords(keywords);
-    res.json({ success: true, data: { clusters } });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message || 'Internal Server Error' });
-  }
+  const { keywords } = req.body || {};
+  if (!Array.isArray(keywords) || !keywords.length || keywords.length > 500) throw new ApiError('INVALID_KEYWORD_LIST', 'Provide between 1 and 500 keywords.', 400);
+  const clusters = clusterKeywords(keywords.slice(0, 500));
+  res.json({ success: true, data: { clusters } });
 }));
 
 apiRouter.post('/content-brief', asyncJsonRoute((req, res) => {
-  try {
-    const { cluster } = req.body;
-    if (!cluster) return res.status(400).json({ success: false, error: 'Cluster object is required' });
-    
-    const brief = buildContentBrief(cluster);
-    res.json({ success: true, data: { brief } });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message || 'Internal Server Error' });
-  }
+  const { cluster } = req.body || {};
+  if (!cluster || typeof cluster !== 'object') throw new ApiError('INVALID_CONTENT_CLUSTER', 'A valid keyword cluster is required.', 400);
+  const brief = buildContentBrief(cluster);
+  res.json({ success: true, data: { brief } });
 }));
 
 apiRouter.post('/competitor-gap', asyncJsonRoute(async (req, res) => {

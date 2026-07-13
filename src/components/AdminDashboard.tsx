@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { isCompletedAuditStatus } from '../lib/audit/audit-time';
 import {
   getAdminActions,
+  getAdminDiagnostics,
   getAdminAudits,
   getAdminWorkers,
   getAllUsers,
@@ -18,7 +19,7 @@ import { Notice, PageHeader, Panel as UiPanel } from './ui/page-system';
 
 const BlogAdmin = React.lazy(() => import('./blog/BlogAdmin'));
 
-type AdminTab = 'overview' | 'users' | 'audits' | 'queue' | 'workers' | 'settings' | 'plans' | 'blog';
+type AdminTab = 'overview' | 'users' | 'audits' | 'queue' | 'workers' | 'diagnostics' | 'settings' | 'plans' | 'blog';
 
 const tabs: Array<{ id: AdminTab; label: string; icon: any; path: string }> = [
   { id: 'overview', label: 'Overview', icon: Activity, path: '/admin' },
@@ -26,6 +27,7 @@ const tabs: Array<{ id: AdminTab; label: string; icon: any; path: string }> = [
   { id: 'audits', label: 'Audits', icon: Database, path: '/admin/audits' },
   { id: 'queue', label: 'Queue', icon: SlidersHorizontal, path: '/admin/queue' },
   { id: 'workers', label: 'Audit Engine', icon: Wifi, path: '/admin/workers' },
+  { id: 'diagnostics', label: 'Diagnostics', icon: Gauge, path: '/admin/diagnostics' },
   { id: 'settings', label: 'Settings', icon: Settings, path: '/admin/settings' },
   { id: 'plans', label: 'Plans', icon: ShieldAlert, path: '/admin/plans' },
   { id: 'blog', label: 'Blog', icon: BookOpen, path: '/admin/blog' },
@@ -41,6 +43,11 @@ function tabFromPath() {
 
 function auditOwnerKey(row: any) {
   return row.userId ? `user:${row.userId}` : `guest:${row.guestKeyHash || 'unknown'}`;
+}
+
+function requestAdminReason(action: string) {
+  const reason = window.prompt(`Reason for ${action}:`)?.trim() || '';
+  return reason.length >= 4 ? reason : null;
 }
 
 function duplicateAuditWarning(row: any, rows: any[]) {
@@ -112,6 +119,7 @@ export default function AdminDashboard() {
       {activeTab === 'audits' && <AdminAudits adminUserId={user.id} />}
       {activeTab === 'queue' && <AdminQueue adminUserId={user.id} />}
       {activeTab === 'workers' && <AdminWorkers />}
+      {activeTab === 'diagnostics' && <AdminDiagnostics />}
       {activeTab === 'settings' && <AdminSettings />}
       {activeTab === 'plans' && <AdminPlans adminUserId={user.id} />}
       {activeTab === 'blog' && (
@@ -219,11 +227,13 @@ function AdminUsers({ adminUserId }: { adminUserId: string }) {
   });
 
   const updateUser = async (id: string, patch: any) => {
+    const reason = requestAdminReason(patch.resetQuotas ? 'resetting this user quota' : 'changing this user access');
+    if (!reason) return;
     setUpdatingId(id);
     setMutationError(null);
     setMessage('');
     try {
-      await updateUserAdminFields(id, patch, adminUserId);
+      await updateUserAdminFields(id, patch, adminUserId, reason);
       setMessage('User access updated.');
       users.refresh();
     } catch (error) {
@@ -239,7 +249,7 @@ function AdminUsers({ adminUserId }: { adminUserId: string }) {
       {message && <Notice tone="success" className="mb-4">{message}</Notice>}
       <div className="mb-4 grid gap-3 md:grid-cols-[minmax(240px,1fr)_180px_180px]">
         <label className="relative block"><span className="sr-only">Search users</span><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search email, username, or name" className="suite-input pl-9" /></label>
-        <label><span className="sr-only">Filter by role</span><select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="suite-input"><option value="all">All roles</option><option value="member">Member</option><option value="staff">Staff</option><option value="admin">Admin</option></select></label>
+        <label><span className="sr-only">Filter by role</span><select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="suite-input"><option value="all">All roles</option><option value="user">User</option><option value="support">Support</option><option value="admin">Admin</option></select></label>
         <label><span className="sr-only">Filter by plan</span><select value={planFilter} onChange={(event) => setPlanFilter(event.target.value)} className="suite-input"><option value="all">All plans</option>{['free', 'paid', 'agency', 'admin'].map((plan) => <option key={plan} value={plan}>{plan}</option>)}</select></label>
       </div>
       {users.loading ? <Loading /> : (
@@ -252,7 +262,7 @@ function AdminUsers({ adminUserId }: { adminUserId: string }) {
               {rows.map((item: any) => (
                 <tr key={item.id}>
                   <td><div className="font-semibold">{item.displayName || item.username || item.email || 'Unnamed user'}{item.id === adminUserId && <span className="ml-2 text-xs font-medium text-accent">You</span>}</div><div className="mt-1 max-w-[260px] truncate text-xs text-muted-foreground">{item.email || item.id}</div></td>
-                  <td><Select value={item.role || 'member'} options={['member', 'staff', 'admin']} disabled={updatingId === item.id || item.id === adminUserId} onChange={(role) => updateUser(item.id, { role })} /></td>
+                  <td><Select value={item.role || 'user'} options={['user', 'support', 'admin']} disabled={updatingId === item.id || item.id === adminUserId} onChange={(role) => updateUser(item.id, { role })} /></td>
                   <td><Select value={item.plan || 'free'} options={['free', 'paid', 'agency', 'admin']} disabled={updatingId === item.id} onChange={(plan) => updateUser(item.id, { plan, subscription_status: plan === 'free' ? 'inactive' : 'active' })} /></td>
                   <td><Select value={item.subscriptionStatus || 'inactive'} options={['inactive', 'trialing', 'active', 'past_due', 'cancelled']} disabled={updatingId === item.id} onChange={(subscription_status) => updateUser(item.id, { subscription_status })} /></td>
                   <td><div className="font-medium">{item.auditQuotaUsedDaily || 0} daily</div><div className="text-xs text-muted-foreground">{item.auditQuotaUsedMonthly || 0} monthly</div></td>
@@ -302,10 +312,12 @@ function AuditTable({ rows, adminUserId, refresh }: { rows: any[]; adminUserId: 
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const updateAudit = async (id: string, patch: any) => {
+    const reason = requestAdminReason('changing this audit job');
+    if (!reason) return;
     setUpdatingId(id);
     setError(null);
     try {
-      await updateAuditAdminAction(id, patch, adminUserId);
+      await updateAuditAdminAction(id, patch, adminUserId, reason);
       refresh();
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : 'Audit update failed.');
@@ -368,6 +380,28 @@ function AdminWorkers() {
   );
 }
 
+function AdminDiagnostics() {
+  const diagnostics = useAdminData(() => getAdminDiagnostics(), []);
+  if (diagnostics.loading) return <Loading />;
+  if (diagnostics.error || !diagnostics.data) return <Notice tone="danger" title="Diagnostics could not load">{diagnostics.error || 'No diagnostics data was returned.'}</Notice>;
+  const data: any = diagnostics.data;
+  const compatibility = data.compatibility || {};
+  const metrics = data.metrics || {};
+  return (
+    <div className="space-y-5">
+      <Panel title="Deployment compatibility" description="Frontend/API expectations compared with the database ledger and latest audit-engine heartbeat." icon={Gauge} action={<button type="button" onClick={diagnostics.refresh} className="quiet-button min-h-9 px-3 py-1.5 text-xs"><RefreshCw className="h-3.5 w-3.5" /> Refresh</button>}>
+        <Notice tone={compatibility.compatible ? 'success' : 'danger'} title={compatibility.compatible ? 'Versions are compatible' : 'Audit starts are protected'}>{compatibility.compatible ? 'Database and audit-engine contracts match the active API.' : `Compatibility status: ${compatibility.status || 'unknown'}. New audits are blocked when a known mismatch could corrupt data.`}</Notice>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Metric icon={Clock3} label="Waiting" value={metrics.queued || 0} detail={metrics.oldestQueuedAt ? `Oldest ${new Date(metrics.oldestQueuedAt).toLocaleString()}` : 'No queued audits'} /><Metric icon={Activity} label="Checking" value={metrics.running || 0} detail={`${metrics.staleLeases || 0} stale leases`} tone={metrics.staleLeases ? 'danger' : 'success'} /><Metric icon={CheckCircle2} label="Warnings today" value={metrics.completedWithWarnings || 0} detail={`${metrics.completed || 0} clean completions`} tone="warning" /><Metric icon={XCircle} label="Failed / abandoned" value={(metrics.failed || 0) + (metrics.abandoned || 0)} detail={`${metrics.abandoned || 0} abandoned`} tone={(metrics.failed || metrics.abandoned) ? 'danger' : 'success'} /></div>
+      </Panel>
+      <div className="grid gap-5 xl:grid-cols-2">
+        <Panel title="Recent API errors" description="Restricted request IDs and internal diagnostics. Never shown in customer responses." icon={ShieldAlert}>{(data.recentApiErrors || []).length ? <SimpleTable rows={data.recentApiErrors.slice(0, 20)} columns={['request_id', 'route', 'internal_code', 'created_at']} /> : <Empty text="No recent API errors." />}</Panel>
+        <Panel title="Failure categories" description="Target failures grouped by stable code from audits created in the last 24 hours." icon={AlertTriangle}>{Object.keys(metrics.failuresByCode || {}).length ? <div className="grid gap-2">{Object.entries(metrics.failuresByCode).sort(([, left]: any, [, right]: any) => Number(right) - Number(left)).map(([code, count]) => <div key={code} className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm"><code>{code}</code><span className="font-semibold">{String(count)}</span></div>)}</div> : <Empty text="No page failure categories recorded today." />}</Panel>
+      </div>
+      <Notice tone="info">Database storage and Realtime quota totals remain provider-dashboard metrics. SEOIntel labels them unavailable instead of estimating or inventing usage.</Notice>
+    </div>
+  );
+}
+
 function AdminSettings() {
   const settings = useAdminData(() => getPlatformSettings(), []);
   const [draft, setDraft] = useState<any>({});
@@ -380,11 +414,13 @@ function AdminSettings() {
   }, [settings.data]);
 
   const save = async () => {
+    const reason = requestAdminReason('updating platform settings');
+    if (!reason) return;
     setSaving(true);
     setError(null);
     setMessage('');
     try {
-      await updatePlatformSettings(draft);
+      await updatePlatformSettings(draft, reason);
       setMessage('Platform settings saved.');
       settings.refresh();
     } catch (saveError) {
@@ -404,6 +440,12 @@ function AdminSettings() {
         <Field label="Support email" value={draft.supportEmail || ''} onChange={(supportEmail) => setDraft({ ...draft, supportEmail })} />
         <Field label="Queue fairness paid burst" value={String(draft.value?.queueFairnessPaidBurst ?? 5)} onChange={(value) => setDraft({ ...draft, value: { ...(draft.value || {}), queueFairnessPaidBurst: Number(value) } })} />
         <label className="block text-sm"><span className="font-semibold">Guest audit access</span><select value={String(draft.value?.guestAuditEnabled ?? true)} onChange={(event) => setDraft({ ...draft, value: { ...(draft.value || {}), guestAuditEnabled: event.target.value === 'true' } })} className="suite-input mt-2"><option value="true">Enabled</option><option value="false">Disabled</option></select></label>
+        <label className="block text-sm"><span className="font-semibold">Maintenance mode</span><select value={String(draft.value?.maintenanceMode ?? false)} onChange={(event) => setDraft({ ...draft, value: { ...(draft.value || {}), maintenanceMode: event.target.value === 'true' } })} className="suite-input mt-2"><option value="false">Off</option><option value="true">Block new audits</option></select></label>
+        <label className="block text-sm"><span className="font-semibold">New Free audits</span><select value={String(draft.value?.pauseFreeSubmissions ?? false)} onChange={(event) => setDraft({ ...draft, value: { ...(draft.value || {}), pauseFreeSubmissions: event.target.value === 'true' } })} className="suite-input mt-2"><option value="false">Accepting</option><option value="true">Paused</option></select></label>
+        <label className="block text-sm"><span className="font-semibold">Guest verification</span><select value={String(draft.value?.captchaRequired ?? false)} onChange={(event) => setDraft({ ...draft, value: { ...(draft.value || {}), captchaRequired: event.target.value === 'true' } })} className="suite-input mt-2"><option value="false">Not required</option><option value="true">Require configured token</option></select></label>
+        <Field label="Soft queue warning" value={String(draft.value?.softQueueWarning ?? 40)} onChange={(value) => setDraft({ ...draft, value: { ...(draft.value || {}), softQueueWarning: Math.max(1, Number(value)) } })} />
+        <Field label="Hard global queue limit" value={String(draft.value?.hardQueueLimit ?? 50)} onChange={(value) => setDraft({ ...draft, value: { ...(draft.value || {}), hardQueueLimit: Math.max(1, Number(value)) } })} />
+        <fieldset className="rounded-lg border border-border p-3 md:col-span-2"><legend className="px-1 text-sm font-semibold">Temporarily disabled audit types</legend><div className="mt-2 flex flex-wrap gap-4">{['quick', 'standard', 'deep'].map((mode) => { const disabled = Array.isArray(draft.value?.disabledAuditModes) && draft.value.disabledAuditModes.includes(mode); return <label key={mode} className="flex items-center gap-2 text-sm capitalize"><input type="checkbox" checked={disabled} onChange={(event) => { const current = Array.isArray(draft.value?.disabledAuditModes) ? draft.value.disabledAuditModes : []; const disabledAuditModes = event.target.checked ? [...new Set([...current, mode])] : current.filter((item: string) => item !== mode); setDraft({ ...draft, value: { ...(draft.value || {}), disabledAuditModes } }); }} className="h-4 w-4 accent-[var(--accent)]" />{mode}</label>; })}</div></fieldset>
       </div>
       <button onClick={save} disabled={saving} className="trust-button mt-5">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Settings className="h-4 w-4" />} Save settings</button>
     </Panel>
@@ -415,10 +457,12 @@ function AdminPlans({ adminUserId }: { adminUserId: string }) {
   const [updatingPlan, setUpdatingPlan] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const update = async (plan: string, key: string, value: number) => {
+    const reason = requestAdminReason(`changing the ${plan} plan`);
+    if (!reason) return;
     setUpdatingPlan(plan);
     setError(null);
     try {
-      await updatePlanLimit(plan, { [key]: value }, adminUserId);
+      await updatePlanLimit(plan, { [key]: value }, adminUserId, reason);
       plans.refresh();
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : 'Plan limit update failed.');

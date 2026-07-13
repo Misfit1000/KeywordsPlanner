@@ -1,4 +1,6 @@
 import { getSupabaseBrowserClient } from '../lib/supabase/client';
+import { getAuthHeaders } from '../lib/api/auth-headers';
+import { safeJsonFetch } from '../lib/http/safe-json';
 
 export interface Project {
   id: string;
@@ -36,6 +38,17 @@ function assertClient() {
     throw new Error('Supabase browser configuration is missing.');
   }
   return client;
+}
+
+async function adminApi(path: string, body: Record<string, unknown>) {
+  const response = await safeJsonFetch<any>(path, {
+    method: 'POST',
+    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+    credentials: 'same-origin',
+    body: JSON.stringify(body),
+  });
+  if (response.success === false) throw new Error(response.error);
+  return response.data.data || response.data;
 }
 
 function toCamelRow(row: any) {
@@ -134,6 +147,9 @@ export const initUserProfile = async (uid: string, data: any) => {
       plan: 'free',
       role: 'user',
       subscription_status: 'inactive',
+      terms_accepted_at: data.termsAcceptedAt ?? null,
+      privacy_accepted_at: data.privacyAcceptedAt ?? null,
+      legal_version: data.legalVersion ?? null,
     });
     if (error) throw error;
   }
@@ -157,36 +173,26 @@ export const updateUserProfileData = async (uid: string, data: any) => {
 };
 
 export const makeUserAdmin = async (uid: string) => {
-  await updateUserRole(uid, 'admin');
+  throw new Error(`Protected administrator action required for ${uid}.`);
 };
 
-export const getAllUsers = async () => {
+export const getAllUsers = async (limit = 100) => {
   const client = clientOrNull();
   if (!client) return [];
-  const { data, error } = await client.from('user_profiles').select('*').order('created_at', { ascending: false });
+  const { data, error } = await client.from('user_profiles').select('*').order('created_at', { ascending: false }).limit(Math.max(1, Math.min(200, limit)));
   if (error) throw error;
   return (data ?? []).map(toCamelRow);
 };
 
 export const updateUserRole = async (uid: string, role: string) => {
-  const client = assertClient();
-  const { error } = await client.from('user_profiles').update({ role, updated_at: new Date().toISOString() }).eq('id', uid);
-  if (error) throw error;
+  throw new Error(`Protected administrator action required to assign ${role} to ${uid}.`);
 };
 
-export const updateUserAdminFields = async (uid: string, patch: any, adminUserId?: string) => {
-  const client = assertClient();
-  const update: any = { updated_at: new Date().toISOString() };
-  for (const key of ['role', 'plan', 'subscription_status', 'disabled']) {
-    if (key in patch) update[key] = patch[key];
-  }
+export const updateUserAdminFields = async (uid: string, patch: any, _adminUserId?: string, reason = '') => {
   if (patch.resetQuotas) {
-    update.audit_quota_used_daily = 0;
-    update.audit_quota_used_monthly = 0;
+    return adminApi(`/api/tools/admin/users/${encodeURIComponent(uid)}/reset-quota`, { reason });
   }
-  const { error } = await client.from('user_profiles').update(update).eq('id', uid);
-  if (error) throw error;
-  await logAdminAction(adminUserId, 'update_user', 'user', uid, update);
+  return adminApi(`/api/tools/admin/users/${encodeURIComponent(uid)}/update`, { reason, patch });
 };
 
 export const deleteUserDoc = async (uid: string) => {
@@ -198,7 +204,7 @@ export const deleteUserDoc = async (uid: string) => {
 export const getAllProjects = async () => {
   const client = clientOrNull();
   if (!client) return [];
-  const { data, error } = await client.from('projects').select('*').order('created_at', { ascending: false });
+  const { data, error } = await client.from('projects').select('*').order('created_at', { ascending: false }).limit(200);
   if (error) throw error;
   return (data ?? []).map(toCamelRow);
 };
@@ -235,31 +241,22 @@ export const getPlanLimits = async () => {
   return (data ?? []).map(toCamelRow);
 };
 
-export const updatePlanLimit = async (plan: string, patch: any, adminUserId?: string) => {
-  const client = assertClient();
-  const row: any = { updated_at: new Date().toISOString() };
+export const updatePlanLimit = async (plan: string, patch: any, _adminUserId?: string, reason = '') => {
+  const row: any = {};
   for (const [key, value] of Object.entries(patch)) {
     const snake = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
     row[snake] = value;
   }
-  const { error } = await client.from('plan_limits').update(row).eq('plan', plan);
-  if (error) throw error;
-  await logAdminAction(adminUserId, 'update_plan_limit', 'plan', plan, row);
+  return adminApi(`/api/tools/admin/plans/${encodeURIComponent(plan)}`, { reason, patch: row });
 };
 
-export const updateAuditAdminAction = async (auditId: string, patch: any, adminUserId?: string) => {
-  const client = assertClient();
-  const row: any = { updated_at: new Date().toISOString() };
-  if ('status' in patch) row.status = patch.status;
-  if ('queuePriority' in patch) row.queue_priority = patch.queuePriority;
-  if ('currentPhase' in patch) row.current_phase = patch.currentPhase;
-  if ('lockedBy' in patch) row.locked_by = patch.lockedBy;
-  if ('lockedAt' in patch) row.locked_at = patch.lockedAt;
-  if ('leaseExpiresAt' in patch) row.lease_expires_at = patch.leaseExpiresAt;
-  if ('error' in patch) row.error = patch.error;
-  const { error } = await client.from('audits').update(row).eq('id', auditId);
-  if (error) throw error;
-  await logAdminAction(adminUserId, 'update_audit', 'audit', auditId, row);
+export const updateAuditAdminAction = async (auditId: string, patch: any, _adminUserId?: string, reason = '') => {
+  const action = patch.status === 'cancelled' ? 'cancel'
+    : patch.status === 'abandoned' ? 'abandon'
+      : 'queuePriority' in patch ? 'priority'
+      : /recover/i.test(String(patch.currentPhase || '')) ? 'requeue'
+        : 'retry';
+  return adminApi(`/api/tools/admin/audits/${encodeURIComponent(auditId)}/action`, { reason, action, queuePriority: patch.queuePriority });
 };
 
 export const getAdminActions = async (limit = 50) => {
@@ -268,6 +265,15 @@ export const getAdminActions = async (limit = 50) => {
   const { data, error } = await client.from('admin_actions').select('*').order('created_at', { ascending: false }).limit(limit);
   if (error) throw error;
   return (data ?? []).map(toCamelRow);
+};
+
+export const getAdminDiagnostics = async () => {
+  const response = await safeJsonFetch<any>('/api/tools/admin/diagnostics', {
+    headers: await getAuthHeaders(),
+    credentials: 'same-origin',
+  });
+  if (response.success === false) throw new Error(response.error);
+  return response.data.data || response.data;
 };
 
 export const logAdminAction = async (adminUserId: string | undefined, action: string, targetType?: string, targetId?: string, metadata: any = {}) => {
@@ -286,7 +292,7 @@ export const logAdminAction = async (adminUserId: string | undefined, action: st
 export const getAllKeywords = async () => {
   const client = clientOrNull();
   if (!client) return [];
-  const { data, error } = await client.from('keywords').select('*').order('created_at', { ascending: false });
+  const { data, error } = await client.from('keywords').select('*').order('created_at', { ascending: false }).limit(1000);
   if (error) throw error;
   return (data ?? []).map(toCamelRow);
 };
@@ -294,7 +300,7 @@ export const getAllKeywords = async () => {
 export const getAllCompetitors = async () => {
   const client = clientOrNull();
   if (!client) return [];
-  const { data, error } = await client.from('competitors').select('*').order('created_at', { ascending: false });
+  const { data, error } = await client.from('competitors').select('*').order('created_at', { ascending: false }).limit(500);
   if (error) throw error;
   return (data ?? []).map(toCamelRow);
 };
@@ -333,24 +339,14 @@ export const getPlatformSettings = async () => {
   };
 };
 
-export const updatePlatformSettings = async (data: any) => {
-  const client = assertClient();
-  const { error } = await client.from('platform_settings').upsert({
-    id: 'settings',
-    platform_name: data.platformName,
-    support_email: data.supportEmail,
-    require_email_verification: data.requireEmailVerification,
-    public_registration: data.publicRegistration,
-    value: data.value ?? {},
-    updated_at: new Date().toISOString(),
-  }, { onConflict: 'id' });
-  if (error) throw error;
+export const updatePlatformSettings = async (data: any, reason = '') => {
+  return adminApi('/api/tools/admin/platform/settings', { reason, patch: data });
 };
 
 export const getProjects = async (uid: string): Promise<Project[]> => {
   const client = clientOrNull();
   if (!client) return [];
-  const { data, error } = await client.from('projects').select('*').eq('user_id', uid).order('created_at', { ascending: false });
+  const { data, error } = await client.from('projects').select('*').eq('user_id', uid).order('created_at', { ascending: false }).limit(100);
   if (error) throw error;
   return (data ?? []).map(toCamelRow) as Project[];
 };
@@ -375,7 +371,7 @@ export const deleteProject = async (uid: string, projectId: string) => {
 export const getSavedKeywords = async (uid: string): Promise<SavedKeyword[]> => {
   const client = clientOrNull();
   if (!client) return [];
-  const { data, error } = await client.from('keywords').select('*').eq('user_id', uid).order('created_at', { ascending: false });
+  const { data, error } = await client.from('keywords').select('*').eq('user_id', uid).order('created_at', { ascending: false }).limit(1000);
   if (error) throw error;
   return (data ?? []).map(toCamelRow) as SavedKeyword[];
 };
@@ -396,7 +392,7 @@ export const deleteSavedKeyword = async (uid: string, keywordId: string) => {
 export const getCompetitors = async (uid: string): Promise<Competitor[]> => {
   const client = clientOrNull();
   if (!client) return [];
-  const { data, error } = await client.from('competitors').select('*').eq('user_id', uid).order('created_at', { ascending: false });
+  const { data, error } = await client.from('competitors').select('*').eq('user_id', uid).order('created_at', { ascending: false }).limit(200);
   if (error) throw error;
   return (data ?? []).map(toCamelRow) as Competitor[];
 };

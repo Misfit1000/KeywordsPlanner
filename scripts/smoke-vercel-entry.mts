@@ -29,7 +29,9 @@ try {
   assert.equal(response.status, 400);
   assert.match(contentType, /application\/json/i);
   assert.equal(body.success, false);
-  assert.match(body.error, /valid (url|public domain)/i);
+  assert.equal(body.error.code, 'INVALID_AUDIT_TARGET');
+  assert.match(body.error.message, /could not be understood/i);
+  assert.match(body.error.requestId, /^[a-zA-Z0-9-]{8,}$/);
 
   const preParsedResponse = await fetch(`http://127.0.0.1:${address.port}/api/index?path=tools/audit/start`, {
     method: 'POST',
@@ -39,7 +41,9 @@ try {
   assert.equal(preParsedResponse.status, 400);
   assert.match(preParsedResponse.headers.get('content-type') || '', /application\/json/i);
   assert.equal(preParsedBody.success, false);
-  assert.match(preParsedBody.error, /valid (url|public domain)/i);
+  assert.equal(preParsedBody.error.code, 'INVALID_AUDIT_TARGET');
+  assert.match(preParsedBody.error.message, /could not be understood/i);
+  assert.match(preParsedBody.error.requestId, /^[a-zA-Z0-9-]{8,}$/);
   console.log('Vercel function entry smoke test passed.');
 } finally {
   await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

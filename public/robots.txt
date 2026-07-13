@@ -1,6 +1,9 @@
 User-agent: *
 Allow: /
 Disallow: /admin
+Disallow: /app/
 Disallow: /audit/live/
+Disallow: /login
+Disallow: /register
 
 Sitemap: https://keywordsintel.vercel.app/sitemap.xml

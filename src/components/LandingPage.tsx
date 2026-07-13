@@ -515,7 +515,7 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
   };
 
   return (
-    <main className="w-full bg-background text-foreground">
+    <main id="main-content" className="w-full bg-background text-foreground">
       <section id="product" className="relative overflow-hidden border-b border-border bg-card">
         <div className="hero-grid pointer-events-none absolute inset-0" />
         <div className="pointer-events-none absolute -right-24 top-10 h-[34rem] w-[44rem] rounded-full bg-blue-500/10 blur-3xl dark:bg-blue-500/5" />
@@ -753,22 +753,6 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
         </div>
       </section>
 
-      <footer className="border-t border-border bg-card/70">
-        <div className="section-shell grid gap-8 py-10 md:grid-cols-[1.2fr_1fr_1fr_1fr]">
-          <div>
-            <div className="text-xl font-bold">SEO<span className="text-accent">Intel</span></div>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Visual SEO, website health, and Passive Security Review reports with a resource-light architecture.
-            </p>
-            <p className="mt-3 text-xs leading-5 text-muted-foreground">
-              Safety note: passive checks only. SEOIntel does not run exploit tests, store raw HTML, or invent ranking/backlink data.
-            </p>
-          </div>
-          <FooterLinks title="Product" links={[['Features', '#features'], ['Reports', '#reports'], ['Pricing', '#pricing']]} />
-          <FooterLinks title="Free tools" links={[['Quick SEO Checker', '#start-audit'], ['Google Preview Tool', '#free-tools'], ['Passive Security Review', '#free-tools']]} />
-          <FooterLinks title="Resources" links={[['SEOIntel blog', '/blog'], ['Use cases', '#use-cases'], ['FAQ', '#faq'], ['Audit safety', '#audit-checks']]} />
-        </div>
-      </footer>
     </main>
   );
 }
@@ -1252,20 +1236,5 @@ function FaqItem({ question, answer }: { question: string; answer: string }) {
       </summary>
       <p className="mt-3 text-sm leading-6 text-muted-foreground">{answer}</p>
     </details>
-  );
-}
-
-function FooterLinks({ title, links }: { title: string; links: Array<[string, string]> }) {
-  return (
-    <div>
-      <h3 className="font-bold">{title}</h3>
-      <div className="mt-3 grid gap-2 text-sm text-muted-foreground">
-        {links.map(([label, href]) => (
-          <a key={`${label}-${href}`} href={href} className="hover:text-foreground">
-            {label}
-          </a>
-        ))}
-      </div>
-    </div>
   );
 }

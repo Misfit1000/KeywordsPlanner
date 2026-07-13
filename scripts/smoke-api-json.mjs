@@ -76,7 +76,9 @@ async function run() {
     assert.ok(notFoundRes.headers['content-type'].includes('application/json'), 'Should return JSON');
     const notFoundData = JSON.parse(notFoundRes.data);
     assert.strictEqual(notFoundData.success, false);
-    assert.ok(notFoundData.error.includes('API route not found'));
+    assert.strictEqual(notFoundData.error.code, 'API_ROUTE_NOT_FOUND');
+    assert.strictEqual(notFoundData.error.message, 'The requested API route was not found.');
+    assert.match(notFoundData.error.requestId, /^[a-zA-Z0-9-]{8,}$/);
     console.log("✓ Invalid route returned JSON 404");
 
     // 2. audit start handler returns valid JSON

@@ -1,5 +1,4 @@
 import type { User as SupabaseAuthUser } from '@supabase/supabase-js';
-import { randomUUID } from 'node:crypto';
 import type { AuditMode, UserPlan } from '../audit/resource-types';
 import { getSupabaseAdminClient, requireSupabaseAdminClient } from '../supabase/server';
 
@@ -155,8 +154,6 @@ export const DEFAULT_PLAN_LIMITS: Record<UserPlan, PlanLimits> = {
   },
 };
 
-const guestUsage = new Map<string, { daily: number; monthly: number; dailyResetAt: number; monthlyResetAt: number }>();
-
 function nextDailyResetMs() {
   const date = new Date();
   date.setUTCHours(24, 0, 0, 0);
@@ -277,6 +274,9 @@ export async function ensureUserProfileFromAuthUser(user: SupabaseAuthUser) {
         role: nextRole,
         plan: nextPlan,
         subscription_status: nextSubscriptionStatus,
+        terms_accepted_at: existing?.terms_accepted_at ?? metadata.terms_accepted_at ?? null,
+        privacy_accepted_at: existing?.privacy_accepted_at ?? metadata.privacy_accepted_at ?? null,
+        legal_version: existing?.legal_version ?? metadata.legal_consent_version ?? null,
         quota_reset_daily_at: existing?.quota_reset_daily_at ?? new Date(nextDailyResetMs()).toISOString(),
         quota_reset_monthly_at: existing?.quota_reset_monthly_at ?? new Date(nextMonthlyResetMs()).toISOString(),
         updated_at: timestamp,
@@ -346,26 +346,6 @@ async function getActiveAuditCount(userId: string) {
   return count ?? 0;
 }
 
-function getGuestUsage(guestKey: string) {
-  const now = Date.now();
-  const existing = guestUsage.get(guestKey) ?? {
-    daily: 0,
-    monthly: 0,
-    dailyResetAt: nextDailyResetMs(),
-    monthlyResetAt: nextMonthlyResetMs(),
-  };
-  if (existing.dailyResetAt <= now) {
-    existing.daily = 0;
-    existing.dailyResetAt = nextDailyResetMs();
-  }
-  if (existing.monthlyResetAt <= now) {
-    existing.monthly = 0;
-    existing.monthlyResetAt = nextMonthlyResetMs();
-  }
-  guestUsage.set(guestKey, existing);
-  return existing;
-}
-
 export async function canStartAudit(
   userId: string | null,
   requestedMode: AuditMode,
@@ -374,10 +354,6 @@ export async function canStartAudit(
   const effectiveMode = resolveEffectiveAuditMode(userId ? (await getUserEntitlements(userId)).profile.plan : 'free', requestedMode, options);
   if (!userId) {
     const limits = DEFAULT_PLAN_LIMITS.free;
-    const usage = getGuestUsage(options.guestKey || 'guest:unknown');
-    if (usage.daily >= limits.dailyAudits || usage.monthly >= limits.monthlyAudits) {
-      throw new EntitlementError('You have reached your free audit limit. Upgrade for more audits.', { status: 429, upgradeRequired: true });
-    }
     return {
       userId: null,
       plan: 'free',
@@ -389,8 +365,8 @@ export async function canStartAudit(
       pageLimit: limits.maxPagesQuick,
       queuePriority: limits.priority,
       quotaRemaining: {
-        daily: Math.max(0, limits.dailyAudits - usage.daily - 1),
-        monthly: Math.max(0, limits.monthlyAudits - usage.monthly - 1),
+        daily: limits.dailyAudits,
+        monthly: limits.monthlyAudits,
       },
       limits,
     };
@@ -438,39 +414,18 @@ export async function consumeAuditQuota(
   options: { plan?: UserPlan; pagesLimit?: number; guestKey?: string } = {},
 ) {
   if (!userId) {
-    const usage = getGuestUsage(options.guestKey || 'guest:unknown');
-    usage.daily += 1;
-    usage.monthly += 1;
     return;
   }
 
   const client = requireSupabaseAdminClient();
-  const { data: profile, error: readError } = await client
-    .from('user_profiles')
-    .select('audit_quota_used_daily,audit_quota_used_monthly,plan')
-    .eq('id', userId)
-    .maybeSingle();
-  if (readError) throw readError;
-  const plan = normalizePlan(options.plan || profile?.plan);
-  const { error: updateError } = await client
-    .from('user_profiles')
-    .update({
-      audit_quota_used_daily: Number(profile?.audit_quota_used_daily ?? 0) + 1,
-      audit_quota_used_monthly: Number(profile?.audit_quota_used_monthly ?? 0) + 1,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', userId);
-  if (updateError) throw updateError;
-
-  const { error: insertError } = await client.from('audit_usage_events').insert({
-    id: randomUUID(),
-    user_id: userId,
-    audit_id: auditId,
-    plan,
-    mode,
-    pages_limit: options.pagesLimit ?? null,
+  const { error } = await client.rpc('consume_user_audit_quota', {
+    p_user_id: userId,
+    p_audit_id: auditId,
+    p_plan: normalizePlan(options.plan),
+    p_mode: mode,
+    p_pages_limit: options.pagesLimit ?? null,
   });
-  if (insertError) throw insertError;
+  if (error) throw error;
 }
 
 export async function resetQuotaIfNeeded(userId: string) {
