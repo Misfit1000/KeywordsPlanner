@@ -33,8 +33,8 @@ export function startWorkerHealthServer(
       deepAuditEnabled: state.deepAuditEnabled,
       planLimitsSummary: {
         free: { modes: ['quick'], maxPages: 5, priority: 10 },
-        paid: { modes: ['quick', 'standard'], maxPages: 25, priority: 50 },
-        agency: { modes: state.deepAuditEnabled ? ['quick', 'standard', 'deep'] : ['quick', 'standard'], maxPages: state.deepAuditEnabled ? 75 : 25, priority: 100 },
+        paid: { modes: ['quick', 'standard'], maxPages: 50, priority: 50 },
+        agency: { modes: state.deepAuditEnabled ? ['quick', 'standard', 'deep'] : ['quick', 'standard'], maxPages: state.deepAuditEnabled ? 75 : 50, priority: 100 },
       },
     };
 

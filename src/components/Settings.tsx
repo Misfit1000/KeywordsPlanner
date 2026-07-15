@@ -10,9 +10,9 @@ const LEGACY_SETTINGS_KEY = 'seointel_preferences';
 
 function readPreferences() {
   try {
-    return { maxPages: 25, engineName: 'CrawlioBot/1.0', ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || localStorage.getItem(LEGACY_SETTINGS_KEY) || '{}') };
+    return { maxPages: 50, engineName: 'CrawlioBot/1.0', ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || localStorage.getItem(LEGACY_SETTINGS_KEY) || '{}') };
   } catch {
-    return { maxPages: 25, engineName: 'CrawlioBot/1.0' };
+    return { maxPages: 50, engineName: 'CrawlioBot/1.0' };
   }
 }
 

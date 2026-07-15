@@ -33,7 +33,7 @@ async function createCompletedAudit(plan: 'free' | 'paid') {
     effectiveMode: plan === 'paid' ? 'standard' : 'quick',
     plan,
     processingTier: plan,
-    pageLimit: plan === 'paid' ? 25 : 5,
+    pageLimit: plan === 'paid' ? 50 : 5,
     queuePriority: plan === 'paid' ? 50 : 10,
     guestKeyHash,
   });

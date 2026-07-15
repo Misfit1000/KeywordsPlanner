@@ -1,4 +1,4 @@
-import { hasUsableAuditReport } from './audit-time';
+import { hasUsableAuditReport, isTerminalAuditStatus } from './audit-time';
 import type { ResourceAuditLiveData } from './resource-types';
 
 export const FINAL_REPORT_RETRY_DELAYS_MS = [250, 500, 1_000, 2_000, 3_000] as const;
@@ -23,8 +23,26 @@ export function mergeAuditLiveData(
     return incoming;
   }
 
+  const currentAudit = current.audit;
+  const incomingAudit = incoming.audit;
+  const audit = (() => {
+    if (!currentAudit) return incomingAudit;
+    if (!incomingAudit) return currentAudit;
+    if (isTerminalAuditStatus(currentAudit.status) && !isTerminalAuditStatus(incomingAudit.status)) {
+      return currentAudit;
+    }
+    return {
+      ...incomingAudit,
+      progress: Math.max(currentAudit.progress || 0, incomingAudit.progress || 0),
+      pagesDiscovered: Math.max(currentAudit.pagesDiscovered || 0, incomingAudit.pagesDiscovered || 0),
+      pagesCrawled: Math.max(currentAudit.pagesCrawled || 0, incomingAudit.pagesCrawled || 0),
+      checksCompleted: Math.max(currentAudit.checksCompleted || 0, incomingAudit.checksCompleted || 0),
+      issuesFound: Math.max(currentAudit.issuesFound || 0, incomingAudit.issuesFound || 0),
+    };
+  })();
+
   return {
-    audit: incoming.audit ?? current.audit,
+    audit,
     latestEvents: incoming.latestEvents.length ? incoming.latestEvents : current.latestEvents,
     latestPages: incoming.latestPages.length ? incoming.latestPages : current.latestPages,
     latestIssues: incoming.latestIssues.length ? incoming.latestIssues : current.latestIssues,

@@ -11,7 +11,7 @@ Vercel creates queued audit rows and returns an audit ID immediately. The worker
 ## Free vs Paid Behavior
 
 - Free: Quick Audit only, 5 pages, low concurrency, lightweight SEO checks, passive security headers, JSON export.
-- Paid: Quick and Standard audits, up to 25 pages, higher queue priority, deeper SEO categories, PDF/report features.
+- Paid: Quick and Standard audits, up to 50 successfully analysed pages, higher queue priority, deeper SEO categories, PDF/report features.
 - Agency/Admin: Quick, Standard, and Deep when a dedicated worker enables `DEEP_AUDIT_ENABLED=true`.
 
 Deep Audit is disabled on the Render Free Web Service workaround by default because free web services can sleep and should run low resource workloads only.

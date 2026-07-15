@@ -3,6 +3,7 @@ import { getAuditAccessHeaders } from '../api/auth-headers';
 import { getSupabaseBrowserClient } from '../supabase/client';
 import { safeJsonFetch } from '../http/safe-json';
 import { AUDIT_LIMITS } from './audit-config';
+import { isTerminalAuditStatus } from './audit-time';
 import type {
   ResourceAuditDocument,
   ResourceAuditEvent,
@@ -177,17 +178,24 @@ function pollAuditLiveData(
     message: reason,
   });
 
+  let interval: number | undefined;
+  const stop = () => {
+    cancelled = true;
+    if (interval != null) window.clearInterval(interval);
+  };
   const poll = async () => {
     try {
       const response = await safeJsonFetch<any>(API_ROUTES.auditStatus(auditId), { headers: await getAuditAccessHeaders() });
       if (!cancelled && response.success) {
-        callback(response.data.data || response.data);
+        const nextData = response.data.data || response.data;
+        callback(nextData);
         onConnectionChange?.({
           transport: 'polling',
           status: 'polling',
           message: reason,
           lastUpdateAt: Date.now(),
         });
+        if (isTerminalAuditStatus(nextData.audit?.status)) stop();
       } else if (!cancelled && !response.success) {
         const message = (response as any).error || 'Audit status polling failed.';
         onConnectionChange?.({
@@ -209,12 +217,9 @@ function pollAuditLiveData(
       onError?.(nextError);
     }
   };
-  const interval = window.setInterval(poll, AUDIT_LIMITS.livePollIntervalMs);
+  interval = window.setInterval(poll, AUDIT_LIMITS.livePollIntervalMs);
   poll();
-  return () => {
-    cancelled = true;
-    window.clearInterval(interval);
-  };
+  return stop;
 }
 
 // Browser-only live subscription client. Server and worker writes use the Supabase audit repository.
@@ -257,6 +262,7 @@ export function subscribeToAuditLiveData(
 
   const emitLiveData = () => {
     emit();
+    if (closed) return;
     const usingFallback = Boolean(fallbackUnsubscribe);
     onConnectionChange?.({
       transport: usingFallback ? 'polling' : 'websocket',

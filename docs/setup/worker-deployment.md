@@ -55,7 +55,7 @@ If the live audit page says `Audit is queued. The audit worker has not picked it
 Audit settings are centralized in `src/lib/audit/audit-config.ts`.
 
 - Quick: 5 pages, concurrency 2, 6 second timeout.
-- Standard: 25 pages, concurrency 3, 8 second timeout.
+- Standard: up to 50 successfully analysed pages, bounded replacement candidates, concurrency 3, 8 second timeout.
 - Deep: 75 pages, concurrency 4, 12 second timeout, subject to durable plan limits and `DEEP_AUDIT_ENABLED`.
 - Event limit: 300 events.
 - Issue limit: 1,000 issues.

@@ -24,7 +24,7 @@ Raw full HTML is never stored.
 ## Audit Modes
 
 - Quick Audit is the default: 5 pages, concurrency 2, 6 second fetch timeout.
-- Standard Audit: 25 pages, concurrency 3, 8 second fetch timeout.
+- Standard Audit: up to 50 successfully analysed pages, bounded replacement candidates, concurrency 3, 8 second fetch timeout.
 - Deep Audit: up to 75 pages, concurrency 4, 12 second fetch timeout. It is manually enabled and may be further restricted by server-side plan limits.
 
 ## Limits

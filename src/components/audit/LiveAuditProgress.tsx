@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, AlertTriangle, BarChart3, CheckCircle2, Clipboard, FileDown, History, LayoutDashboard, Loader2, RefreshCw, Radio, Share2, StopCircle, Wifi, WifiOff } from 'lucide-react';
+import { Activity, AlertTriangle, BarChart3, CheckCircle2, CircleStop, Clipboard, Clock3, FileDown, History, LayoutDashboard, Loader2, RefreshCw, Radio, Share2, StopCircle, Wifi, WifiOff } from 'lucide-react';
 import { Link } from 'react-router';
 import type { ResourceAuditLiveData } from '../../lib/audit/resource-types';
 import type { LiveAuditConnectionState } from '../../lib/audit/live-supabase-client';
@@ -11,6 +11,9 @@ import { safeJsonFetch } from '../../lib/http/safe-json';
 import { formatAuditElapsed, isCompletedAuditStatus, isTerminalAuditStatus } from '../../lib/audit/audit-time';
 import { createEmptyAuditLiveData, isFinalReportPending, mergeAuditLiveData, waitForPersistedFinalReport } from '../../lib/audit/audit-lifecycle';
 import { customerSafeDiagnosticText } from '../../lib/audit/audit-failures';
+import { deriveAuditLivePresentation, type AuditLivePresentation } from '../../lib/audit/audit-live-presentation';
+import { getAuditLiveScore } from '../../lib/audit/audit-live-score';
+import { describeCrawlCompletion } from '../../lib/audit/audit-coverage';
 import { downloadAuditExport } from '../../lib/http/download';
 import { AuditStageTimeline, MetricBarChart, MetricCard, SitePreviewSection, SparklineChart, StatusBadge, SurfaceCard } from '../ui/visual-system';
 import { Notice, PageHeader, Panel } from '../ui/page-system';
@@ -224,58 +227,14 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
   }, [data]);
 
   const latestEvent = data.latestEvents[data.latestEvents.length - 1];
-  const currentWork = useMemo(() => {
-    if (!audit) {
-      return {
-        phase: 'Connecting live updates',
-        action: 'Loading audit snapshot',
-        target: auditId,
-        message: connection.message,
-      };
-    }
-
-    if (isCompletedAuditStatus(audit.status)) {
-      if (!data.finalReport) {
-        return {
-          phase: 'Preparing final report',
-          action: 'Saving the completed audit',
-          target: audit.finalUrl || audit.normalizedUrl,
-          message: 'The checks are complete. Crawlio is loading the stored report.',
-        };
-      }
-      return {
-        phase: 'Report ready',
-        action: 'Final report is ready',
-        target: audit.finalUrl || audit.normalizedUrl,
-        message: humanizeAuditText(latestEvent?.message) || (audit.status === 'completed_with_warnings' ? 'The report is ready with specific coverage warnings.' : 'Audit completed.'),
-      };
-    }
-
-    if (audit.status === 'failed') {
-      return {
-        phase: 'Needs attention',
-        action: humanizeAuditText(audit.error) || 'Audit failed',
-        target: audit.currentUrl || audit.normalizedUrl,
-        message: humanizeAuditText(latestEvent?.message || audit.error) || 'The audit engine stopped before completing this audit.',
-      };
-    }
-
-    if (audit.status === 'cancelled') {
-      return {
-        phase: 'Stopped',
-        action: 'Audit stopped',
-        target: audit.currentUrl || audit.normalizedUrl,
-        message: latestEvent?.message || 'The audit was cancelled.',
-      };
-    }
-
-    return {
-      phase: humanizeAuditText(audit.currentPhase || latestEvent?.phase) || 'Waiting to start',
-      action: humanizeAuditText(audit.currentCheck || latestEvent?.checkTitle || latestEvent?.message) || 'Waiting for audit engine',
-      target: audit.currentUrl || latestEvent?.currentUrl || latestEvent?.affectedUrl || audit.normalizedUrl,
-      message: humanizeAuditText(latestEvent?.message) || (audit.status === 'queued' ? 'Waiting for the audit engine to start.' : 'The audit engine is updating live progress.'),
-    };
-  }, [audit, auditId, connection.message, data.finalReport, latestEvent]);
+  const lastCheckedPage = [...data.latestPages].reverse().find((page) => page.fetchStatus === 'success') || data.latestPages.at(-1);
+  const livePresentation = useMemo(() => audit ? deriveAuditLivePresentation({
+    audit,
+    latestEvent,
+    hasFinalReport: Boolean(data.finalReport),
+    lastCheckedUrl: lastCheckedPage?.url,
+    now,
+  }) : null, [audit, data.finalReport, lastCheckedPage?.url, latestEvent, now]);
 
   const queuedTooLong = useMemo(() => {
     return isAuditQueuedTooLong(audit, now);
@@ -384,7 +343,11 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
           </div>
           <ConnectionBadge connection={connection} now={now} />
         </div>
-        <CurrentWorkCard currentWork={currentWork} connection={connection} now={now} />
+        <CurrentWorkCard presentation={{
+          heading: 'Connecting to audit updates', phase: 'Connecting live updates', action: 'Loading audit snapshot',
+          target: auditId, targetLabel: 'Audit ID', actionLabel: 'Status', message: connection.message,
+          timestamp: 'Waiting for first update', icon: 'waiting', active: true, reportActionAvailable: false,
+        }} connection={connection} now={now} />
 
         {warning && (
           <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-700 text-sm">
@@ -397,23 +360,24 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
 
   const progress = Math.max(0, Math.min(100, audit.progress || 0));
   const firstPage = data.latestPages.find((page) => page.title || page.metaDescription) || data.latestPages[0];
-  const reportScores = (data.finalReport?.scores || {}) as Record<string, unknown>;
-  const unavailableChecks = Array.isArray(reportScores.unavailableChecks) ? reportScores.unavailableChecks.length : null;
-  const scoreValue = (key: string) => {
-    const rawValue = reportScores[key];
-    if (rawValue == null || rawValue === '') return null;
-    const value = Number(rawValue);
-    return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : null;
-  };
-  const finalOverallScore = scoreValue('overall');
+  const liveScore = getAuditLiveScore({ audit, events: data.latestEvents, finalReport: data.finalReport });
+  const finalCoverage = data.finalReport?.scores?.coverage as Record<string, unknown> | undefined;
+  const coverageEvent = [...data.latestEvents].reverse().find((event) => event.type === 'crawl_coverage_completed');
+  const coverageEventData = coverageEvent?.data as Record<string, unknown> | undefined;
+  const crawlStopReason = String(finalCoverage?.stopReason || coverageEventData?.stopReason || '');
+  const coverageExplanation = crawlStopReason ? describeCrawlCompletion({
+    stopReason: crawlStopReason,
+    pagesAnalysed: audit.pagesCrawled,
+    pageLimit: audit.pageLimit,
+  }) : null;
   const categoryScoreCandidates: Array<{ label: string; value: number | null; tone: 'accent' | 'green' | 'yellow' | 'red' }> = [
-    { label: 'On-page SEO', value: scoreValue('seo'), tone: 'green' },
-    { label: 'Technical SEO', value: scoreValue('technical'), tone: 'accent' },
-    { label: 'Performance observations', value: scoreValue('performance'), tone: 'yellow' },
-    { label: 'Passive Security Review', value: scoreValue('security'), tone: 'green' },
-    { label: 'Crawlability', value: scoreValue('crawlability'), tone: 'accent' },
+    { label: 'On-page SEO', value: liveScore.categoryScores.onPage ?? null, tone: 'green' },
+    { label: 'Technical delivery', value: liveScore.categoryScores.technical ?? null, tone: 'accent' },
+    { label: 'Performance observations', value: liveScore.categoryScores.performance ?? null, tone: 'yellow' },
+    { label: 'Passive security', value: liveScore.categoryScores.security ?? null, tone: 'green' },
+    { label: 'Crawlability', value: liveScore.categoryScores.crawlability ?? null, tone: 'accent' },
   ];
-  const categoryScores = data.finalReport
+  const categoryScores = liveScore.scoreState !== 'unavailable'
     ? categoryScoreCandidates.filter((item): item is typeof item & { value: number } => item.value != null)
     : [];
   const progressSeries = [
@@ -441,7 +405,7 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
   const elapsedTime = formatAuditElapsed(audit, now);
 
   return (
-    <div className="w-full space-y-8 animate-rise" aria-live="polite">
+    <div className="w-full space-y-8 animate-rise">
       <AuditActivityPanel events={data.latestEvents} phase={humanizeAuditText(audit.currentPhase)} progress={progress} pagesAnalysed={audit.pagesCrawled} pageLimit={audit.pageLimit} />
       <div className="h-10 sm:h-12" aria-hidden="true" />
       <PageHeader
@@ -475,16 +439,30 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
       <AuditReportReadyNote warning={audit.status === 'completed_with_warnings' && Boolean(data.finalReport)} />
       {error && <Notice tone="danger" title="Some audit data could not refresh">{humanizeAuditText(error)}</Notice>}
       {(shareMessage || exportMessage) && <div role="status" className={`rounded-lg border p-3 text-sm font-semibold ${(shareMessage || exportMessage)?.includes('failed') ? 'border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-300' : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'}`}>{shareMessage || exportMessage}</div>}
-      <AuditExecutiveSummary audit={audit} score={data.finalReport ? finalOverallScore : null} scoreLabel="Final score" scoreDetail="Calculated from the stored deterministic report" categoryScores={categoryScores} progress={progress} unavailableChecks={unavailableChecks} />
+      <AuditExecutiveSummary
+        audit={audit}
+        score={liveScore.overallScore}
+        scoreState={liveScore.scoreState}
+        scoreLabel={liveScore.scoreState === 'final' ? 'Final score' : liveScore.scoreState === 'provisional' ? 'Live score' : 'Score pending'}
+        scoreDetail={liveScore.scoreState === 'final'
+          ? 'Calculated from the stored deterministic report'
+          : liveScore.scoreState === 'provisional'
+            ? `Preliminary · based on ${liveScore.pagesAnalysed} pages analysed so far`
+            : 'Available after enough page evidence is analysed'}
+        categoryScores={categoryScores}
+        progress={progress}
+        unavailableChecks={liveScore.unavailableCount}
+      />
       <PriorityRecommendations issues={data.latestIssues} statuses={checklist} onViewFindings={() => document.getElementById('finding-workspace-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
       <SurfaceCard className="p-5 md:p-6">
-        <CurrentWorkCard currentWork={currentWork} connection={connection} now={now} />
+        {livePresentation && <CurrentWorkCard presentation={livePresentation} connection={connection} now={now} onViewReport={onOpenWorkspace} />}
         <div className="mt-5 grid gap-4 xl:grid-cols-[1.4fr_0.8fr_0.8fr]">
           <AuditStageTimeline progress={progress} status={audit.status} />
           <SparklineChart values={progressSeries} label="Progress over time" valueLabel={`${Math.round(progress)}%`} />
           <MetricBarChart items={[{ label: 'Fix now', value: audit.criticalCount, color: 'bg-red-500' }, { label: 'High', value: audit.highCount, color: 'bg-orange-500' }, { label: 'Review', value: audit.mediumCount, color: 'bg-amber-500' }, { label: 'Low', value: audit.lowCount, color: 'bg-sky-500' }]} />
         </div>
-        <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 border-t border-border pt-4 text-xs text-muted-foreground"><span>{elapsedTime} elapsed</span><span>{audit.pagesCrawled} of {audit.pageLimit} page allowance analysed</span><span>{audit.warningCount || 0} unavailable checks or coverage warnings</span></div>
+        <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 border-t border-border pt-4 text-xs text-muted-foreground"><span>{elapsedTime} elapsed</span><span>{audit.pagesCrawled} of {audit.pageLimit} page allowance analysed</span><span>{audit.pagesDiscovered} eligible pages discovered</span><span>{audit.warningCount || 0} unavailable checks or coverage warnings</span></div>
+        {coverageExplanation && <p className="mt-3 rounded-lg bg-[var(--surface-inset)] px-3 py-2 text-sm text-muted-foreground">{coverageExplanation}</p>}
       </SurfaceCard>
 
       <SitePreviewSection
@@ -580,8 +558,6 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
           <span className="font-mono text-foreground">{Math.round(progress)}%</span>
         </div>
 
-        <CurrentWorkCard currentWork={currentWork} connection={connection} now={now} />
-
         {warning && (
           <div className="mt-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-700 text-sm">
             {humanizeAuditText(warning)}
@@ -633,7 +609,7 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
       {isCompletedAuditStatus(audit.status) && audit.processingTier === 'free' && (
         <div className="bg-accent/10 border border-accent/20 rounded-xl p-4 text-sm">
           <div className="font-semibold text-foreground">Need broader coverage?</div>
-          <div className="text-muted-foreground mt-1">Accounts with full audit access can check up to 25 pages and use the extended report and export options.</div>
+          <div className="text-muted-foreground mt-1">Accounts with full audit access can analyse up to 50 reachable pages and use the extended report and export options.</div>
         </div>
       )}
 
@@ -712,32 +688,45 @@ function ConnectionBadge({ connection, now }: { connection: LiveAuditConnectionS
 }
 
 function CurrentWorkCard({
-  currentWork,
+  presentation,
   connection,
   now,
+  onViewReport,
 }: {
-  currentWork: { phase: string; action: string; target: string; message: string };
+  presentation: AuditLivePresentation;
   connection: LiveAuditConnectionState;
   now: number;
+  onViewReport?: () => void;
 }) {
+  const Icon = presentation.icon === 'success' ? CheckCircle2
+    : presentation.icon === 'warning' || presentation.icon === 'failed' ? AlertTriangle
+      : presentation.icon === 'cancelled' ? CircleStop
+        : presentation.icon === 'waiting' ? Clock3 : Activity;
+  const iconClass = presentation.icon === 'success' ? 'text-emerald-600 dark:text-emerald-300'
+    : presentation.icon === 'warning' ? 'text-amber-600 dark:text-amber-300'
+      : presentation.icon === 'failed' ? 'text-red-600 dark:text-red-300'
+        : presentation.icon === 'cancelled' ? 'text-muted-foreground' : 'text-accent';
   return (
-    <div className="mt-5 rounded-xl border border-border bg-muted/20 p-4">
+    <section className="rounded-xl border border-border bg-muted/20 p-4" aria-labelledby="current-audit-state" aria-live="polite" aria-atomic="true">
       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-2 font-semibold">
-          <Activity className="w-4 h-4 text-accent" />
-          Checking now
+          <Icon className={`h-4 w-4 ${iconClass} ${presentation.active && presentation.icon === 'active' ? 'motion-safe:animate-pulse' : ''}`} aria-hidden="true" />
+          <span id="current-audit-state">{presentation.heading}</span>
         </div>
-        <div className="text-xs text-muted-foreground">{formatLastUpdate(connection.lastUpdateAt, now)}</div>
+        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+          <span>{presentation.active ? formatLastUpdate(connection.lastUpdateAt, now) : presentation.timestamp}</span>
+          {presentation.reportActionAvailable && onViewReport && <button type="button" onClick={onViewReport} className="quiet-button min-h-9 px-3 py-1.5 text-xs"><BarChart3 className="h-3.5 w-3.5" /> View report</button>}
+        </div>
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-3 text-sm">
-        <Info label="Stage" value={currentWork.phase} />
-        <Info label="Now checking" value={currentWork.action} />
-        <Info label="Page or URL" value={currentWork.target || 'Waiting for audit engine'} />
+        <Info label="Stage" value={presentation.phase} />
+        <Info label={presentation.actionLabel} value={presentation.action} />
+        <Info label={presentation.targetLabel} value={presentation.target || 'No page recorded'} />
       </div>
       <div className="mt-3 rounded-lg border border-border bg-background/70 p-3 text-sm text-muted-foreground break-all">
-        {currentWork.message}
+        {presentation.message}
       </div>
-    </div>
+    </section>
   );
 }
 

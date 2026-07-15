@@ -1,5 +1,6 @@
 import { AlertTriangle, CheckCircle2, FileSearch, Layers, ShieldAlert } from 'lucide-react';
 import type { ResourceAuditDocument, ResourceAuditIssue } from '../../lib/audit/resource-types';
+import type { AuditScoreState } from '../../lib/audit/audit-live-score';
 import { issueSignature, type ChecklistStatus } from '../../lib/audit/client-insights';
 import { CategoryScoreBar, ProgressBar, RadialScoreGauge, SeverityDistribution, StatusBadge, SurfaceCard } from '../ui/visual-system';
 
@@ -13,6 +14,7 @@ export interface AuditCategoryScore {
 export function AuditExecutiveSummary({
   audit,
   score,
+  scoreState = 'unavailable',
   scoreLabel = 'Overall score',
   scoreDetail,
   categoryScores = [],
@@ -21,14 +23,15 @@ export function AuditExecutiveSummary({
 }: {
   audit: ResourceAuditDocument;
   score: number | null;
+  scoreState?: AuditScoreState;
   scoreLabel?: string;
   scoreDetail?: string;
   categoryScores?: AuditCategoryScore[];
   progress?: number;
   unavailableChecks?: number | null;
 }) {
-  const discovered = Math.max(audit.pagesDiscovered, audit.pagesCrawled);
-  const coverage = discovered ? Math.round((audit.pagesCrawled / discovered) * 100) : 0;
+  const coverageTarget = Math.max(1, audit.pageLimit);
+  const coverage = Math.min(100, Math.round((audit.pagesCrawled / coverageTarget) * 100));
   const checkProgress = audit.checksTotal ? Math.round((audit.checksCompleted / audit.checksTotal) * 100) : 0;
   const warningCount = audit.warningCount || 0;
   const limitationCount = unavailableChecks ?? warningCount;
@@ -42,10 +45,13 @@ export function AuditExecutiveSummary({
         </div>
       )}
       <div className="grid lg:grid-cols-[230px_minmax(0,1fr)_minmax(280px,0.86fr)]">
-        <div className="flex items-center justify-center border-b border-border p-5 lg:border-b-0 lg:border-r lg:p-6">
+        <div className="flex flex-col items-center justify-center border-b border-border p-5 lg:border-b-0 lg:border-r lg:p-6">
+          <StatusBadge tone={scoreState === 'final' ? 'success' : scoreState === 'provisional' ? 'accent' : 'neutral'}>
+            {scoreState === 'final' ? 'Final score' : scoreState === 'provisional' ? 'Preliminary' : 'Not available yet'}
+          </StatusBadge>
           {score == null ? (
-            <div className="flex h-36 w-36 flex-col items-center justify-center rounded-full border border-dashed border-border bg-muted/30 text-center"><FileSearch className="h-6 w-6 text-muted-foreground" /><div className="mt-2 font-semibold">Score pending</div><div className="mt-1 px-4 text-xs text-muted-foreground">Calculated after evidence is available</div></div>
-          ) : <RadialScoreGauge value={score} label={scoreLabel} detail={scoreDetail} size="md" />}
+            <div className="mt-4 flex h-36 w-36 flex-col items-center justify-center rounded-full border border-dashed border-border bg-muted/30 text-center"><FileSearch className="h-6 w-6 text-muted-foreground" /><div className="mt-2 font-semibold">Score pending</div><div className="mt-1 px-4 text-xs text-muted-foreground">Available after enough evidence is analysed</div></div>
+          ) : <div className="mt-4"><RadialScoreGauge value={score} label={scoreLabel} detail={scoreDetail} size="md" /></div>}
         </div>
 
         <div className="border-b border-border p-5 lg:border-b-0 lg:border-r lg:p-6">
@@ -56,7 +62,7 @@ export function AuditExecutiveSummary({
         <div className="p-5 lg:p-6">
           <div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">Coverage</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Only collected evidence is counted.</p></div><Layers className="h-5 w-5 text-accent" /></div>
           <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4 text-sm">
-            <div><dt className="text-xs text-muted-foreground">Pages analysed</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{audit.pagesCrawled}<span className="ml-1 text-xs font-normal text-muted-foreground">/ {discovered || audit.pageLimit}</span></dd></div>
+            <div><dt className="text-xs text-muted-foreground">Pages analysed</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{audit.pagesCrawled}<span className="ml-1 text-xs font-normal text-muted-foreground">/ {coverageTarget}</span></dd></div>
             <div><dt className="text-xs text-muted-foreground">Coverage</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{coverage}%</dd></div>
             <div><dt className="text-xs text-muted-foreground">Checks completed</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{audit.checksCompleted}<span className="ml-1 text-xs font-normal text-muted-foreground">/ {audit.checksTotal || '—'}</span></dd></div>
             <div><dt className="text-xs text-muted-foreground">{limitationLabel}</dt><dd className={`mt-1 text-xl font-semibold tabular-nums ${limitationCount ? 'text-amber-600 dark:text-amber-300' : ''}`}>{limitationCount}</dd></div>

@@ -27,6 +27,7 @@ import { isTerminalAuditStatus } from '../lib/audit/audit-time';
 import type { AuditIssue } from '../lib/audit/types';
 import { safePublicFetch, type SafePublicFetchOptions } from '../lib/security/safe-public-fetch';
 import { calculateTransparentAuditScore, toReportScoreRecord } from '../lib/audit/audit-scoring';
+import { buildProvisionalAuditScore, shouldPublishProvisionalScore } from '../lib/audit/audit-provisional-score';
 import { AuditWriteBatch } from './audit-write-batch';
 import { HostRequestScheduler } from './host-request-scheduler';
 import { isAuditJobType } from './audit-job-types';
@@ -228,29 +229,80 @@ function normalizeCrawlUrl(input: string, base?: string) {
 }
 
 async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteBatch, workerId: string) {
-  const config = getAuditProfileForDocument(audit);
+  const profile = getAuditProfileForDocument(audit);
+  const admittedPageLimit = Number.isFinite(audit.pageLimit) && audit.pageLimit > 0
+    ? Math.floor(audit.pageLimit)
+    : profile.pageLimit;
+  const config = {
+    ...profile,
+    pageLimit: Math.min(profile.pageLimit, admittedPageLimit),
+  };
   const startUrl = normalizeCrawlUrl(audit.normalizedUrl) || audit.normalizedUrl;
   const rootQueueItem: QueueItem = { url: startUrl, depth: 0, sourceUrls: [], anchorTexts: [] };
   const queue: QueueItem[] = [rootQueueItem];
   const queueItems = new Map<string, QueueItem>([[startUrl, rootQueueItem]]);
   const scheduled = new Set<string>([startUrl]);
   const visited = new Set<string>();
+  const processedContentUrls = new Set<string>();
   const pages: ResourceAuditPage[] = [];
+  const provisionalIssues: ResourceAuditIssue[] = [];
   const failures: AuditFailure[] = [];
   const unavailableChecks: string[] = [];
   const announcedFailureCodes = new Set<string>();
   let analysedPages = 0;
   let completedChecks = 0;
+  let lastProvisionalScoreAt = 0;
+  let lastProvisionalScorePages = 0;
+  let provisionalIssueSequence = 0;
   const workerStart = nowIso();
   const requestScheduler = new HostRequestScheduler(Math.min(2, config.concurrency), 150);
   const auditDeadline = Date.now() + Math.min(10 * 60_000, Math.max(45_000, config.pageLimit * config.timeoutMs));
+  const candidateLimit = Math.min(1_000, Math.max(config.pageLimit, config.pageLimit * 4));
   let durationLimitReached = false;
+  const quotaReached = () => analysedPages >= config.pageLimit;
+  const candidateBudgetReached = () => visited.size >= candidateLimit;
+  const coverageTarget = () => Math.max(1, Math.min(config.pageLimit, scheduled.size));
   const writeProgress = (
     patch: Partial<ResourceAuditDocument>,
     event?: Parameters<AuditWriteBatch['writeProgress']>[1],
     options?: Parameters<AuditWriteBatch['writeProgress']>[2],
   ) => writer.writeProgress(patch, event, options);
-  const addIssue = (issue: Omit<ResourceAuditIssue, 'id' | 'detectedAt'>) => writer.addIssue(issue);
+  const addIssue = (issue: Omit<ResourceAuditIssue, 'id' | 'detectedAt'>) => {
+    provisionalIssueSequence += 1;
+    provisionalIssues.push({
+      ...issue,
+      id: `provisional-${provisionalIssueSequence}`,
+      detectedAt: nowIso(),
+    });
+    return writer.addIssue(issue);
+  };
+  const maybePublishProvisionalScore = async () => {
+    const nowMs = Date.now();
+    if (!shouldPublishProvisionalScore({
+      pagesAnalysed: analysedPages,
+      lastPublishedPages: lastProvisionalScorePages,
+      nowMs,
+      lastPublishedAtMs: lastProvisionalScoreAt,
+    })) return;
+    const snapshot = buildProvisionalAuditScore({
+      issues: provisionalIssues,
+      pages,
+      pagesAnalysed: analysedPages,
+      pagesDiscovered: scheduled.size,
+      pageLimit: config.pageLimit,
+      unavailableChecks,
+      updatedAt: new Date(nowMs).toISOString(),
+    });
+    if (snapshot.overallScore == null) return;
+    lastProvisionalScoreAt = nowMs;
+    lastProvisionalScorePages = analysedPages;
+    await writer.addEvent({
+      type: 'score_updated',
+      message: `Preliminary score updated from ${analysedPages} analysed pages.`,
+      progress: Math.min(90, 20 + Math.floor((analysedPages / coverageTarget()) * 70)),
+      data: snapshot,
+    });
+  };
 
   const recordFailure = async (failure: AuditFailure, item: QueueItem, storePage = true) => {
     failures.push(failure);
@@ -336,7 +388,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
       if (anchorText && !existing.anchorTexts.includes(anchorText)) existing.anchorTexts.push(anchorText);
       return false;
     }
-    if (scheduled.size >= config.pageLimit || scheduled.has(cleanUrl)) return false;
+    if (scheduled.size >= candidateLimit || scheduled.has(cleanUrl)) return false;
     if (!isSameDomain(cleanUrl, audit.normalizedUrl)) return false;
     scheduled.add(cleanUrl);
     const item: QueueItem = {
@@ -409,11 +461,22 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
       data: { pageLimit: config.pageLimit, sitemapCandidates: sitemapCandidates.length },
     });
   }
-  for (const sitemapUrl of sitemapCandidates) {
-    if (scheduled.size >= config.pageLimit) break;
+  const sitemapQueue = [...new Set(sitemapCandidates)];
+  const visitedSitemaps = new Set<string>();
+  const sitemapDocumentLimit = config.deepSitemapExpansion ? 30 : 12;
+  while (sitemapQueue.length && visitedSitemaps.size < sitemapDocumentLimit && scheduled.size < candidateLimit) {
+    const sitemapUrl = normalizeCrawlUrl(sitemapQueue.shift()!);
+    if (!sitemapUrl || visitedSitemaps.has(sitemapUrl) || !isSameDomain(sitemapUrl, audit.normalizedUrl)) continue;
+    visitedSitemaps.add(sitemapUrl);
     const sitemap = await fetchSitemap(sitemapUrl, workerFetchOptions(config.timeoutMs));
+    for (const nestedSitemap of sitemap.sitemaps) {
+      const normalizedNested = normalizeCrawlUrl(nestedSitemap, sitemapUrl);
+      if (normalizedNested && isSameDomain(normalizedNested, audit.normalizedUrl) && !visitedSitemaps.has(normalizedNested)) {
+        sitemapQueue.push(normalizedNested);
+      }
+    }
     for (const sitemapPageUrl of sitemap.urls) {
-      if (scheduled.size >= config.pageLimit) break;
+      if (scheduled.size >= candidateLimit) break;
       await enqueuePage(sitemapPageUrl, 1, sitemapUrl);
     }
   }
@@ -422,7 +485,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
     progress: 20,
     currentPhase: 'Checking page content',
     pagesDiscovered: scheduled.size,
-    checksTotal: Math.max(1, scheduled.size) * (AUDIT_CHECK_COUNT + 1),
+    checksTotal: coverageTarget() * (AUDIT_CHECK_COUNT + 1),
     checksCompleted: 0,
   });
 
@@ -435,7 +498,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
       return;
     }
     const currentUrl = normalizeCrawlUrl(item.url) || item.url;
-    if (visited.has(currentUrl) || visited.size >= config.pageLimit) return;
+    if (visited.has(currentUrl) || processedContentUrls.has(currentUrl) || candidateBudgetReached() || quotaReached()) return;
     visited.add(currentUrl);
 
     if (robotsRules && isBlockedByRobots(currentUrl, robotsRules)) {
@@ -482,6 +545,17 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
     }
 
     const fetched = fetchResult.page;
+    const finalContentUrl = normalizeCrawlUrl(fetched.finalUrl) || fetched.finalUrl;
+    if (processedContentUrls.has(finalContentUrl)) {
+      await writer.addEvent({
+        type: 'page_duplicate_skipped',
+        message: 'Skipped a redirected URL that resolves to a page already analysed.',
+        affectedUrl: fetched.finalUrl,
+        data: { requestedUrl: currentUrl, finalUrl: finalContentUrl },
+      });
+      return;
+    }
+    processedContentUrls.add(finalContentUrl);
     if (fetched.statusCode >= 400) {
       await recordFailure(failureForHttpStatus(fetched.statusCode, {
         affectedUrl: fetched.finalUrl,
@@ -620,14 +694,16 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
     pages.push(pageRecord);
     analysedPages += 1;
 
+    await maybePublishProvisionalScore();
+
     await writeProgress({
       currentPhase: 'Checking page content',
       currentUrl: fetched.finalUrl,
       currentCheck: 'Page crawled',
       pagesCrawled: analysedPages,
-      checksTotal: Math.max(1, scheduled.size) * (AUDIT_CHECK_COUNT + 1),
+      checksTotal: coverageTarget() * (AUDIT_CHECK_COUNT + 1),
       checksCompleted: completedChecks,
-      progress: Math.min(90, 20 + Math.floor((pages.length / Math.max(scheduled.size, 1)) * 70)),
+      progress: Math.min(90, 20 + Math.floor((analysedPages / coverageTarget()) * 70)),
     }, {
       type: 'page_crawled',
       message: `Page analysed: ${fetched.finalUrl}`,
@@ -645,7 +721,14 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
     const pump = () => {
       if (cancelled) return resolve();
       if (Date.now() >= auditDeadline) durationLimitReached = true;
-      while (!durationLimitReached && active < config.concurrency && queue.length > 0 && visited.size < config.pageLimit) {
+      while (
+        !durationLimitReached
+        && !quotaReached()
+        && !candidateBudgetReached()
+        && active < config.concurrency
+        && analysedPages + active < config.pageLimit
+        && queue.length > 0
+      ) {
         const item = queue.shift()!;
         active++;
         processPage(item)
@@ -658,14 +741,14 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
           })
           .finally(() => {
             active--;
-            if ((durationLimitReached || queue.length === 0 || visited.size >= config.pageLimit) && active === 0) {
+            if ((durationLimitReached || quotaReached() || candidateBudgetReached() || queue.length === 0) && active === 0) {
               resolve();
             } else {
               pump();
             }
           });
       }
-      if ((durationLimitReached || queue.length === 0 || visited.size >= config.pageLimit) && active === 0) {
+      if ((durationLimitReached || quotaReached() || candidateBudgetReached() || queue.length === 0) && active === 0) {
         resolve();
       }
     };
@@ -687,6 +770,44 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
       internalDetails: `Analysed ${analysedPages} pages before the deadline.`,
     }), { url: audit.normalizedUrl, depth: 0, sourceUrls: [], anchorTexts: [] }, false);
   }
+
+  const hasRobotsRestriction = failures.some((failure) => failure.code === 'ROBOTS_BLOCKED');
+  const hasAccessFailures = failures.some((failure) => failure.code !== 'CHECK_UNAVAILABLE' && failure.code !== 'AUDIT_DEADLINE_EXCEEDED');
+  const crawlStopReason = quotaReached()
+    ? 'page_limit_reached'
+    : durationLimitReached
+      ? 'audit_deadline_reached'
+      : candidateBudgetReached()
+        ? 'safety_limit_reached'
+        : hasRobotsRestriction
+          ? 'robots_restricted'
+          : hasAccessFailures
+            ? 'access_failures'
+            : 'crawl_queue_exhausted';
+  const coverageCompletionMessage = quotaReached()
+    ? `Reached the ${config.pageLimit}-page analysis allowance.`
+    : durationLimitReached
+      ? `Stopped at the audit time limit after analysing ${analysedPages} reachable page${analysedPages === 1 ? '' : 's'}.`
+      : candidateBudgetReached()
+        ? `Stopped at the safe candidate-attempt limit after analysing ${analysedPages} reachable page${analysedPages === 1 ? '' : 's'}.`
+        : hasRobotsRestriction
+          ? `Analysed ${analysedPages} reachable page${analysedPages === 1 ? '' : 's'}; search engine access rules blocked additional pages.`
+          : hasAccessFailures
+            ? `Analysed ${analysedPages} reachable page${analysedPages === 1 ? '' : 's'}; additional discovered pages were unavailable.`
+            : `Analysed all ${analysedPages} eligible public page${analysedPages === 1 ? '' : 's'} discovered on this site.`;
+  await writer.addEvent({
+    type: 'crawl_coverage_completed',
+    message: coverageCompletionMessage,
+    progress: 91,
+    data: {
+      pageLimit: config.pageLimit,
+      pagesDiscovered: scheduled.size,
+      pagesAttempted: visited.size,
+      pagesAnalysed: analysedPages,
+      quotaReached: quotaReached(),
+      stopReason: crawlStopReason,
+    },
+  });
 
   const groupedFailures = new Map<string, AuditFailure[]>();
   for (const failure of failures) groupedFailures.set(failure.code, [...(groupedFailures.get(failure.code) || []), failure]);
@@ -776,7 +897,29 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
     currentPhase: 'Preparing your report',
     currentUrl: null,
     currentCheck: 'Score calculation',
-  }, { type: 'score_updated', message: `Overall score updated to ${overallScore}`, data: { overallScore } });
+  }, {
+    type: 'score_updated',
+    message: `Final score updated to ${overallScore}`,
+    data: {
+      overallScore,
+      categoryScores: {
+        onPage: transparentScore.categories.onPage.score,
+        technical: transparentScore.categories.technical.score,
+        crawlability: transparentScore.categories.crawlability.score,
+        internalLinks: transparentScore.categories.internalLinks.score,
+        performance: transparentScore.categories.performance.score,
+        mobile: transparentScore.categories.mobile.score,
+        security: transparentScore.categories.security.score,
+        structuredData: transparentScore.categories.structuredData.score,
+      },
+      scoreState: 'final',
+      pagesAnalysed: analysedPages,
+      pagesDiscovered: scheduled.size,
+      pageLimit: config.pageLimit,
+      unavailableCount: transparentScore.unavailableChecks.length,
+      updatedAt: nowIso(),
+    },
+  });
 
   await writeProgress({
     progress: 95,
@@ -795,10 +938,14 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
       warningSummary: aggregateFailureCounts(failures),
       coverage: {
         pagesDiscovered: scheduled.size,
+        pagesAttempted: visited.size,
         pagesAnalysed: analysedPages,
         pagesFailed: pages.filter((page) => page.fetchStatus === 'failed').length,
         pagesBlocked: pages.filter((page) => page.fetchStatus === 'blocked').length,
-        coveragePercent: Math.round((analysedPages / Math.max(1, scheduled.size)) * 100),
+        coveragePercent: Math.round((analysedPages / coverageTarget()) * 100),
+        pageLimit: config.pageLimit,
+        quotaReached: quotaReached(),
+        stopReason: crawlStopReason,
       },
       deepAudit: config.deepSitemapExpansion ? {
         sitemapExpansion: true,
@@ -807,7 +954,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
         issueClusters: Object.keys(categoryCounts).length,
       } : null,
     },
-    summary: `${config.label}: analysed ${analysedPages} page${analysedPages === 1 ? '' : 's'}, recorded ${failures.length} warning${failures.length === 1 ? '' : 's'}, and found ${issues.length} issue${issues.length === 1 ? '' : 's'}.`,
+    summary: `${config.label}: ${coverageCompletionMessage} The audit recorded ${failures.length} warning${failures.length === 1 ? '' : 's'} and found ${issues.length} issue${issues.length === 1 ? '' : 's'}.`,
     topIssues: [...issues].sort((a, b) => {
       const weights = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
       return weights[b.severity] - weights[a.severity];
@@ -831,7 +978,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
     currentUrl: null,
     currentCheck: null,
     pagesCrawled: analysedPages,
-    checksTotal: Math.max(1, scheduled.size) * (AUDIT_CHECK_COUNT + 1),
+    checksTotal: coverageTarget() * (AUDIT_CHECK_COUNT + 1),
     checksCompleted: completedChecks,
     warningCount: failures.length,
     failureCounts: aggregateFailureCounts(failures),

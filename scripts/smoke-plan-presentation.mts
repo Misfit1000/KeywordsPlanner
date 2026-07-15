@@ -1,0 +1,45 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { getAuditModeConfig } from '../src/lib/audit/audit-config.ts';
+import { AUDIT_PROFILES } from '../src/lib/audit/audit-profiles.ts';
+import { DEFAULT_PLAN_LIMITS } from '../src/lib/billing/entitlements.ts';
+import { PUBLIC_AUDIT_PLANS, PUBLIC_PLAN_COMPARISON } from '../src/lib/plans/public-plan-presentation.ts';
+
+const publicLimits = Object.fromEntries(PUBLIC_AUDIT_PLANS.map((plan) => [plan.id, plan.pagesPerAudit]));
+assert.deepEqual(publicLimits, { free: 5, plus: 50, pro: 75 });
+assert.equal(publicLimits.free, DEFAULT_PLAN_LIMITS.free.maxPagesQuick);
+assert.equal(publicLimits.plus, DEFAULT_PLAN_LIMITS.paid.maxPagesStandard);
+assert.equal(publicLimits.pro, DEFAULT_PLAN_LIMITS.agency.maxPagesDeep);
+assert.equal(publicLimits.free, AUDIT_PROFILES.free_quick.pageLimit);
+assert.equal(publicLimits.plus, AUDIT_PROFILES.paid_standard.pageLimit);
+assert.equal(publicLimits.pro, AUDIT_PROFILES.agency_deep.pageLimit);
+assert.equal(publicLimits.plus, getAuditModeConfig('standard').pageLimit);
+assert.equal(publicLimits.pro, getAuditModeConfig('deep').pageLimit);
+assert.equal(DEFAULT_PLAN_LIMITS.admin.maxPagesDeep, AUDIT_PROFILES.admin_deep.pageLimit);
+assert.equal(DEFAULT_PLAN_LIMITS.admin.maxPagesDeep, 100);
+
+const pagesRow = PUBLIC_PLAN_COMPARISON.find((row) => row.label === 'Pages per audit');
+assert.deepEqual(pagesRow?.values, ['5', '50', '75']);
+assert.ok(PUBLIC_AUDIT_PLANS.every((plan) => plan.features.length >= 5 && plan.features.length <= 8));
+assert.ok(PUBLIC_AUDIT_PLANS.find((plan) => plan.id === 'plus')?.recommended);
+
+const [landing, settings, admin, migration, docs, worker] = await Promise.all([
+  readFile('src/components/LandingPage.tsx', 'utf8'),
+  readFile('src/components/Settings.tsx', 'utf8'),
+  readFile('src/components/AdminDashboard.tsx', 'utf8'),
+  readFile('supabase/migrations/018_full_audit_50_page_limit.sql', 'utf8'),
+  readFile('docs/product/plans-and-limits.md', 'utf8'),
+  readFile('src/workers/audit-worker.ts', 'utf8'),
+]);
+assert.match(landing, /PUBLIC_AUDIT_PLANS/);
+assert.match(landing, /PUBLIC_PLAN_COMPARISON/);
+assert.doesNotMatch(landing, /Mapped to the current paid plan/);
+assert.doesNotMatch(landing, /Deep mode requires an available configured audit engine/);
+assert.doesNotMatch(JSON.stringify(PUBLIC_AUDIT_PLANS), /larger report|expanded issue/i, 'dormant internal capacity flags must not become pricing claims');
+assert.match(settings, /maxPages: 50/);
+assert.match(admin, /value=\{plan\.maxPagesStandard\}/);
+assert.match(migration, /max_pages_standard\s*=\s*50/);
+assert.match(docs, /50 pages/);
+assert.match(worker, /Math\.min\(profile\.pageLimit, admittedPageLimit\)/, 'worker must honor the admitted row limit without exceeding its profile ceiling');
+
+console.log('Public plan presentation smoke test passed: Free 5, Plus 50, Pro 75, Admin Deep 100.');

@@ -11,6 +11,7 @@ const previewMigrationSql = readFileSync(resolve('supabase/migrations/009_audit_
 const resilienceMigrationSql = readFileSync(resolve('supabase/migrations/010_audit_resilience_and_failures.sql'), 'utf8');
 const productionMigrationSql = readFileSync(resolve('supabase/migrations/011_production_robustness.sql'), 'utf8');
 const admissionLockdownSql = readFileSync(resolve('supabase/migrations/016_server_only_audit_admission.sql'), 'utf8');
+const fullAuditLimitSql = readFileSync(resolve('supabase/migrations/018_full_audit_50_page_limit.sql'), 'utf8');
 
 for (const table of ['audits', 'audit_events', 'audit_pages', 'audit_issues', 'audit_reports']) {
   assert.match(sql, new RegExp(`create table if not exists public\\.${table}\\b`, 'i'), `${table} table is missing`);
@@ -64,6 +65,8 @@ for (const policy of ['browser clients can enqueue audits only', 'browser client
 }
 assert.match(admissionLockdownSql, /revoke insert, update, delete on public\.audits from anon, authenticated/i, 'Direct browser audit mutations must be revoked');
 assert.match(admissionLockdownSql, /api_schema_version = 12/i, 'Database compatibility version must advance with the admission policy change');
+assert.match(fullAuditLimitSql, /max_pages_standard = 50/i, 'Full Audit migration must raise the standard page limit to 50');
+assert.match(fullAuditLimitSql, /max_pages_standard = 25/i, 'Full Audit migration must preserve custom administrator limits');
 for (const bannedTerm of ['fire' + 'base', 'fire' + 'store']) {
   assert.equal(sql.toLowerCase().includes(bannedTerm), false, `migration should not contain ${bannedTerm} references`);
 }

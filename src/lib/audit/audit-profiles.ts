@@ -46,7 +46,7 @@ export const AUDIT_PROFILES: Record<AuditProfile['id'], AuditProfile> = {
     plan: 'paid',
     processingTier: 'paid',
     mode: 'standard',
-    pageLimit: 25,
+    pageLimit: 50,
     concurrency: 2,
     timeoutMs: 8000,
     maxEvents: 300,

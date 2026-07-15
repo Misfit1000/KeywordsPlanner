@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { createAuditSubmitGuard } from '../lib/api/audit-submit-guard';
 import { AUDIT_TARGET_INPUT_PROPS, normalizeAuditTarget } from '../lib/url/normalize-audit-target';
+import { PUBLIC_AUDIT_PLANS, PUBLIC_PLAN_COMPARISON } from '../lib/plans/public-plan-presentation';
 import { CategoryScoreBar, RadialScoreGauge, SeverityDistribution, StatusBadge } from './ui/visual-system';
 
 interface Props {
@@ -236,14 +237,15 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
 
       <section id="pricing" className="content-auto section-shell scroll-mt-24 py-14 md:py-18">
         <div className="max-w-3xl"><p className="text-sm font-semibold text-accent">Plans and limits</p><h2 className="mt-2 text-3xl font-semibold leading-tight md:text-4xl">Choose the audit depth you need.</h2><p className="mt-4 text-sm leading-7 text-muted-foreground">Self-service billing is not available yet. Plan access is enabled by an administrator, and server-enforced limits always take priority.</p></div>
-        <div className="mt-8 overflow-hidden rounded-xl border border-border bg-card">
-          <div className="grid divide-y divide-border lg:grid-cols-3 lg:divide-x lg:divide-y-0">
-            {[
-              { name: 'Free', mode: 'Quick audit', pages: 'Up to 5 pages', allowance: '3 daily · 30 monthly', points: ['Core SEO and technical findings', 'Live progress and stored reports', 'One active audit at a time'], note: 'PDF export is unavailable on Free.' },
-              { name: 'Plus', mode: 'Full standard audit', pages: 'Up to 25 pages', allowance: '25 daily · 500 monthly', points: ['Extended findings and page coverage', 'PDF, JSON, and CSV exports', 'Higher queue priority and concurrency'], note: 'Mapped to the current paid plan.' },
-              { name: 'Pro', mode: 'Agency deep audit', pages: 'Up to 75 pages', allowance: '100 daily · 3,000 monthly', points: ['Quick, standard, and deep modes', 'Expanded report and workflow limits', 'Highest non-admin queue priority'], note: 'Deep mode requires an available configured audit engine.' },
-            ].map((plan, index) => <article key={plan.name} className={`p-5 sm:p-7 ${index === 1 ? 'bg-accent/[0.045]' : ''}`}><div className="flex items-start justify-between gap-3"><div><h3 className="text-2xl font-semibold">{plan.name}</h3><p className="mt-1 text-sm text-muted-foreground">{plan.mode}</p></div>{index === 1 && <StatusBadge tone="accent">Full audit</StatusBadge>}</div><div className="mt-6 border-y border-border py-4"><div className="text-lg font-semibold">{plan.pages}</div><div className="mt-1 text-sm text-muted-foreground">{plan.allowance}</div></div><ul className="mt-5 space-y-3 text-sm">{plan.points.map((point) => <li key={point} className="flex gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-300" />{point}</li>)}</ul><p className="mt-5 text-xs leading-5 text-muted-foreground">{plan.note}</p></article>)}
-          </div>
+        <div className="mt-8 grid gap-4 lg:grid-cols-3">
+          {PUBLIC_AUDIT_PLANS.map((plan) => <article key={plan.id} className={`flex h-full flex-col rounded-xl border bg-card p-5 sm:p-7 ${plan.recommended ? 'border-accent ring-1 ring-accent/25' : 'border-border'}`}><div className="flex items-start justify-between gap-3"><div><h3 className="text-2xl font-semibold">{plan.name}</h3><p className="mt-1 text-sm text-muted-foreground">{plan.mode}</p></div>{plan.recommended && <StatusBadge tone="accent">Recommended</StatusBadge>}</div><div className="mt-6 border-y border-border py-4"><div className="text-lg font-semibold">Up to {plan.pagesPerAudit} analysed pages</div><div className="mt-1 text-sm text-muted-foreground">{plan.allowance}</div></div><div className="mt-5"><div className="text-xs font-semibold text-muted-foreground">Best for</div><p className="mt-1 text-sm leading-6">{plan.bestFor}</p></div><ul className="mt-5 space-y-3 text-sm">{plan.features.map((feature) => <li key={feature} className="flex gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-300" />{feature}</li>)}</ul><p className="mt-auto border-t border-border pt-5 text-xs leading-5 text-muted-foreground">{plan.footer}</p></article>)}
+        </div>
+        <div className="mt-7 overflow-x-auto rounded-xl border border-border bg-card" aria-label="Audit plan comparison">
+          <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+            <caption className="sr-only">Compare Crawlio audit plan capabilities</caption>
+            <thead><tr className="border-b border-border bg-[var(--surface-inset)]"><th scope="col" className="px-4 py-3 font-semibold">Capability</th>{PUBLIC_AUDIT_PLANS.map((plan) => <th key={plan.id} scope="col" className="px-4 py-3 font-semibold">{plan.name}</th>)}</tr></thead>
+            <tbody className="divide-y divide-border">{PUBLIC_PLAN_COMPARISON.map((row) => <tr key={row.label}><th scope="row" className="px-4 py-3 font-medium">{row.label}</th>{row.values.map((value, index) => <td key={`${row.label}-${PUBLIC_AUDIT_PLANS[index].id}`} className="px-4 py-3 text-muted-foreground">{value}</td>)}</tr>)}</tbody>
+          </table>
         </div>
         <button type="button" onClick={() => onNavigate('start-audit')} className="trust-button mt-6">Start a free audit <ArrowRight className="h-4 w-4" /></button>
       </section>

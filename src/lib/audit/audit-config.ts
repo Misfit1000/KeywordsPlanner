@@ -20,15 +20,15 @@ const AUDIT_MODE_CONFIG: Record<AuditMode, AuditModeConfig> = {
   },
   standard: {
     mode: 'standard',
-    label: 'Full Standard - 25 pages',
-    pageLimit: 25,
+    label: 'Full Standard - 50 pages',
+    pageLimit: 50,
     concurrency: 3,
     timeoutMs: 8000,
     description: 'Balanced crawl depth and resource use.',
   },
   deep: {
     mode: 'deep',
-    label: 'Deep - 75+ pages',
+    label: 'Deep - 75 pages',
     pageLimit: 75,
     concurrency: 4,
     timeoutMs: 12000,

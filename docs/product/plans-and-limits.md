@@ -12,7 +12,8 @@
 ## Paid Standard Audit
 
 - Quick and Standard audits.
-- Up to 25 pages.
+- Up to 50 successfully analysed pages. The worker continues through safe replacement candidates when a discovered URL fails or is blocked.
+- Smaller sites and sites that block crawling can finish below 50 pages; reports show the exact discovered, attempted, analysed, failed, and blocked coverage instead of claiming pages that were not checked.
 - Higher queue priority than Free.
 - Full standard SEO categories: technical SEO, crawlability, indexability, schema, image SEO, links, sitemap/robots, performance basics, and passive security.
 - Structured PDF reports are enabled. They contain stored audit scores, charts, top fixes, page summaries, metadata previews, and audit activity without rerunning the audit.
