@@ -18,8 +18,12 @@ for (const key of ['applicationVersion', 'commitIdentifier', 'buildTimestamp', '
 }
 const health = await json(`${workerUrl}/health`);
 if (!('serviceStatus' in health) || !('queuePollingStatus' in health)) throw new Error('Worker health response is incomplete.');
+if (!health.commitIdentifier) throw new Error('Worker health response is missing its deployment commit.');
+if (!String(version.commitIdentifier).startsWith(String(health.commitIdentifier)) && !String(health.commitIdentifier).startsWith(String(version.commitIdentifier))) {
+  throw new Error(`Vercel and worker commit identifiers do not match: ${version.commitIdentifier} / ${health.commitIdentifier}.`);
+}
 
-const result = { version, worker: { serviceStatus: health.serviceStatus, queuePollingStatus: health.queuePollingStatus } };
+const result = { version, worker: { serviceStatus: health.serviceStatus, queuePollingStatus: health.queuePollingStatus, commitIdentifier: health.commitIdentifier } };
 if (process.env.RUN_AUDIT_SMOKE === 'true') {
   const guestId = `production-smoke-${randomUUID()}`;
   const start = await json(`${appUrl}/api/tools/audit/start`, {

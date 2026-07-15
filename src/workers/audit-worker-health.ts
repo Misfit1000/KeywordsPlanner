@@ -23,6 +23,7 @@ export function startWorkerHealthServer(
       currentAudit: state.currentAuditId ? 'processing' : null,
       lastCompletedAuditAt: state.lastCompletedAuditAt,
       lastFatalWorkerError: Boolean(state.lastFatalWorkerError),
+      commitIdentifier: state.version,
       supportedModes: state.supportedModes,
       auditEngineVersion: state.auditEngineVersion,
       scoringVersion: state.scoringVersion,

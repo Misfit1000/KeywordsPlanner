@@ -20,6 +20,7 @@ Blog generation is Vercel-only and resumes through finite leased stages stored i
 - Vercel install: `npm ci --legacy-peer-deps`; build: `npm run build`; output: `dist`.
 - Render build: `npm ci --legacy-peer-deps`; start: `npm run worker:audit`.
 - Worker health: `https://seointel-audit-worker.onrender.com/health`.
+- Worker health exposes only safe status, audit contract versions, and the deployment commit so Vercel and Render releases can be compared.
 - Canonical app origin: `https://keywordsintel.vercel.app` until a custom domain is attached.
 - Apply Supabase migrations 001 through 016 in numeric order. Migration 016 makes Vercel's durable admission path the only audit-job creator.
 

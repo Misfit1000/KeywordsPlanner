@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createInitialWorkerState, loadWorkerConfig, updateWorkerState } from '../src/workers/audit-worker-runtime.ts';
 import { startWorkerHealthServer } from '../src/workers/audit-worker-health.ts';
 
-const state = createInitialWorkerState(loadWorkerConfig({ SUPABASE_URL: 'https://example.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'test-only', PORT: '3000', DEEP_AUDIT_ENABLED: 'true' }));
+const state = createInitialWorkerState(loadWorkerConfig({ SUPABASE_URL: 'https://example.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'test-only', PORT: '3000', DEEP_AUDIT_ENABLED: 'true', RENDER_GIT_COMMIT: '0123456789abcdef' }));
 updateWorkerState(state, { status: 'idle', queuePollingStatus: 'active', databaseConnected: true, lastCompletedAuditId: 'private-audit-id', lastCompletedAuditAt: new Date().toISOString() });
 const server = startWorkerHealthServer(state, () => true, '0');
 assert(server);
@@ -20,6 +20,7 @@ try {
   assert.equal('runtime' in healthy, false);
   assert.equal('currentAuditId' in healthy, false);
   assert.equal('lastCompletedAuditId' in healthy, false);
+  assert.equal(healthy.commitIdentifier, '0123456789ab');
   assert.equal(healthy.planLimitsSummary.agency.maxPages, 75, 'Enabled agency deep mode must report the enforced 75-page ceiling.');
 
   // A target URL failure is audit data; it must not mutate worker health.
