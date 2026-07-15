@@ -9,6 +9,8 @@ import { FormField, Notice, Panel } from '../ui/page-system';
 import RichTextEditor from './RichTextEditor';
 import BlogAutomationPanel from './BlogAutomationPanel';
 import BlogSectionRevisionPanel from './BlogSectionRevisionPanel';
+import BlogProviderFreeWorkspace from './BlogProviderFreeWorkspace';
+import BlogEditorialReviewPanel from './BlogEditorialReviewPanel';
 
 type Draft = BlogPostInput & {
   title: string;
@@ -26,7 +28,7 @@ type Draft = BlogPostInput & {
 };
 
 const EMPTY_DRAFT: Draft = {
-  title: '', slug: '', excerpt: '', tagline: '', summary: '', contentHtml: '<p></p>', focusKeyword: '', tags: [], seoTitle: '', metaDescription: '', canonicalUrl: '', ogImageUrl: '', status: 'draft', publishedAt: '', origin: 'admin_manual',
+  title: '', slug: '', excerpt: '', tagline: '', summary: '', contentHtml: '<p></p>', focusKeyword: '', tags: [], seoTitle: '', metaDescription: '', canonicalUrl: '', ogImageUrl: '', status: 'draft', publishedAt: '', origin: 'admin_manual', fixtureTest: false,
 };
 
 function draftFromPost(post: BlogPost): Draft {
@@ -59,6 +61,7 @@ function draftFromPost(post: BlogPost): Draft {
     prerenderStatus: post.prerenderStatus,
     imageStatus: post.imageStatus,
     publishedAt: (post.scheduledAt || post.publishedAt) ? String(post.scheduledAt || post.publishedAt).slice(0, 16) : '',
+    fixtureTest: post.fixtureTest,
   };
 }
 
@@ -195,6 +198,7 @@ export default function BlogAdmin() {
       {message && <Notice tone="success">{message}</Notice>}
 
       <BlogAutomationPanel posts={posts} onChanged={() => void loadPosts()} />
+      <BlogProviderFreeWorkspace />
 
       <div className="grid gap-6 2xl:grid-cols-[320px_minmax(0,1fr)]">
         <Panel className="h-fit overflow-hidden p-0 2xl:sticky 2xl:top-24">
@@ -216,10 +220,12 @@ export default function BlogAdmin() {
               <div className="flex flex-wrap gap-2">
                 {selectedId && <button type="button" onClick={archive} disabled={saving} className="quiet-button text-red-600"><Archive className="h-4 w-4" /> Archive</button>}
                 <button type="button" onClick={() => persist('draft')} disabled={saving} className="quiet-button"><Save className="h-4 w-4" /> Save draft</button>
-                <button type="button" onClick={() => persist('scheduled')} disabled={saving || !draft.publishedAt || !editorialReviewed} className="quiet-button"><CalendarDays className="h-4 w-4" /> Schedule</button>
-                <button type="button" onClick={() => persist('published', true)} disabled={saving || !editorialReviewed} className="trust-button">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe2 className="h-4 w-4" />} Publish now</button>
+                <button type="button" onClick={() => persist('scheduled')} disabled={saving || !draft.publishedAt || !editorialReviewed || draft.fixtureTest} className="quiet-button"><CalendarDays className="h-4 w-4" /> Schedule</button>
+                <button type="button" onClick={() => persist('published', true)} disabled={saving || !editorialReviewed || draft.fixtureTest} className="trust-button">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe2 className="h-4 w-4" />} Publish now</button>
               </div>
             </div>
+
+            {draft.fixtureTest && <div className="mt-5"><Notice tone="warning" title="Fixture test content">This draft is permanently excluded from publication, public topic hubs, sitemaps, and RSS. Use it only to verify the protected editorial workflow.</Notice></div>}
 
             <label className="mt-5 flex items-start gap-3 rounded-lg border border-border bg-muted/25 p-3 text-sm leading-6">
               <input type="checkbox" checked={editorialReviewed} onChange={(event) => setEditorialReviewed(event.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-[var(--accent)]" />
@@ -235,8 +241,10 @@ export default function BlogAdmin() {
             <div className="mt-5"><FormField label="Excerpt" htmlFor="blog-excerpt" hint={`${draft.excerpt.length}/360 characters`}><textarea id="blog-excerpt" value={draft.excerpt} onChange={(event) => update('excerpt', event.target.value)} className="suite-input min-h-28 resize-y" maxLength={360} /></FormField></div>
             <div className="mt-5 grid gap-5 lg:grid-cols-2"><FormField label="Article tagline" htmlFor="blog-tagline" hint="Adds context without repeating the headline."><input id="blog-tagline" value={draft.tagline || ''} onChange={(event) => update('tagline', event.target.value)} className="suite-input" maxLength={240} /></FormField><FormField label="Executive summary" htmlFor="blog-summary"><textarea id="blog-summary" value={draft.summary || ''} onChange={(event) => update('summary', event.target.value)} className="suite-input min-h-24 resize-y" maxLength={600} /></FormField></div>
             <div className="mt-5 rounded-lg border border-border bg-muted/20 p-4"><h4 className="text-sm font-semibold text-foreground">Primary research source</h4><p className="mt-1 text-xs leading-5 text-muted-foreground">The exact source URL must also appear as a descriptive hyperlink in the article body.</p><div className="mt-4 grid gap-4 lg:grid-cols-3"><FormField label="Source URL" htmlFor="blog-source-url"><input id="blog-source-url" type="url" value={draft.sources?.[0]?.url || ''} onChange={(event) => update('sources', [{ ...(draft.sources?.[0] || { title: '', publisher: '' }), url: event.target.value, citationStatus: 'verified', reliability: 'high' }])} className="suite-input" /></FormField><FormField label="Source title" htmlFor="blog-source-title"><input id="blog-source-title" value={draft.sources?.[0]?.title || ''} onChange={(event) => update('sources', [{ ...(draft.sources?.[0] || { url: '', publisher: '' }), title: event.target.value, citationStatus: 'verified', reliability: 'high' }])} className="suite-input" /></FormField><FormField label="Publisher" htmlFor="blog-source-publisher"><input id="blog-source-publisher" value={draft.sources?.[0]?.publisher || ''} onChange={(event) => update('sources', [{ ...(draft.sources?.[0] || { url: '', title: '' }), publisher: event.target.value, citationStatus: 'verified', reliability: 'high' }])} className="suite-input" /></FormField></div></div>
-            <div className="mt-5"><FormField label="Article content"><RichTextEditor value={draft.contentHtml} onChange={(contentHtml) => update('contentHtml', contentHtml)} /></FormField></div>
-            {selectedId && posts.find((post) => post.id === selectedId) && <BlogSectionRevisionPanel post={posts.find((post) => post.id === selectedId)!} onChanged={() => void loadPosts()} />}
+            <div className="mt-5 grid items-start gap-5 2xl:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="min-w-0"><FormField label="Article content"><RichTextEditor value={draft.contentHtml} onChange={(contentHtml) => update('contentHtml', contentHtml)} /></FormField>{selectedId && posts.find((post) => post.id === selectedId) && <BlogSectionRevisionPanel post={posts.find((post) => post.id === selectedId)!} onChanged={() => void loadPosts()} />}</div>
+              <BlogEditorialReviewPanel post={selectedId ? posts.find((post) => post.id === selectedId) : undefined} draft={draft} />
+            </div>
           </Panel>
 
           <Panel className="p-5 sm:p-6">

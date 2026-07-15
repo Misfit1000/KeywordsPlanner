@@ -36,4 +36,10 @@ export const API_ROUTES = {
   adminBlogSectionRevisions: (id: string) => `/api/tools/admin/blog/posts/${encodeURIComponent(id)}/section-revisions`,
   adminBlogSectionRegeneration: (id: string) => `/api/tools/admin/blog/posts/${encodeURIComponent(id)}/section-regeneration`,
   adminBlogSectionRevisionDecision: (id: string) => `/api/tools/admin/blog/section-revisions/${encodeURIComponent(id)}/decision`,
+  adminBlogSources: "/api/tools/admin/blog/sources",
+  adminBlogSource: (id: string) => `/api/tools/admin/blog/sources/${encodeURIComponent(id)}`,
+  adminBlogSourceTest: (id: string) => `/api/tools/admin/blog/sources/${encodeURIComponent(id)}/test`,
+  adminBlogTrendAction: (id: string) => `/api/tools/admin/blog/trends/${encodeURIComponent(id)}/action`,
+  adminBlogOperations: "/api/tools/admin/blog/operations",
+  adminBlogOperationAction: "/api/tools/admin/blog/operations/action",
 };

@@ -68,11 +68,12 @@ function toPost(row: BlogPostRow): BlogPost {
     createdAt: String(row.created_at ?? row.createdAt ?? new Date().toISOString()),
     updatedAt: String(row.updated_at ?? row.updatedAt ?? new Date().toISOString()),
     readingTimeMinutes: estimateReadingTime(contentText),
+    fixtureTest: Boolean(row.fixture_test ?? row.fixtureTest),
   };
 }
 
 function isPublic(row: BlogPostRow) {
-  return row.status === 'published' && row.published_at && new Date(row.published_at).getTime() <= Date.now() && (!row.robots_directive || String(row.robots_directive).startsWith('index'));
+  return row.fixture_test !== true && row.status === 'published' && row.published_at && new Date(row.published_at).getTime() <= Date.now() && (!row.robots_directive || String(row.robots_directive).startsWith('index'));
 }
 
 function publicMemoryRows() {
@@ -94,6 +95,7 @@ export const blogRepository = {
       .from('blog_posts')
       .select('id,slug,title,excerpt,tagline,summary,focus_keyword,tags,seo_title,meta_description,canonical_url,og_image_url,og_title,og_description,og_image_alt,og_image_attribution,status,origin,article_type,topic_cluster,language,robots_directive,freshness_status,sources,related_articles,author_id,published_at,created_at,updated_at,content_text', { count: 'exact' })
       .eq('status', 'published')
+      .eq('fixture_test', false)
       .like('robots_directive', 'index%')
       .not('published_at', 'is', null)
       .lte('published_at', new Date().toISOString())
@@ -111,7 +113,7 @@ export const blogRepository = {
       const row = [...memoryPosts.values()].find((item) => item.slug === slug && isPublic(item));
       return row ? toPost(row) : null;
     }
-    const { data, error } = await client.from('blog_posts').select('*').eq('slug', slug).eq('status', 'published').lte('published_at', new Date().toISOString()).maybeSingle();
+    const { data, error } = await client.from('blog_posts').select('*').eq('slug', slug).eq('status', 'published').eq('fixture_test', false).lte('published_at', new Date().toISOString()).maybeSingle();
     if (error) throw error;
     return data ? toPost(data) : null;
   },
@@ -210,7 +212,7 @@ export const blogRepository = {
       ? await client.from('blog_section_revisions').select('*').eq('article_id', articleId).order('created_at', { ascending: false }).limit(30)
       : { data: [...memorySectionRevisions.values()].filter((item) => item.article_id === articleId).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))), error: null };
     if (rows.error) throw rows.error;
-    return (rows.data || []).map((row: any): BlogSectionRevision => ({ id: String(row.id), articleId: String(row.article_id), sectionKey: String(row.section_key), action: String(row.action), beforeHtml: String(row.before_html), afterHtml: String(row.after_html), status: row.status, createdAt: String(row.created_at) }));
+    return (rows.data || []).map((row: any): BlogSectionRevision => ({ id: String(row.id), articleId: String(row.article_id), sectionKey: String(row.section_key), action: String(row.action), beforeHtml: String(row.before_html), afterHtml: String(row.after_html), status: row.status, createdAt: String(row.created_at), sourceSnapshot: Array.isArray(row.source_snapshot) ? row.source_snapshot : [], validationResults: row.validation_results && typeof row.validation_results === 'object' ? row.validation_results : {} }));
   },
 
   async decideSectionRevision(id: string, decision: 'accepted' | 'rejected', actorId: string) {
@@ -245,7 +247,7 @@ export const blogRepository = {
   async sitemapRows() {
     const client = getSupabaseAdminClient();
     if (!client) return publicMemoryRows().filter((row) => String(row.robots_directive || 'index').startsWith('index')).map((row) => ({ slug: String(row.slug), updatedAt: String(row.updated_at), imageUrl: String(row.og_image_url || '') }));
-    const { data, error } = await client.from('blog_posts').select('slug,updated_at,og_image_url').eq('status', 'published').like('robots_directive', 'index%').lte('published_at', new Date().toISOString()).order('published_at', { ascending: false }).limit(5000);
+    const { data, error } = await client.from('blog_posts').select('slug,updated_at,og_image_url').eq('status', 'published').eq('fixture_test', false).like('robots_directive', 'index%').lte('published_at', new Date().toISOString()).order('published_at', { ascending: false }).limit(5000);
     if (error) throw error;
     return (data || []).map((row) => ({ slug: String(row.slug), updatedAt: String(row.updated_at), imageUrl: String(row.og_image_url || '') }));
   },
@@ -253,7 +255,7 @@ export const blogRepository = {
   async relatedPublished(post: BlogPost, limit = 4) {
     const client = getSupabaseAdminClient();
     if (!client) return publicMemoryRows().filter((row) => row.id !== post.id && (!post.topicCluster || row.topic_cluster === post.topicCluster)).slice(0, limit).map(toPost);
-    let request = client.from('blog_posts').select('*').eq('status', 'published').lte('published_at', new Date().toISOString()).neq('id', post.id).order('published_at', { ascending: false }).limit(limit);
+    let request = client.from('blog_posts').select('*').eq('status', 'published').eq('fixture_test', false).lte('published_at', new Date().toISOString()).neq('id', post.id).order('published_at', { ascending: false }).limit(limit);
     if (post.topicCluster) request = request.eq('topic_cluster', post.topicCluster);
     const { data, error } = await request;
     if (error) throw error;

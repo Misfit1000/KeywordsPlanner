@@ -10,7 +10,7 @@ function safeJson(value: unknown) {
 
 export function renderBlogArticleHtml(post: BlogPost, origin: string) {
   const canonical = post.canonicalUrl || `${origin}/blog/${encodeURIComponent(post.slug)}`;
-  const published = post.status === 'published' && Boolean(post.publishedAt) && new Date(post.publishedAt || 0).getTime() <= Date.now();
+  const published = !post.fixtureTest && post.status === 'published' && Boolean(post.publishedAt) && new Date(post.publishedAt || 0).getTime() <= Date.now();
   const robots = published ? post.robotsDirective || 'index,follow,max-image-preview:large' : 'noindex,nofollow';
   const articleSchema = {
     '@context': 'https://schema.org',

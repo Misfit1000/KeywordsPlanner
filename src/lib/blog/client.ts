@@ -1,7 +1,7 @@
 import { API_ROUTES } from '../api/routes';
 import { getAuthHeaders } from '../api/auth-headers';
 import { safeJsonFetch } from '../http/safe-json';
-import type { BlogAdminOverview, BlogGenerationJob, BlogListResult, BlogPost, BlogPostInput, BlogSectionRevision } from './types';
+import type { BlogAdminOverview, BlogApprovedSource, BlogFixtureScenario, BlogGenerationJob, BlogListResult, BlogOperationsSnapshot, BlogPost, BlogPostInput, BlogSectionRevision } from './types';
 
 type Envelope<T> = { success: boolean; data: T; error?: string };
 
@@ -47,7 +47,7 @@ export async function runAdminBlogWorkflow(id: string, input: { action: 'hold' |
 }
 
 export async function getBlogAutomationDashboard() {
-  return request<{ overview: BlogAdminOverview; jobs: BlogGenerationJob[]; discoveries: Array<Record<string, any>>; provider: { provider: string; enabled: boolean; configured: boolean; model: string; baseUrlHost: string } }>(API_ROUTES.adminBlogOverview, { headers: await getAuthHeaders() });
+  return request<{ overview: BlogAdminOverview; jobs: BlogGenerationJob[]; discoveries: Array<Record<string, any>>; provider: { provider: string; enabled: boolean; configured: boolean; model: string; baseUrlHost: string; health?: string; fixtureAvailable?: boolean } }>(API_ROUTES.adminBlogOverview, { headers: await getAuthHeaders() });
 }
 
 export async function getBlogAutomationSettings() {
@@ -60,7 +60,7 @@ export async function saveBlogAutomationSettings(settings: Record<string, unknow
   });
 }
 
-export async function queueBlogJob(input: { mode: 'manual' | 'custom_headline' | 'discover'; topic?: string; headline?: string; audience?: string; keywords?: string; feedUrls?: string[]; sourceUrls?: string[]; competitorUrls?: string[]; requestId?: string; articleType?: string; lengthMode?: string; customMinimum?: number; customMaximum?: number }) {
+export async function queueBlogJob(input: { mode: 'manual' | 'custom_headline' | 'discover' | 'fixture'; topic?: string; headline?: string; audience?: string; keywords?: string; feedUrls?: string[]; sourceUrls?: string[]; competitorUrls?: string[]; requestId?: string; articleType?: string; lengthMode?: string; customMinimum?: number; customMaximum?: number; fixtureScenario?: BlogFixtureScenario }) {
   return request<{ job: BlogGenerationJob }>(API_ROUTES.adminBlogJobs, {
     method: 'POST', headers: await getAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(input),
   });
@@ -84,8 +84,8 @@ export async function getBlogSectionRevisions(articleId: string) {
   return request<{ revisions: BlogSectionRevision[] }>(API_ROUTES.adminBlogSectionRevisions(articleId), { headers: await getAuthHeaders() });
 }
 
-export async function queueBlogSectionRegeneration(articleId: string, sectionKey: string, action: string) {
-  return request<{ job: BlogGenerationJob }>(API_ROUTES.adminBlogSectionRegeneration(articleId), { method: 'POST', headers: await getAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ sectionKey, action }) });
+export async function queueBlogSectionRegeneration(articleId: string, sectionKey: string, action: string, useFixture = false) {
+  return request<{ job: BlogGenerationJob }>(API_ROUTES.adminBlogSectionRegeneration(articleId), { method: 'POST', headers: await getAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ sectionKey, action, useFixture }) });
 }
 
 export async function decideBlogSectionRevision(revisionId: string, decision: 'accepted' | 'rejected') {
@@ -96,4 +96,34 @@ export async function importAdminBlogImage(input: { sourceUrl: string; creator?:
   return request<{ image: Record<string, any> }>(API_ROUTES.adminBlogImageImport, {
     method: 'POST', headers: await getAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(input),
   });
+}
+
+export async function getApprovedBlogSources() {
+  return request<{ sources: BlogApprovedSource[] }>(API_ROUTES.adminBlogSources, { headers: await getAuthHeaders() });
+}
+
+export async function saveApprovedBlogSource(input: Partial<BlogApprovedSource>, id?: string) {
+  return request<{ source: BlogApprovedSource }>(id ? API_ROUTES.adminBlogSource(id) : API_ROUTES.adminBlogSources, {
+    method: id ? 'PUT' : 'POST', headers: await getAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(input),
+  });
+}
+
+export async function testApprovedBlogSource(id: string) {
+  return request<{ source: BlogApprovedSource; result: { success: boolean; safeFailureCode: string; itemCount: number } }>(API_ROUTES.adminBlogSourceTest(id), { method: 'POST', headers: await getAuthHeaders() });
+}
+
+export async function deleteApprovedBlogSource(id: string, reason: string) {
+  return request<{ deleted: boolean }>(API_ROUTES.adminBlogSource(id), { method: 'DELETE', headers: await getAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ reason }) });
+}
+
+export async function runBlogTrendAction(id: string, action: string) {
+  return request<{ discovery: Record<string, any>; job: BlogGenerationJob | null }>(API_ROUTES.adminBlogTrendAction(id), { method: 'POST', headers: await getAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ action }) });
+}
+
+export async function getBlogOperations() {
+  return request<{ snapshot: BlogOperationsSnapshot; jobs: BlogGenerationJob[] }>(API_ROUTES.adminBlogOperations, { headers: await getAuthHeaders() });
+}
+
+export async function runBlogOperation(action: string, reason: string, targetId = '') {
+  return request<{ result: unknown }>(API_ROUTES.adminBlogOperationAction, { method: 'POST', headers: await getAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ action, reason, targetId }) });
 }

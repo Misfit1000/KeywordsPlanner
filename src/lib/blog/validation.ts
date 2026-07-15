@@ -99,6 +99,7 @@ export function prepareBlogPost(input: BlogPostInput, options: { publishing?: bo
   const focusKeyword = String(input.focusKeyword || seo.focusKeyword).replace(/\s+/g, ' ').trim().slice(0, 100);
   const slug = normalizeBlogSlug(input.slug || title);
   const publishing = options.publishing || status === 'published' || status === 'scheduled';
+  if (publishing && input.fixtureTest) throw new BlogValidationError('Fixture test content cannot be scheduled or published. Create a reviewed editorial article instead.');
   const tagline = cleanField(input.tagline, 240);
   const summary = cleanField(input.summary || excerpt, 600);
   const sources = normalizeSources(input.sources);
@@ -180,6 +181,7 @@ export function prepareBlogPost(input: BlogPostInput, options: { publishing?: bo
     related_articles: relatedArticles,
     generation_job_id: input.generationJobId || null,
     batch_id: input.batchId || null,
+    fixture_test: Boolean(input.fixtureTest),
     published_at: publishedAt,
   };
 }

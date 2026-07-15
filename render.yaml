@@ -31,3 +31,11 @@ services:
         value: qwen/qwen3.5-122b-a10b
       - key: NVIDIA_BLOG_ENABLED
         value: "false"
+      - key: BLOG_FIXTURE_PROVIDER_ENABLED
+        value: "false"
+      - key: ALLOW_BLOG_FIXTURE_GENERATION
+        value: "false"
+      - key: BLOG_FIXTURE_STAGING_ONLY
+        value: "false"
+      - key: ALLOW_PRODUCTION_BLOG_FIXTURE_GENERATION
+        value: "false"

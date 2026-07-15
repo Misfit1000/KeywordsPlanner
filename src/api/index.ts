@@ -28,9 +28,11 @@ import { renderBlogArticleHtml } from '../lib/blog/render';
 import { blogAutomationRepository } from '../lib/blog/automation-repository';
 import { blogJobIdempotencyKey, validateManualBatch } from '../lib/blog/automation';
 import { importBlogImage } from '../lib/blog/images';
-import { NVIDIA_DEFAULT_BLOG_MODEL } from '../lib/blog/nvidia';
+import { getNvidiaBlogConfiguration, NVIDIA_DEFAULT_BLOG_MODEL } from '../lib/blog/nvidia';
 import { normalizeBlogArticleType } from '../lib/blog/length-policy';
 import { validateCalendarMove } from '../lib/blog/freshness';
+import { BLOG_FIXTURE_MODEL, BLOG_FIXTURE_PROVIDER, getBlogFixtureConfiguration, requireBlogFixtureProvider } from '../lib/blog/fixture-provider';
+import { blogSourceRepository } from '../lib/blog/source-management';
 import { ApiError } from '../lib/api/errors';
 import {
   admitAuditSubmission,
@@ -62,6 +64,8 @@ apiRouter.use('/admin/blog/jobs', durableRateLimit({ namespace: 'blog-jobs', lim
 apiRouter.use('/admin/blog/batches', durableRateLimit({ namespace: 'blog-batches', limit: 5, windowSeconds: 3600 }));
 apiRouter.use('/admin/blog/images/import', durableRateLimit({ namespace: 'blog-images', limit: 10, windowSeconds: 3600 }));
 apiRouter.use('/admin/blog/provider/test', durableRateLimit({ namespace: 'blog-provider-test', limit: 5, windowSeconds: 3600 }));
+apiRouter.use('/admin/blog/sources', durableRateLimit({ namespace: 'blog-sources', limit: 40, windowSeconds: 3600 }));
+apiRouter.use('/admin/blog/operations/action', durableRateLimit({ namespace: 'blog-operations', limit: 20, windowSeconds: 3600 }));
 apiRouter.use('/admin/blog/sections', durableRateLimit({ namespace: 'blog-section-regeneration', limit: 10, windowSeconds: 3600 }));
 apiRouter.use('/blog/scheduler', durableRateLimit({ namespace: 'blog-scheduler', limit: 10, windowSeconds: 300 }));
 apiRouter.use('/audit/export', durableRateLimit({ namespace: 'report-export', limit: 10, windowSeconds: 300 }));
@@ -154,6 +158,12 @@ async function logBlogAction(adminUserId: string, action: string, postId: string
   const client = (await import('../lib/supabase/server')).getSupabaseAdminClient();
   if (!client) return;
   await client.from('admin_actions').insert({ admin_user_id: adminUserId, action, target_type: 'blog_post', target_id: postId, metadata });
+}
+
+async function syncApprovedFeedSettings(adminUserId: string) {
+  const sources = await blogSourceRepository.list();
+  const urls = sources.filter((source) => source.enabled && !['manual_url', 'imported'].includes(source.feedType)).map((source) => source.sourceUrl).slice(0, 20);
+  await blogAutomationRepository.updateSettings({ approved_feed_urls: urls }, adminUserId);
 }
 
 async function canAccessAudit(req: any, audit: ResourceAuditDocument) {
@@ -531,7 +541,9 @@ apiRouter.get('/admin/blog/overview', asyncJsonRoute(async (req, res) => {
     blogAutomationRepository.getSettings(),
   ]);
   res.setHeader('Cache-Control', 'private, no-store');
-  res.json({ success: true, data: { overview, jobs, discoveries, provider: { provider: 'NVIDIA NIM', enabled: Boolean(settings.provider_enabled), configured: Boolean(settings.provider_last_success_at), model: NVIDIA_DEFAULT_BLOG_MODEL, baseUrlHost: 'integrate.api.nvidia.com', health: settings.provider_last_error_code ? 'attention required' : settings.provider_last_success_at ? 'connected' : 'not tested', lastSuccessAt: settings.provider_last_success_at || null, lastErrorCode: settings.provider_last_error_code || '', lastDurationMs: settings.provider_last_duration_ms ?? null, liveVerificationStatus: settings.provider_live_verification_status || 'not_run' } } });
+  const providerConfiguration = getNvidiaBlogConfiguration();
+  const fixtureConfiguration = getBlogFixtureConfiguration();
+  res.json({ success: true, data: { overview, jobs, discoveries, provider: { provider: 'NVIDIA NIM', enabled: Boolean(settings.provider_enabled), configured: providerConfiguration.configured, model: NVIDIA_DEFAULT_BLOG_MODEL, baseUrlHost: 'integrate.api.nvidia.com', health: settings.provider_last_error_code ? 'attention required' : settings.provider_last_success_at ? 'connected' : providerConfiguration.configured ? 'not tested' : 'not configured', lastSuccessAt: settings.provider_last_success_at || null, lastErrorCode: settings.provider_last_error_code || '', lastDurationMs: settings.provider_last_duration_ms ?? null, liveVerificationStatus: settings.provider_live_verification_status || 'not_run', fixtureAvailable: fixtureConfiguration.enabled } } });
 }));
 
 apiRouter.post('/admin/blog/provider/test', asyncJsonRoute(async (req, res) => {
@@ -553,6 +565,7 @@ apiRouter.put('/admin/blog/settings', asyncJsonRoute(async (req, res) => {
   const requester = await requireAdminRequester(req, res);
   if (!requester) return;
   const feedUrls = Array.isArray(req.body?.approved_feed_urls) ? req.body.approved_feed_urls.slice(0, 20).map(String) : [];
+  if (req.body?.enabled === true && !getNvidiaBlogConfiguration().configured) throw new ApiError('BLOG_PROVIDER_NOT_CONFIGURED', 'Configure and enable NVIDIA NIM on the worker before enabling automatic generation.', 409);
   if (feedUrls.some((value) => { try { return new URL(value).protocol !== 'https:'; } catch { return true; } })) throw new ApiError('INVALID_BLOG_FEED', 'Approved feeds must use valid public HTTPS URLs.', 400);
   const timezone = String(req.body?.timezone || 'UTC');
   try { new Intl.DateTimeFormat('en', { timeZone: timezone }).format(); } catch { throw new ApiError('INVALID_TIMEZONE', 'Enter a valid IANA timezone.', 400); }
@@ -561,10 +574,140 @@ apiRouter.put('/admin/blog/settings', asyncJsonRoute(async (req, res) => {
   res.json({ success: true, data: { settings } });
 }));
 
+apiRouter.get('/admin/blog/sources', asyncJsonRoute(async (req, res) => {
+  if (!(await requireAdminRequester(req, res))) return;
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: { sources: await blogSourceRepository.list() } });
+}));
+
+apiRouter.post('/admin/blog/sources', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const source = await blogSourceRepository.create(req.body || {}, requester.userId);
+  await syncApprovedFeedSettings(requester.userId);
+  await logBlogAction(requester.userId, 'create_blog_approved_source', source.id, { sourceUrl: source.sourceUrl, feedType: source.feedType });
+  res.status(201).json({ success: true, data: { source } });
+}));
+
+apiRouter.put('/admin/blog/sources/:id', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const source = await blogSourceRepository.update(req.params.id, req.body || {}, requester.userId);
+  if (!source) throw new ApiError('BLOG_SOURCE_NOT_FOUND', 'Approved source not found.', 404);
+  await syncApprovedFeedSettings(requester.userId);
+  await logBlogAction(requester.userId, 'update_blog_approved_source', source.id, { enabled: source.enabled, classification: source.classification });
+  res.json({ success: true, data: { source } });
+}));
+
+apiRouter.delete('/admin/blog/sources/:id', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const reason = String(req.body?.reason || req.query?.reason || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+  if (reason.length < 4) throw new ApiError('BLOG_OPERATION_REASON_REQUIRED', 'Provide a reason for deleting this source.', 400);
+  if (!(await blogSourceRepository.remove(req.params.id))) throw new ApiError('BLOG_SOURCE_NOT_FOUND', 'Approved source not found.', 404);
+  await syncApprovedFeedSettings(requester.userId);
+  await logBlogAction(requester.userId, 'delete_blog_approved_source', req.params.id, { reason });
+  res.json({ success: true, data: { deleted: true } });
+}));
+
+apiRouter.post('/admin/blog/sources/:id/test', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const result = await blogSourceRepository.test(req.params.id);
+  if (!result) throw new ApiError('BLOG_SOURCE_NOT_FOUND', 'Approved source not found.', 404);
+  await logBlogAction(requester.userId, 'test_blog_approved_source', req.params.id, { success: result.result.success, safeFailureCode: result.result.safeFailureCode });
+  res.json({ success: true, data: result });
+}));
+
+apiRouter.post('/admin/blog/trends/:id/action', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const action = String(req.body?.action || '');
+  const statusByAction: Record<string, string> = { add_to_research: 'review', link_existing: 'covered', convert_update: 'selected', dismiss: 'skipped', monitor: 'monitor', mark_covered: 'covered', add_to_calendar: 'selected', create_draft: 'selected' };
+  if (!statusByAction[action]) throw new ApiError('BLOG_TREND_ACTION_INVALID', 'Choose a supported trend action.', 400);
+  const discovery = await blogAutomationRepository.updateDiscovery(req.params.id, { status: statusByAction[action], existing_coverage: action === 'mark_covered' || action === 'link_existing' });
+  if (!discovery) throw new ApiError('BLOG_TREND_NOT_FOUND', 'Trend discovery not found.', 404);
+  let job = null;
+  if (action === 'create_draft') {
+    requireBlogFixtureProvider();
+    job = await blogAutomationRepository.createJob({
+      origin: 'admin_manual', topic: String(discovery.source_title || ''), requestedBy: requester.userId,
+      provider: BLOG_FIXTURE_PROVIDER, model: BLOG_FIXTURE_MODEL,
+      payload: { jobType: 'generate_article', fixtureScenario: 'news', articleType: 'urgent_news', topicCluster: discovery.topic_cluster, discoveryId: discovery.id },
+      idempotencyKey: blogJobIdempotencyKey({ origin: 'admin_manual', topic: `fixture-trend:${discovery.id}`, dateBucket: new Date().toISOString().slice(0, 13) }),
+    });
+  }
+  await logBlogAction(requester.userId, `blog_trend_${action}`, req.params.id, { jobId: job?.id || null });
+  res.json({ success: true, data: { discovery, job } });
+}));
+
+apiRouter.get('/admin/blog/operations', asyncJsonRoute(async (req, res) => {
+  if (!(await requireAdminRequester(req, res))) return;
+  const [jobs, posts, sources, staleLeases, settings] = await Promise.all([
+    blogAutomationRepository.listJobs(200), blogRepository.listAdmin(300), blogSourceRepository.list(), blogAutomationRepository.countStaleLeases(), blogAutomationRepository.getSettings(),
+  ]);
+  const providerConfiguration = getNvidiaBlogConfiguration();
+  const now = Date.now();
+  const snapshot = {
+    providerStatus: !settings.provider_enabled ? 'disabled' : providerConfiguration.configured ? 'ready' : 'not_configured',
+    fixtureAvailable: getBlogFixtureConfiguration().enabled,
+    activeJobs: jobs.filter((job) => !['published', 'ready_for_review', 'scheduled', 'skipped', 'failed', 'cancelled'].includes(job.state)).length,
+    failedJobs: jobs.filter((job) => job.state === 'failed').length,
+    staleLeases,
+    sourceFailures: sources.filter((source) => Boolean(source.safeFailureCode)).length,
+    staleSources: sources.filter((source) => source.enabled && (!source.lastSuccessfulFetch || now - new Date(source.lastSuccessfulFetch).getTime() > source.fetchFrequencyMinutes * 120_000)).length,
+    imageFailures: posts.filter((post) => post.imageStatus === 'blocked').length,
+    prerenderFailures: posts.filter((post) => post.prerenderStatus === 'blocked').length,
+    sitemapReady: posts.filter((post) => post.status === 'published' && !post.robotsDirective.includes('noindex')).length,
+    rssReady: posts.filter((post) => post.status === 'published' && !post.robotsDirective.includes('noindex')).length,
+    databaseCompatible: true,
+    migrationVersion: '014',
+    checkedAt: new Date().toISOString(),
+  };
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: { snapshot, jobs: jobs.slice(0, 40) } });
+}));
+
+apiRouter.post('/admin/blog/operations/action', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const action = String(req.body?.action || '');
+  const targetId = String(req.body?.targetId || '');
+  const reason = String(req.body?.reason || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+  if (reason.length < 4) throw new ApiError('BLOG_OPERATION_REASON_REQUIRED', 'Provide a reason for this operation.', 400);
+  let result: unknown;
+  if (action === 'retry_job') result = await blogAutomationRepository.retryJob(targetId);
+  else if (action === 'cancel_job') result = await blogAutomationRepository.cancelJob(targetId, reason);
+  else if (action === 'recover_stale_job') result = await blogAutomationRepository.recoverJob(targetId);
+  else if (action === 'pause_automation') result = await blogAutomationRepository.updateSettings({ enabled: false }, requester.userId);
+  else if (action === 'pause_publication') result = await blogAutomationRepository.updateSettings({ pause_all_publication: true }, requester.userId);
+  else if (action === 'validate_sitemap') result = { valid: (await renderBlogSitemap(canonicalSiteOrigin())).includes('<urlset') };
+  else if (action === 'validate_rss') result = { valid: (await renderBlogRss(canonicalSiteOrigin())).includes('<rss') };
+  else if (action === 'reset_fixture_data') {
+    requireBlogFixtureProvider();
+    const client = requireSupabaseAdminClient();
+    const { data: fixtureJobs, error: readError } = await client.from('blog_generation_jobs').select('id').eq('provider', BLOG_FIXTURE_PROVIDER).limit(500);
+    if (readError) throw readError;
+    const ids = (fixtureJobs || []).map((job) => job.id);
+    if (ids.length) {
+      const { error: postError } = await client.from('blog_posts').delete().in('generation_job_id', ids);
+      if (postError) throw postError;
+      const { error: jobError } = await client.from('blog_generation_jobs').delete().in('id', ids);
+      if (jobError) throw jobError;
+    }
+    result = { deletedFixtureJobs: ids.length };
+  } else throw new ApiError('BLOG_OPERATION_INVALID', 'Choose a supported protected operation.', 400);
+  if (!result) throw new ApiError('BLOG_OPERATION_NOT_APPLICABLE', 'The operation is not applicable to the selected item.', 409);
+  await logBlogAction(requester.userId, `blog_operation_${action}`, targetId || 'blog', { reason });
+  res.json({ success: true, data: { result } });
+}));
+
 apiRouter.post('/admin/blog/jobs', asyncJsonRoute(async (req, res) => {
   const requester = await requireAdminRequester(req, res);
   if (!requester) return;
   const mode = String(req.body?.mode || 'manual');
+  if (!['manual', 'custom_headline', 'discover', 'fixture'].includes(mode)) throw new ApiError('BLOG_JOB_MODE_INVALID', 'Choose a supported blog job type.', 400);
+  if (mode === 'fixture') requireBlogFixtureProvider();
   const origin = mode === 'custom_headline' ? 'admin_custom_headline' : mode === 'discover' ? 'autopilot' : 'admin_manual';
   const topic = String(req.body?.topic || '').replace(/\s+/g, ' ').trim().slice(0, 240);
   const headline = String(req.body?.headline || '').replace(/\s+/g, ' ').trim().slice(0, 140);
@@ -582,6 +725,8 @@ apiRouter.post('/admin/blog/jobs', asyncJsonRoute(async (req, res) => {
     topic,
     customHeadline: headline,
     requestedBy: requester.userId,
+    provider: mode === 'fixture' ? BLOG_FIXTURE_PROVIDER : 'nvidia_nim',
+    model: mode === 'fixture' ? BLOG_FIXTURE_MODEL : NVIDIA_DEFAULT_BLOG_MODEL,
     payload: {
       jobType: mode === 'discover' ? 'discover_trends' : 'generate_article',
       manualDiscovery: mode === 'discover',
@@ -595,6 +740,7 @@ apiRouter.post('/admin/blog/jobs', asyncJsonRoute(async (req, res) => {
       lengthMode: ['automatic', 'brief', 'standard', 'detailed', 'custom'].includes(String(req.body?.lengthMode)) ? String(req.body.lengthMode) : 'automatic',
       customMinimum: Math.max(500, Math.min(3500, Number(req.body?.customMinimum) || 0)),
       customMaximum: Math.max(500, Math.min(4000, Number(req.body?.customMaximum) || 0)),
+      fixtureScenario: mode === 'fixture' && ['evergreen', 'news', 'invalid', 'timeout', 'malformed', 'originality_failure', 'missing_sources', 'image_failure'].includes(String(req.body?.fixtureScenario)) ? String(req.body.fixtureScenario) : undefined,
     },
     idempotencyKey: blogJobIdempotencyKey({ origin, topic, customHeadline: headline, dateBucket }),
   });
@@ -728,9 +874,14 @@ apiRouter.post('/admin/blog/posts/:id/section-regeneration', asyncJsonRoute(asyn
   const sectionKey = String(req.body?.sectionKey || '').slice(0, 120);
   const sectionAction = String(req.body?.action || 'regenerate');
   if (!sectionKey || !['regenerate', 'shorten', 'make_practical', 'add_example', 'improve_clarity', 'remove_repetition', 'rewrite_from_sources'].includes(sectionAction)) throw new ApiError('BLOG_SECTION_INPUT_INVALID', 'Choose a valid section and editing action.', 400);
-  const idempotencyKey = blogJobIdempotencyKey({ origin: 'editor_update', topic: `${existing.id}:${sectionKey}:${sectionAction}`, dateBucket: String(existing.updatedAt) });
-  const job = await blogAutomationRepository.createJob({ origin: 'editor_update', topic: existing.title, requestedBy: requester.userId, payload: { jobType: 'regenerate_section', articleId: existing.id, sectionKey, sectionAction }, idempotencyKey });
-  await logBlogAction(requester.userId, 'queue_blog_section_regeneration', existing.id, { jobId: job.id, sectionKey, sectionAction });
+  const useFixture = req.body?.useFixture === true;
+  if (useFixture) {
+    requireBlogFixtureProvider();
+    if (!existing.fixtureTest) throw new ApiError('BLOG_FIXTURE_ARTICLE_REQUIRED', 'Fixture section revisions are limited to private fixture test drafts.', 400);
+  }
+  const idempotencyKey = blogJobIdempotencyKey({ origin: 'editor_update', topic: `${existing.id}:${sectionKey}:${sectionAction}:${useFixture ? 'fixture' : 'nvidia'}`, dateBucket: String(existing.updatedAt) });
+  const job = await blogAutomationRepository.createJob({ origin: 'editor_update', topic: existing.title, requestedBy: requester.userId, provider: useFixture ? BLOG_FIXTURE_PROVIDER : 'nvidia_nim', model: useFixture ? BLOG_FIXTURE_MODEL : NVIDIA_DEFAULT_BLOG_MODEL, payload: { jobType: 'regenerate_section', articleId: existing.id, sectionKey, sectionAction, fixture: useFixture }, idempotencyKey });
+  await logBlogAction(requester.userId, 'queue_blog_section_regeneration', existing.id, { jobId: job.id, sectionKey, sectionAction, provider: useFixture ? BLOG_FIXTURE_PROVIDER : 'nvidia_nim' });
   res.status(202).json({ success: true, data: { job } });
 }));
 

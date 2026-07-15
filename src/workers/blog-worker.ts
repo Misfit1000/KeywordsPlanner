@@ -14,6 +14,7 @@ import { prepareBlogPost } from '../lib/blog/validation';
 import { requireSupabaseAdminClient } from '../lib/supabase/server';
 import { regenerateSelectedBlogSection, type BlogSectionAction } from '../lib/blog/section-regeneration';
 import { cleanupOrphanedBlogImageVariants } from '../lib/blog/images';
+import { BLOG_FIXTURE_PROVIDER, generateBlogFixture, regenerateFixtureSection } from '../lib/blog/fixture-provider';
 
 const FINAL_JOB_STATES = ['published', 'ready_for_review', 'scheduled', 'skipped', 'failed', 'cancelled'];
 let nextMaintenanceAt = 0;
@@ -133,6 +134,41 @@ async function handleGeneration(job: BlogGenerationJob) {
     await blogAutomationRepository.updateJob(job.id, { state: recoveredPost.status === 'published' ? 'published' : recoveredPost.status === 'scheduled' ? 'scheduled' : 'ready_for_review', articleId: recoveredPost.id, result: { recoveredAfterRestart: true }, completedAt: nowIso() });
     return;
   }
+  if (job.provider === BLOG_FIXTURE_PROVIDER) {
+    const generated = generateBlogFixture({
+      topic: job.topic,
+      headline: job.customHeadline,
+      articleType: String(job.payload.articleType || 'evergreen_guide') as any,
+      scenario: String(job.payload.fixtureScenario || 'evergreen') as any,
+    });
+    const input = draftInput(job, generated, generated.sources);
+    input.status = 'draft';
+    input.origin = 'admin_manual';
+    input.freshnessStatus = generated.articleType === 'urgent_news' ? 'high' : 'evergreen';
+    input.publicationReason = 'Fixture test content. Protected, noindex, and excluded from public feeds.';
+    input.fixtureTest = true;
+    const qualityReport = evaluateBlogQuality(input, { requireSources: generated.sources.length > 0, lengthRange: generated.targetWords });
+    input.qualityStatus = qualityReport.status;
+    input.qualityResults = qualityReport;
+    input.originalityStatus = job.payload.fixtureScenario === 'originality_failure' ? 'blocked' : 'passed';
+    input.sourceStatus = generated.sources.length ? 'passed' : 'blocked';
+    input.imageStatus = job.payload.fixtureScenario === 'image_failure' ? 'blocked' : 'not_required';
+    const row = prepareBlogPost(input);
+    let candidateSlug = row.slug;
+    for (let suffix = 2; await blogRepository.slugExists(candidateSlug); suffix += 1) candidateSlug = `${row.slug.slice(0, 110)}-${suffix}`;
+    row.slug = candidateSlug;
+    let post = await blogRepository.create({ ...row, author_id: job.requestedBy, updated_by: job.requestedBy });
+    const html = renderBlogArticleHtml(post, canonicalSiteOrigin());
+    if (!html.includes('noindex,nofollow') || !html.includes('<h1>') || !html.includes('application/ld+json')) throw new Error('Fixture initial HTML validation failed.');
+    post = (await blogRepository.update(post.id, { prerender_status: 'passed', robots_directive: 'noindex,nofollow' })) || post;
+    await blogRepository.syncEditorialRecords(post, job.requestedBy, '');
+    await blogAutomationRepository.updateJob(job.id, {
+      state: 'ready_for_review', articleId: post.id,
+      result: { fixtureLabel: generated.fixtureLabel, qualityStatus: qualityReport.status, publicEligible: false, providerUsage: generated.providerUsage },
+      generationStages: generated.generationStages, inputTokens: 0, outputTokens: 0, completedAt: nowIso(),
+    });
+    return;
+  }
   const providerSettings = await blogAutomationRepository.getSettings();
   if (providerSettings.provider_enabled !== true) throw new NvidiaBlogProviderError('NVIDIA_NOT_CONFIGURED', 'NVIDIA blog generation is disabled in the administrator provider settings.');
   const posts = await blogRepository.listAdmin(300);
@@ -245,12 +281,11 @@ async function handleSectionRegeneration(job: BlogGenerationJob) {
   const action = String(job.payload.sectionAction || 'regenerate') as BlogSectionAction;
   const post = await blogRepository.getAdminById(articleId);
   if (!post) throw new Error('The article selected for section regeneration no longer exists.');
+  const fixture = job.provider === BLOG_FIXTURE_PROVIDER;
   const providerSettings = await blogAutomationRepository.getSettings();
-  if (!providerSettings.provider_enabled) {
-    throw new NvidiaBlogProviderError('NVIDIA_NOT_CONFIGURED', 'NVIDIA blog generation is disabled in the admin provider settings.');
-  }
+  if (!fixture && !providerSettings.provider_enabled) throw new NvidiaBlogProviderError('NVIDIA_NOT_CONFIGURED', 'NVIDIA blog generation is disabled in the admin provider settings.');
   await blogAutomationRepository.updateJob(job.id, { state: 'drafting' });
-  const regenerated = await regenerateSelectedBlogSection({ post, sectionKey, action });
+  const regenerated = fixture ? regenerateFixtureSection({ post, sectionKey, action }) : await regenerateSelectedBlogSection({ post, sectionKey, action });
   const candidateInput = { ...post, ...regenerated.candidate, generationJobId: job.id };
   const quality = evaluateBlogQuality(candidateInput, { requireSources: post.sources.length > 0 });
   const revision = await blogRepository.createSectionRevision({
@@ -266,7 +301,7 @@ async function handleSectionRegeneration(job: BlogGenerationJob) {
   });
   await blogAutomationRepository.updateJob(job.id, {
     state: 'ready_for_review', articleId: post.id,
-    result: { revisionId: revision.id, sectionKey, qualityStatus: quality.status, providerUsage: regenerated.providerUsage },
+    result: { revisionId: revision.id, sectionKey, qualityStatus: quality.status, providerUsage: regenerated.providerUsage, fixtureLabel: fixture ? 'Fixture test content' : undefined },
     generationStages: ['selected section drafting', 'claim verification', 'originality review', 'link validation', 'heading validation'],
     inputTokens: regenerated.providerUsage.inputTokens, outputTokens: regenerated.providerUsage.outputTokens, completedAt: nowIso(),
   });

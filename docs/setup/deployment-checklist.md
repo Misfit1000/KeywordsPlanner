@@ -1,6 +1,6 @@
 # Deployment Checklist
 
-Apply `supabase/migrations/013_blog_provider_and_editor_completion.sql` after migration 012. Verify its RLS policies, review threshold, section revisions, image variants, and provider-health objects before deploying application code.
+Apply `supabase/migrations/013_blog_provider_and_editor_completion.sql` after migration 012, then apply `supabase/migrations/014_blog_provider_free_editorial_operations.sql`. Verify RLS policies, review thresholds, section revisions, image variants, provider health, approved sources, and the fixture publication guard before deploying application code.
 
 ## Pre-Deploy
 

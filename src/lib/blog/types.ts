@@ -7,6 +7,7 @@ export type BlogJobState = 'queued' | 'discovering' | 'researching' | 'briefing'
 export type BlogArticleType = 'urgent_news' | 'news_analysis' | 'glossary' | 'checklist' | 'evergreen_guide' | 'troubleshooting_guide' | 'technical_guide' | 'comparison';
 export type BlogLengthMode = 'automatic' | 'brief' | 'standard' | 'detailed' | 'custom';
 export type BlogProviderErrorCode = 'NVIDIA_NOT_CONFIGURED' | 'NVIDIA_AUTH_FAILED' | 'NVIDIA_MODEL_UNAVAILABLE' | 'NVIDIA_RATE_LIMITED' | 'NVIDIA_TIMEOUT' | 'NVIDIA_UNAVAILABLE' | 'NVIDIA_INVALID_RESPONSE' | 'NVIDIA_SCHEMA_VALIDATION_FAILED' | 'NVIDIA_OUTPUT_TOO_LARGE' | 'NVIDIA_CANCELLED';
+export type BlogFixtureScenario = 'evergreen' | 'news' | 'invalid' | 'timeout' | 'malformed' | 'originality_failure' | 'missing_sources' | 'image_failure';
 
 export interface BlogSource {
   id?: string;
@@ -85,6 +86,7 @@ export interface BlogPost {
   createdAt: string;
   updatedAt: string;
   readingTimeMinutes: number;
+  fixtureTest: boolean;
 }
 
 export interface BlogPostInput {
@@ -133,6 +135,7 @@ export interface BlogPostInput {
   generationJobId?: string | null;
   batchId?: string | null;
   publishedAt?: string | null;
+  fixtureTest?: boolean;
 }
 
 export interface BlogListResult {
@@ -282,4 +285,44 @@ export interface BlogSectionRevision {
   afterHtml: string;
   status: 'pending' | 'accepted' | 'rejected';
   createdAt: string;
+  sourceSnapshot?: BlogSource[];
+  validationResults?: Record<string, unknown>;
+}
+
+export interface BlogApprovedSource {
+  id: string;
+  name: string;
+  publisher: string;
+  sourceUrl: string;
+  feedType: 'rss' | 'atom' | 'official_blog' | 'changelog' | 'release_notes' | 'manual_url' | 'imported';
+  topicClusters: string[];
+  trustLevel: 'high' | 'medium' | 'low' | 'unverified';
+  classification: 'primary' | 'secondary';
+  enabled: boolean;
+  fetchFrequencyMinutes: number;
+  lastSuccessfulFetch: string | null;
+  lastFailedFetch: string | null;
+  safeFailureCode: string;
+  latestItemDate: string | null;
+  duplicateItemCount: number;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BlogOperationsSnapshot {
+  providerStatus: 'disabled' | 'not_configured' | 'ready';
+  fixtureAvailable: boolean;
+  activeJobs: number;
+  failedJobs: number;
+  staleLeases: number;
+  sourceFailures: number;
+  staleSources: number;
+  imageFailures: number;
+  prerenderFailures: number;
+  sitemapReady: number;
+  rssReady: number;
+  databaseCompatible: boolean;
+  migrationVersion: string;
+  checkedAt: string;
 }

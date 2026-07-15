@@ -250,6 +250,60 @@ export const blogAutomationRepository = {
     return data || [];
   },
 
+  async updateDiscovery(id: string, patch: Row) {
+    const allowed = ['status', 'existing_coverage', 'proposed_angle', 'topic_cluster', 'priority_reason'];
+    const row = Object.fromEntries(Object.entries(patch).filter(([key]) => allowed.includes(key)));
+    const client = getSupabaseAdminClient();
+    if (!client) {
+      const existing = memoryDiscoveries.get(id);
+      if (!existing) return null;
+      const stored = { ...existing, ...row, updated_at: nowIso() };
+      memoryDiscoveries.set(id, stored);
+      return stored;
+    }
+    const { data, error } = await client.from('blog_trend_discoveries').update(row).eq('id', id).select('*').maybeSingle();
+    if (error) throw error;
+    return data || null;
+  },
+
+  async cancelJob(id: string, reason: string) {
+    const client = getSupabaseAdminClient();
+    const patch = { state: 'cancelled', error: reason.slice(0, 1000), locked_by: null, locked_at: null, lease_expires_at: null, completed_at: nowIso(), updated_at: nowIso() };
+    if (!client) {
+      const existing = memoryJobs.get(id);
+      if (!existing || ['published', 'cancelled'].includes(existing.state)) return null;
+      const stored = { ...existing, ...patch };
+      memoryJobs.set(id, stored);
+      return toJob(stored);
+    }
+    const { data, error } = await client.from('blog_generation_jobs').update(patch).eq('id', id).not('state', 'in', '(published,cancelled)').select('*').maybeSingle();
+    if (error) throw error;
+    return data ? toJob(data) : null;
+  },
+
+  async recoverJob(id: string) {
+    const client = getSupabaseAdminClient();
+    const patch = { state: 'queued', locked_by: null, locked_at: null, lease_expires_at: null, scheduled_for: null, error: '', completed_at: null, updated_at: nowIso() };
+    if (!client) {
+      const existing = memoryJobs.get(id);
+      if (!existing || !existing.lease_expires_at || new Date(existing.lease_expires_at).getTime() > Date.now()) return null;
+      const stored = { ...existing, ...patch };
+      memoryJobs.set(id, stored);
+      return toJob(stored);
+    }
+    const { data, error } = await client.from('blog_generation_jobs').update(patch).eq('id', id).lt('lease_expires_at', nowIso()).select('*').maybeSingle();
+    if (error) throw error;
+    return data ? toJob(data) : null;
+  },
+
+  async countStaleLeases() {
+    const client = getSupabaseAdminClient();
+    if (!client) return [...memoryJobs.values()].filter((job) => job.lease_expires_at && new Date(job.lease_expires_at).getTime() < Date.now() && !['published', 'cancelled', 'failed'].includes(job.state)).length;
+    const { count, error } = await client.from('blog_generation_jobs').select('id', { count: 'exact', head: true }).lt('lease_expires_at', nowIso()).not('state', 'in', '(published,cancelled,failed)');
+    if (error) throw error;
+    return count || 0;
+  },
+
   async recordProviderHealth(input: { status: string; errorCode?: string | null; durationMs?: number | null; actorId?: string | null; testKind?: string }) {
     const config = getNvidiaBlogConfiguration();
     const patch = {
