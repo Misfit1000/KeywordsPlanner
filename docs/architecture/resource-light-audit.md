@@ -23,14 +23,14 @@ Raw full HTML is never stored.
 
 ## Audit Modes
 
-- Quick Audit is the default: 10 pages, concurrency 2, 6 second fetch timeout.
+- Quick Audit is the default: 5 pages, concurrency 2, 6 second fetch timeout.
 - Standard Audit: 25 pages, concurrency 3, 8 second fetch timeout.
-- Deep Audit: 50 pages, concurrency 3, 10 second fetch timeout. Users must choose it manually and see a warning that deep audits may take longer and use more resources.
+- Deep Audit: up to 75 pages, concurrency 4, 12 second fetch timeout. It is manually enabled and may be further restricted by server-side plan limits.
 
 ## Limits
 
 - Maximum 300 events per audit.
-- Maximum 10 pages for Quick, 25 for Standard, and 50 for Deep.
+- Code defaults are 5 pages for Quick, 25 for Standard, and 75 for Deep; durable plan limits can reduce the effective limit.
 - Maximum 1,000 issues per audit.
 - `expires_at` is set on audit jobs so old data can be cleaned up.
 
@@ -44,7 +44,7 @@ If HTTPS fails, the worker may try HTTP once, records `usedHttpFallback`, and wr
 
 The worker polls every few seconds, claims queued jobs with Supabase lease fields, writes `running`, crawls same-domain HTML pages only, checks cancellation before each page/check, and keeps partial results when cancelled.
 
-The crawler uses fetch with `AbortController`, robots.txt rules, limited sitemap discovery, `cheerio` parsing, and a small concurrency queue. It does not use Playwright, Puppeteer, Lighthouse, browser rendering, external broken-link crawling by default, port scanning, exploit testing, credential testing, or admin/private crawling.
+The crawler uses a DNS-pinned safe HTTP client, robots.txt rules, limited sitemap discovery, `cheerio` parsing, per-host pacing, and a bounded concurrency queue. It does not use Playwright, Puppeteer, Lighthouse, browser rendering, port scanning, exploit testing, credential testing, or admin/private crawling.
 
 ## Progress And Live UI
 

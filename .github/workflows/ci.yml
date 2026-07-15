@@ -24,6 +24,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
       - run: npm run build
         env:
           BUILD_TIMESTAMP: ${{ github.event.head_commit.timestamp || github.event.pull_request.updated_at }}
@@ -38,7 +40,12 @@ jobs:
       - run: npm run smoke:accessibility
       - run: npm run smoke:findings-layout
       - run: npm run smoke:audit-pdf
+      - run: npm run smoke:worker-ownership
+      - run: npm run smoke:audit-exports
+      - run: npm run smoke:supabase-schema
+      - run: npm run verify:seo
       - run: npm run verify:security
+      - run: git diff --check
 
   dependency-audit:
     runs-on: ubuntu-latest

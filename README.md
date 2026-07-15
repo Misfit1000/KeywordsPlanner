@@ -8,22 +8,22 @@ SEOIntel is a resource-aware SEO, technical SEO, and passive security audit plat
 - **Safe Worker Crawling**: SSRF controls, pinned DNS, redirect revalidation, response limits, per-host scheduling, and bounded audit duration.
 - **Technical SEO**: Find broken links, redirect chains, missing schemas, and more.
 - **Search Data Imports**: Import real performance data from Google Search Console and Bing Webmaster Tools.
-- **Public Web Discovery**: Discover mentions and backlinks via Common Crawl.
+- **Imported Link Data**: Review user-supplied Common Crawl or generic SEO CSV exports without inventing backlink metrics.
 - **Transparent Scores**: Measured deductions are stored with limitations; unavailable provider data does not affect scores.
 - **Account History And Comparison**: Owner-scoped Supabase history with new, resolved, and persistent issue comparison.
-- **No Paid APIs**: Operates using free data and local analysis rules.
-- **Editorial Content Operations**: Administrator-controlled manual, batch, and optional worker-backed article jobs with freshness scoring, source records, quality gates, safe images, scheduling, static HTML, RSS, and sitemaps.
+- **No Paid Audit APIs**: Audit evidence comes from bounded public-page analysis and user imports.
+- **Editorial Content Operations**: Administrator-controlled manual, batch, and optional Groq-backed Vercel jobs with source records, quality gates, review, scheduling, static HTML, RSS, and sitemaps.
 
 ## Getting Started
 
 1. Clone the repository.
-2. Run `npm install` to install dependencies.
+2. Use Node.js 22 and run `npm ci` to install the locked dependencies.
 3. Run `npm run dev` to start the local development server.
 4. Open the app in your browser and start an audit.
 
 ## Deployment
 
-Deploy the frontend and lightweight API to Vercel, apply Supabase migrations, and deploy the audit worker separately to Render. Never run the crawl loop inside a Vercel function. See `docs/setup/deployment-checklist.md`.
+Deploy the frontend and bounded API to Vercel, apply Supabase migrations, and deploy the audit worker separately to Render. Never run the crawl loop inside a Vercel function. The source of truth is `docs/deployment/production-architecture.md`.
 
 ## License
 

@@ -15,6 +15,10 @@ For the audit-resilience release:
 
 The repository includes temporary write fallbacks for a rolling deployment, but the migration must be applied before relying on warning metadata. Do not expose service-role credentials to the browser.
 
+## Current migration head
+
+Apply every migration in numeric order from `001_resource_light_audit.sql` through `016_server_only_audit_admission.sql`. Migration 015 must be applied as one complete transaction after 014; migration 016 then removes direct browser audit mutations and advances the compatibility ledger to API schema 12. Never modify an already-applied migration; add the next numbered migration for future schema corrections.
+
 ## Production robustness release
 
 Apply `supabase/migrations/011_production_robustness.sql` after 010 and before deploying the matching API/audit engine.

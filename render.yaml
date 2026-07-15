@@ -15,8 +15,6 @@ services:
         value: worker-production-1
       - key: AUDIT_POLL_INTERVAL_MS
         value: "4000"
-      - key: WORKER_HEALTH_PORT
-        sync: false
       - key: WORKER_RUNTIME
         value: render-web-service
       - key: DEEP_AUDIT_ENABLED

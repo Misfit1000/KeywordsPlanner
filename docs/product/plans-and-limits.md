@@ -20,7 +20,7 @@
 ## Agency Deep Audit
 
 - Quick, Standard, and Deep audits.
-- Up to 50 pages when `DEEP_AUDIT_ENABLED=true`.
+- Up to 75 pages when `DEEP_AUDIT_ENABLED=true`.
 - Highest customer queue priority.
 - White-label, embed, API, and scheduled audit flags are enabled in plan limits.
 

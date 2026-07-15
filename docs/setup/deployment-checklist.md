@@ -1,11 +1,13 @@
 # Deployment Checklist
 
-Apply migrations in numeric order through `015_vercel_blog_workflow.sql`. Verify RLS, the Vercel claim/complete/recovery RPCs, review thresholds, section revisions, image variants, approved sources, and fixture publication guards before deploying code.
+Apply migrations in numeric order through `016_server_only_audit_admission.sql`. Verify RLS, server-only audit admission, the Vercel blog claim/complete/recovery RPCs, review thresholds, section revisions, image variants, approved sources, and fixture publication guards before deploying code.
 
 ## Pre-Deploy
 
 ```bash
 npm run lint
+npm run typecheck
+npm test
 npm run build
 npm run smoke:url
 npm run smoke:api-json
@@ -25,7 +27,7 @@ git diff --check
 
 - Set `VITE_SUPABASE_URL`.
 - Set `VITE_SUPABASE_ANON_KEY`.
-- Set server-only `GROQ_*`, `BLOG_DISPATCH_SECRET`, and `BLOG_CRON_SECRET` values on Vercel.
+- Set server-only `GROQ_*`, `BLOG_DISPATCH_SECRET`, `CRON_SECRET`, `RATE_LIMIT_HASH_SECRET`, and `APP_URL` values on Vercel.
 - Confirm no `VITE_GROQ_*` environment variable exists.
 - Do not set the Supabase service role key in public `VITE_*` variables.
 - Deploy frontend, lightweight audit APIs, and bounded Vercel blog stages.
@@ -47,11 +49,11 @@ git diff --check
 
 ## Supabase
 
-- Apply every file in `supabase/migrations/` in numeric order through 015; never rewrite an earlier migration.
+- Apply every file in `supabase/migrations/` in numeric order through 016; never rewrite an earlier migration.
 - Confirm Supabase Realtime is enabled for audit tables.
 - Confirm the live audit page shows `WebSocket live` after opening an audit.
 - Confirm RLS is enabled on audit tables.
-- Confirm anon clients can read audit progress and enqueue audits only.
+- Confirm authenticated clients can read only their own audit rows through RLS. Guest audits use the identity-protected Vercel status endpoint and do not receive direct table-read policies.
 - Confirm privileged writes use the service role key only from API/worker environments.
 - Confirm `blog_posts` has RLS enabled and only published posts are publicly readable.
 
