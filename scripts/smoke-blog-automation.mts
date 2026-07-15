@@ -84,9 +84,9 @@ assert.equal(custom.headline, 'How to Review Canonical URLs');
 assert.equal(custom.status, 'passed');
 assert.equal(assessCustomHeadline('How to Review Canonical URLs', ['How to Review Canonical URLs']).duplicate, true);
 assert.equal(assessCustomHeadline('Guaranteed rank #1 instantly', []).misleading, true);
-const nvidiaSource = readFileSync(new URL('../src/lib/blog/nvidia.ts', import.meta.url), 'utf8');
-assert.match(nvidiaSource, /The title must be exactly/);
-assert.match(nvidiaSource, /Target \$\{range\.minimum\}-\$\{range\.maximum\}/);
+const vercelWorkflowSource = readFileSync(new URL('../src/lib/blog/server/vercel-workflow.ts', import.meta.url), 'utf8');
+assert.match(vercelWorkflowSource, /Preserve this exact headline/);
+assert.match(vercelWorkflowSource, /section_drafting/);
 
 const copied = evaluateBlogOriginality('<p>This exact source sentence contains enough individual words to trigger the copied phrase detector immediately today.</p>', ['This exact source sentence contains enough individual words to trigger the copied phrase detector immediately today.']);
 assert.equal(copied.passed, false);
@@ -138,8 +138,7 @@ assert.match(automationMigration, /blog-images/i);
 const vercelConfig = readFileSync(new URL('../vercel.json', import.meta.url), 'utf8');
 assert.match(vercelConfig, /news-sitemap\.xml/);
 assert.match(vercelConfig, /blog\/html\/:slug/);
-const workerSource = readFileSync(new URL('../src/workers/blog-worker.ts', import.meta.url), 'utf8');
-assert.ok(workerSource.indexOf('generateBlogWithNvidia') < workerSource.indexOf('blogRepository.create'), 'provider generation must finish before article creation');
-assert.match(workerSource, /Freshness window expires before the next valid publication time/);
+assert.ok(vercelWorkflowSource.indexOf("stage === 'section_drafting'") < vercelWorkflowSource.indexOf('blogRepository.create'), 'drafting must finish before article creation');
+assert.match(vercelWorkflowSource, /review-first workflow/);
 
 console.log(`blog automation smoke (${mode}): passed`);

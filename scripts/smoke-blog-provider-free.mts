@@ -44,13 +44,13 @@ async function run(selected: string) {
     assert.equal(generateBlogFixture({ topic: 'x', scenario: 'missing_sources' }).sources.length, 0);
     const original = generateBlogFixture({ topic: 'x', scenario: 'evergreen' });
     assert.equal(generateBlogFixture({ topic: 'x', scenario: 'originality_failure' }).contentHtml, `${original.contentHtml}${original.contentHtml}`);
-    assert.match(source('src/workers/blog-worker.ts'), /imageStatus = job\.payload\.fixtureScenario === 'image_failure'/);
+    assert.match(source('src/lib/blog/server/vercel-workflow.ts'), /fixtureScenario === 'image_failure'/);
     assert.throws(() => generateBlogFixture({ topic: 'x', scenario: 'timeout' }), /timeout simulated/i);
     assert.throws(() => generateBlogFixture({ topic: 'x', scenario: 'malformed' }), /structured-output failure/i);
   } else if (selected === 'blog-fixture-safety') {
-    const fixture = source('src/lib/blog/fixture-provider.ts'); const api = source('src/api/index.ts'); const worker = source('src/workers/blog-worker.ts');
+    const fixture = source('src/lib/blog/fixture-provider.ts'); const api = source('src/api/index.ts'); const worker = source('src/lib/blog/server/vercel-workflow.ts');
     assert.match(fixture, /ALLOW_PRODUCTION_BLOG_FIXTURE_GENERATION/); assert.match(api, /requireAdminRequester/); assert.match(api, /requireBlogFixtureProvider/);
-    assert.match(worker, /status = 'draft'|input\.status = 'draft'/); assert.match(worker, /robots_directive: 'noindex,nofollow'/); assert.doesNotMatch(source('src/components/blog/BlogAutomationPanel.tsx') + source('src/components/blog/BlogProviderFreeWorkspace.tsx'), /BLOG_FIXTURE_PROVIDER_ENABLED/);
+    assert.match(worker, /status: fixture \? 'draft'/); assert.match(worker, /'noindex,nofollow'/); assert.doesNotMatch(source('src/components/blog/BlogAutomationPanel.tsx') + source('src/components/blog/BlogProviderFreeWorkspace.tsx'), /BLOG_FIXTURE_PROVIDER_ENABLED/);
   } else if (selected === 'blog-source-management') {
     const migration = source('supabase/migrations/014_blog_provider_free_editorial_operations.sql'); const api = source('src/api/index.ts');
     assert.match(migration, /create table if not exists public\.blog_approved_sources/); assert.match(migration, /enable row level security/); assert.match(migration, /is_admin_user/);
@@ -98,7 +98,7 @@ async function run(selected: string) {
   } else if (selected === 'blog-provider-disabled') {
     const ui = source('src/components/blog/BlogAutomationPanel.tsx'); const api = source('src/api/index.ts');
     assert.match(ui, /Available now:/); assert.match(ui, /Requires provider:/); assert.match(ui, /Provider not configured/); assert.match(api, /BLOG_PROVIDER_NOT_CONFIGURED/);
-    assert.doesNotMatch(source('src/workers/blog-worker.ts'), /Gemini|generateBlogWithGemini/);
+    assert.doesNotMatch(source('src/lib/blog/server/vercel-workflow.ts'), /Gemini|generateBlogWithGemini/);
   }
 }
 

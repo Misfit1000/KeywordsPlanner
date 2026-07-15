@@ -14,6 +14,7 @@ export function startWorkerHealthServer(
 
   const server = http.createServer((req, res) => {
     const payload = {
+      workerRole: 'audit-only',
       ok: state.status !== 'stopped' && state.queuePollingStatus !== 'error' && state.databaseConnected && !state.maintenanceMode,
       serviceStatus: state.maintenanceMode ? 'maintenance' : state.status === 'stopped' ? 'stopped' : 'online',
       queuePollingStatus: state.queuePollingStatus,

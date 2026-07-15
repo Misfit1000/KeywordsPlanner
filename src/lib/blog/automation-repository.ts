@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { getSupabaseAdminClient } from '../supabase/server';
 import { countBlogOrigins } from './automation';
-import type { BlogAdminOverview, BlogArticleOrigin, BlogGenerationJob, BlogJobState, BlogTrendOpportunity } from './types';
+import type { BlogAdminOverview, BlogArticleOrigin, BlogGenerationJob, BlogJobState, BlogTrendOpportunity, BlogWorkflowStage } from './types';
 import { blogRepository } from './repository';
-import { getNvidiaBlogConfiguration } from './nvidia';
+import { getGroqBlogConfiguration } from './server/groq';
 
 type Row = Record<string, any>;
 const memoryJobs = new Map<string, Row>();
@@ -46,6 +46,15 @@ function toJob(row: Row): BlogGenerationJob {
     error: String(row.error || ''),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
+    executionTarget: row.execution_target === 'legacy_render' ? 'legacy_render' : 'vercel',
+    workflowStage: String(row.workflow_stage || 'queued') as BlogWorkflowStage,
+    stageAttemptCount: Number(row.stage_attempt_count || 0),
+    stageOutputs: row.stage_outputs && typeof row.stage_outputs === 'object' ? row.stage_outputs : {},
+    stageProgress: Number(row.stage_progress || 0),
+    statusMessage: String(row.status_message || 'Waiting to start'),
+    nextRetryAt: row.next_retry_at || null,
+    leaseExpiresAt: row.lease_expires_at || null,
+    lastSafeErrorCode: String(row.last_safe_error_code || ''),
   };
 }
 
@@ -89,6 +98,7 @@ export const blogAutomationRepository = {
     payload?: Record<string, unknown>;
     idempotencyKey: string;
     scheduledFor?: string | null;
+    initialStage?: BlogWorkflowStage;
   }) {
     const row = {
       origin: input.origin,
@@ -97,18 +107,22 @@ export const blogAutomationRepository = {
       custom_headline: input.customHeadline || '',
       batch_id: input.batchId || null,
       requested_by: input.requestedBy || null,
-      provider: input.provider || 'nvidia_nim',
-      model: input.model || process.env.NVIDIA_BLOG_MODEL || 'qwen/qwen3.5-122b-a10b',
-      prompt_version: 'qwen-blog-v3',
+      provider: input.provider || 'groq',
+      model: input.model || process.env.GROQ_BLOG_STRUCTURED_MODEL || 'openai/gpt-oss-120b',
+      prompt_version: 'groq-vercel-v1',
       payload: input.payload || {},
       idempotency_key: input.idempotencyKey,
       scheduled_for: input.scheduledFor || null,
+      execution_target: 'vercel',
+      workflow_stage: input.initialStage || 'queued',
+      stage_progress: 0,
+      status_message: 'Waiting to start',
     };
     const client = getSupabaseAdminClient();
     if (!client) {
       const existing = [...memoryJobs.values()].find((job) => job.idempotency_key === input.idempotencyKey);
       if (existing) return toJob(existing);
-      const stored = { ...row, id: randomUUID(), attempt_count: 0, max_attempts: 3, error: '', created_at: nowIso(), updated_at: nowIso() };
+      const stored = { ...row, id: randomUUID(), attempt_count: 0, stage_attempt_count: 0, max_attempts: 3, stage_outputs: {}, error: '', created_at: nowIso(), updated_at: nowIso() };
       memoryJobs.set(stored.id, stored);
       return toJob(stored);
     }
@@ -149,15 +163,15 @@ export const blogAutomationRepository = {
 
   async retryJob(id: string) {
     const client = getSupabaseAdminClient();
-    const patch = { state: 'queued', attempt_count: 0, locked_by: null, locked_at: null, lease_expires_at: null, error: '', completed_at: null, scheduled_for: null, updated_at: nowIso() };
+    const patch = { state: 'queued', attempt_count: 0, stage_attempt_count: 0, locked_by: null, locked_at: null, lease_expires_at: null, next_retry_at: null, last_safe_error_code: '', error: '', completed_at: null, scheduled_for: null, updated_at: nowIso() };
     if (!client) {
       const existing = memoryJobs.get(id);
-      if (!existing || !['failed', 'ready_for_review'].includes(existing.state)) return null;
+      if (!existing || existing.execution_target !== 'vercel' || existing.state !== 'failed') return null;
       const stored = { ...existing, ...patch };
       memoryJobs.set(id, stored);
       return toJob(stored);
     }
-    const { data, error } = await client.from('blog_generation_jobs').update(patch).eq('id', id).in('state', ['failed', 'ready_for_review']).select('*').maybeSingle();
+    const { data, error } = await client.from('blog_generation_jobs').update(patch).eq('id', id).eq('execution_target', 'vercel').eq('state', 'failed').select('*').maybeSingle();
     if (error) throw error;
     return data ? toJob(data) : null;
   },
@@ -186,22 +200,78 @@ export const blogAutomationRepository = {
     return data ? toJob(data) : null;
   },
 
-  async claimJob(workerId: string) {
+  async getJob(id: string) {
+    const client = getSupabaseAdminClient();
+    if (!client) return memoryJobs.has(id) ? toJob(memoryJobs.get(id)!) : null;
+    const { data, error } = await client.from('blog_generation_jobs').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    return data ? toJob(data) : null;
+  },
+
+  async claimVercelStage(executionId: string, requestedJobId?: string | null) {
     const client = getSupabaseAdminClient();
     if (!client) {
-      const row = [...memoryJobs.values()].find((job) => job.state === 'queued' && (!job.scheduled_for || new Date(job.scheduled_for).getTime() <= Date.now()));
+      const active = [...memoryJobs.values()].some((job) => job.locked_by && new Date(job.lease_expires_at || 0).getTime() > Date.now() && job.id !== requestedJobId);
+      if (active) return null;
+      const row = [...memoryJobs.values()].find((job) => job.execution_target === 'vercel' && (!requestedJobId || job.id === requestedJobId) && !['published', 'failed', 'cancelled', 'ready_for_review', 'scheduled'].includes(job.workflow_stage) && (!job.scheduled_for || new Date(job.scheduled_for).getTime() <= Date.now()) && (!job.next_retry_at || new Date(job.next_retry_at).getTime() <= Date.now()));
       if (!row) return null;
-      row.attempt_count = Number(row.attempt_count || 0) + 1;
-      row.locked_by = workerId;
+      row.stage_attempt_count = Number(row.stage_attempt_count || 0) + 1;
+      row.locked_by = executionId;
       row.locked_at = nowIso();
-      row.lease_expires_at = new Date(Date.now() + 300_000).toISOString();
+      row.lease_expires_at = new Date(Date.now() + 240_000).toISOString();
       row.updated_at = nowIso();
       return toJob(row);
     }
-    const { data, error } = await client.rpc('claim_blog_generation_job', { worker_id: workerId, lease_seconds: 300 });
+    const { data, error } = await client.rpc('claim_vercel_blog_stage', { execution_id: executionId, lease_seconds: 240, requested_job_id: requestedJobId || null });
     if (error) throw error;
     const row = data?.[0];
     return row ? toJob(row) : null;
+  },
+
+  async completeVercelStage(input: { jobId: string; executionId: string; expectedStage: BlogWorkflowStage; nextStage: BlogWorkflowStage; nextState: BlogJobState; output?: Record<string, unknown>; progress: number; message: string }) {
+    const client = getSupabaseAdminClient();
+    if (!client) {
+      const row = memoryJobs.get(input.jobId);
+      if (!row || row.locked_by !== input.executionId || row.workflow_stage !== input.expectedStage) return null;
+      Object.assign(row, { workflow_stage: input.nextStage, state: input.nextState, stage_outputs: { ...(row.stage_outputs || {}), ...(input.output || {}) }, stage_progress: input.progress, status_message: input.message, stage_attempt_count: 0, locked_by: null, locked_at: null, lease_expires_at: null, next_retry_at: null, last_safe_error_code: '', error: '', updated_at: nowIso() });
+      return toJob(row);
+    }
+    const { data, error } = await client.rpc('complete_vercel_blog_stage', { job_id: input.jobId, execution_id: input.executionId, expected_stage: input.expectedStage, next_stage: input.nextStage, next_state: input.nextState, output_patch: input.output || {}, progress_value: input.progress, message_value: input.message });
+    if (error) throw error;
+    return data?.[0] ? toJob(data[0]) : null;
+  },
+
+  async deferVercelStage(input: { jobId: string; executionId: string; expectedStage: BlogWorkflowStage; errorCode: string; message: string; retryAt: string; terminal: boolean }) {
+    const client = getSupabaseAdminClient();
+    if (!client) {
+      const row = memoryJobs.get(input.jobId);
+      if (!row || row.locked_by !== input.executionId) return null;
+      Object.assign(row, { workflow_stage: row.workflow_stage, state: input.terminal ? 'failed' : 'queued', last_safe_error_code: input.errorCode, error: input.message, status_message: input.message, next_retry_at: input.terminal ? null : input.retryAt, locked_by: null, locked_at: null, lease_expires_at: null, updated_at: nowIso() });
+      return toJob(row);
+    }
+    const { data, error } = await client.rpc('defer_vercel_blog_stage', { job_id: input.jobId, execution_id: input.executionId, expected_stage: input.expectedStage, safe_error_code: input.errorCode, safe_message: input.message, retry_at: input.retryAt, terminal: input.terminal });
+    if (error) throw error;
+    return data?.[0] ? toJob(data[0]) : null;
+  },
+
+  async recoverVercelJobs(limit = 10) {
+    const client = getSupabaseAdminClient();
+    if (!client) {
+      let recovered = 0;
+      for (const row of memoryJobs.values()) if (row.execution_target === 'vercel' && row.lease_expires_at && new Date(row.lease_expires_at).getTime() < Date.now()) { Object.assign(row, { locked_by: null, locked_at: null, lease_expires_at: null, next_retry_at: nowIso(), status_message: 'Recovered after an interrupted stage' }); recovered += 1; }
+      return recovered;
+    }
+    const { data, error } = await client.rpc('recover_vercel_blog_jobs', { recovery_limit: Math.max(1, Math.min(50, limit)) });
+    if (error) throw error;
+    return Number(data || 0);
+  },
+
+  async getDispatcherState() {
+    const client = getSupabaseAdminClient();
+    if (!client) return { id: 'vercel', last_dispatch_at: null, last_successful_stage_at: null, last_recovery_at: null, dispatched_stages: 0, recovered_jobs: 0, consecutive_rate_limits: 0, provider_pause_until: null, last_safe_error_code: '' };
+    const { data, error } = await client.from('blog_dispatcher_state').select('*').eq('id', 'vercel').maybeSingle();
+    if (error) throw error;
+    return data || null;
   },
 
   async upsertDiscovery(opportunity: BlogTrendOpportunity & { status?: string; priorityLabel?: string }) {
@@ -268,7 +338,7 @@ export const blogAutomationRepository = {
 
   async cancelJob(id: string, reason: string) {
     const client = getSupabaseAdminClient();
-    const patch = { state: 'cancelled', error: reason.slice(0, 1000), locked_by: null, locked_at: null, lease_expires_at: null, completed_at: nowIso(), updated_at: nowIso() };
+    const patch = { state: 'cancelled', workflow_stage: 'cancelled', error: reason.slice(0, 1000), locked_by: null, locked_at: null, lease_expires_at: null, completed_at: nowIso(), updated_at: nowIso() };
     if (!client) {
       const existing = memoryJobs.get(id);
       if (!existing || ['published', 'cancelled'].includes(existing.state)) return null;
@@ -286,26 +356,26 @@ export const blogAutomationRepository = {
     const patch = { state: 'queued', locked_by: null, locked_at: null, lease_expires_at: null, scheduled_for: null, error: '', completed_at: null, updated_at: nowIso() };
     if (!client) {
       const existing = memoryJobs.get(id);
-      if (!existing || !existing.lease_expires_at || new Date(existing.lease_expires_at).getTime() > Date.now()) return null;
+      if (!existing || existing.execution_target !== 'vercel' || !existing.lease_expires_at || new Date(existing.lease_expires_at).getTime() > Date.now()) return null;
       const stored = { ...existing, ...patch };
       memoryJobs.set(id, stored);
       return toJob(stored);
     }
-    const { data, error } = await client.from('blog_generation_jobs').update(patch).eq('id', id).lt('lease_expires_at', nowIso()).select('*').maybeSingle();
+    const { data, error } = await client.from('blog_generation_jobs').update(patch).eq('id', id).eq('execution_target', 'vercel').lt('lease_expires_at', nowIso()).select('*').maybeSingle();
     if (error) throw error;
     return data ? toJob(data) : null;
   },
 
   async countStaleLeases() {
     const client = getSupabaseAdminClient();
-    if (!client) return [...memoryJobs.values()].filter((job) => job.lease_expires_at && new Date(job.lease_expires_at).getTime() < Date.now() && !['published', 'cancelled', 'failed'].includes(job.state)).length;
-    const { count, error } = await client.from('blog_generation_jobs').select('id', { count: 'exact', head: true }).lt('lease_expires_at', nowIso()).not('state', 'in', '(published,cancelled,failed)');
+    if (!client) return [...memoryJobs.values()].filter((job) => job.execution_target === 'vercel' && job.lease_expires_at && new Date(job.lease_expires_at).getTime() < Date.now() && !['published', 'cancelled', 'failed'].includes(job.state)).length;
+    const { count, error } = await client.from('blog_generation_jobs').select('id', { count: 'exact', head: true }).eq('execution_target', 'vercel').lt('lease_expires_at', nowIso()).not('state', 'in', '(published,cancelled,failed)');
     if (error) throw error;
     return count || 0;
   },
 
   async recordProviderHealth(input: { status: string; errorCode?: string | null; durationMs?: number | null; actorId?: string | null; testKind?: string }) {
-    const config = getNvidiaBlogConfiguration();
+    const config = getGroqBlogConfiguration();
     const patch = {
       provider_last_success_at: input.status === 'connected' ? nowIso() : memorySettings.provider_last_success_at,
       provider_last_error_code: input.errorCode || '',
@@ -316,7 +386,7 @@ export const blogAutomationRepository = {
     if (!client) { memorySettings = { ...memorySettings, ...patch }; return; }
     const [settingsResult, healthResult] = await Promise.all([
       client.from('blog_autopilot_settings').update(patch).eq('id', 'default'),
-      client.from('blog_provider_health').insert({ provider: 'nvidia_nim', model: config.model, status: input.status, safe_error_code: input.errorCode || '', duration_ms: input.durationMs ?? null, test_kind: input.testKind || 'admin_test', actor_id: input.actorId || null }),
+      client.from('blog_provider_health').insert({ provider: 'groq', model: config.structuredModel, status: input.status, safe_error_code: input.errorCode || '', duration_ms: input.durationMs ?? null, test_kind: input.testKind || 'admin_test', actor_id: input.actorId || null }),
     ]);
     if (settingsResult.error) throw settingsResult.error;
     if (healthResult.error) throw healthResult.error;
@@ -341,7 +411,7 @@ export const blogAutomationRepository = {
   },
 
   async overview(now = new Date()): Promise<BlogAdminOverview> {
-    const [posts, jobs, discoveries, settings] = await Promise.all([blogRepository.listAdmin(200), blogAutomationRepository.listJobs(200), blogAutomationRepository.listDiscoveries(200), blogAutomationRepository.getSettings()]);
+    const [posts, jobs, discoveries, settings, dispatcher] = await Promise.all([blogRepository.listAdmin(200), blogAutomationRepository.listJobs(200), blogAutomationRepository.listDiscoveries(200), blogAutomationRepository.getSettings(), blogAutomationRepository.getDispatcherState()]);
     const counts = countBlogOrigins(posts, jobs, now);
     const topicCounts = posts.reduce((result, post) => {
       const key = (post.topicCluster || post.title).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -372,6 +442,9 @@ export const blogAutomationRepository = {
       automaticApproved: Number(settings.automatic_articles_approved || 0),
       automaticRejected: Number(settings.automatic_articles_rejected || 0),
       strictAutopilotUnlocked: Number(settings.automatic_articles_approved || 0) >= Number(settings.required_reviewed_articles_before_autopublish || 30),
+      vercelJobs: jobs.filter((job) => job.executionTarget === 'vercel').length,
+      stalledVercelJobs: jobs.filter((job) => job.executionTarget === 'vercel' && job.leaseExpiresAt && new Date(job.leaseExpiresAt).getTime() < now.getTime()).length,
+      lastSuccessfulStageAt: dispatcher?.last_successful_stage_at || null,
     };
   },
 };

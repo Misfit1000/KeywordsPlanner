@@ -28,8 +28,8 @@ import type { AuditIssue } from '../lib/audit/types';
 import { safePublicFetch, type SafePublicFetchOptions } from '../lib/security/safe-public-fetch';
 import { calculateTransparentAuditScore, toReportScoreRecord } from '../lib/audit/audit-scoring';
 import { AuditWriteBatch } from './audit-write-batch';
-import { processOneBlogJob } from './blog-worker';
 import { HostRequestScheduler } from './host-request-scheduler';
+import { isAuditJobType } from './audit-job-types';
 import {
   aggregateFailureCounts,
   classifyAuditFailure,
@@ -891,6 +891,12 @@ export async function runOneAudit(
     return false;
   }
 
+  if (!isAuditJobType(audit.effectiveMode)) {
+    await auditRepository.updateAudit(audit.id, { status: 'failed', error: 'Unsupported audit job type.', completedAt: nowIso() });
+    console.error(`Audit worker rejected unsupported job type for ${audit.id}`);
+    return true;
+  }
+
   if (runtimeState) {
     await writeWorkerHeartbeat(runtimeState, { status: 'running', currentAuditId: audit.id });
   }
@@ -1018,10 +1024,7 @@ export async function runAuditWorkerLoop() {
     try {
       await writeWorkerHeartbeat(state, { status: 'idle', currentAuditId: null, queuePollingStatus: 'active', databaseConnected: true, lastFatalWorkerError: null });
       const claimed = await runOneAudit(config.workerId, state);
-      const blogProcessed = !claimed && process.env.BLOG_AUTOMATION_ENABLED === 'true'
-        ? await processOneBlogJob(`${config.workerId}:blog`)
-        : false;
-      if (!claimed && !blogProcessed) await wait(config.pollIntervalMs);
+      if (!claimed) await wait(config.pollIntervalMs);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error || 'Worker polling failure');
       updateWorkerState(state, { status: 'idle', currentAuditId: null, queuePollingStatus: 'error', databaseConnected: false, lastFatalWorkerError: detail });

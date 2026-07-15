@@ -139,7 +139,15 @@ export default function BlogProviderFreeWorkspace() {
     () =>
       operations
         ? [
-            ["Provider", operations.providerStatus.replaceAll("_", " ")],
+            ["Execution", operations.execution],
+            ["Provider", operations.provider],
+            ["Structured model", operations.structuredModel],
+            ["Writer model", operations.writerModel],
+            ["Provider status", operations.providerStatus.replaceAll("_", " ")],
+            ["Last dispatch", date(operations.lastDispatchAt)],
+            ["Last completed stage", date(operations.lastSuccessfulStageAt)],
+            ["Recovered jobs", operations.recoveredJobs],
+            ["Provider pause", date(operations.providerPauseUntil)],
             ["Active jobs", operations.activeJobs],
             ["Failed jobs", operations.failedJobs],
             ["Stale leases", operations.staleLeases],
@@ -741,7 +749,7 @@ export default function BlogProviderFreeWorkspace() {
                 <tr>
                   <th className="p-3">Job</th>
                   <th className="p-3">Provider</th>
-                  <th className="p-3">State</th>
+                  <th className="p-3">Stage</th>
                   <th className="p-3">Updated</th>
                   <th className="p-3">Actions</th>
                 </tr>
@@ -769,15 +777,16 @@ export default function BlogProviderFreeWorkspace() {
                               : "neutral"
                         }
                       >
-                        {job.state.replaceAll("_", " ")}
+                        {String(job.workflowStage || job.state).replaceAll("_", " ")}
                       </StatusBadge>
+                      <span className="mt-1 block text-xs text-muted-foreground">{job.stageProgress || 0}% · attempt {job.stageAttemptCount || 0}</span>
                     </td>
                     <td className="whitespace-nowrap p-3 text-xs text-muted-foreground">
                       {date(job.updatedAt)}
                     </td>
                     <td className="p-3">
                       <div className="flex gap-2">
-                        {["failed", "ready_for_review"].includes(job.state) && (
+                        {job.state === "failed" && (
                           <button
                             type="button"
                             onClick={() =>

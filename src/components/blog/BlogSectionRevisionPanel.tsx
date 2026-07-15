@@ -80,7 +80,7 @@ export default function BlogSectionRevisionPanel({
         useFixture,
       );
       setMessage(
-        `${useFixture ? "Fixture test content" : "NVIDIA"} section revision queued. Published content remains unchanged until approval and republication.`,
+        `${useFixture ? "Fixture test content" : "Groq"} section revision queued. Published content remains unchanged until approval and republication.`,
       );
     } catch (requestError) {
       setError(
@@ -199,7 +199,7 @@ export default function BlogSectionRevisionPanel({
           title={
             provider.liveAvailable
               ? ""
-              : "Configure and enable NVIDIA NIM on the worker first."
+              : "Configure and enable Groq in Vercel first."
           }
           onClick={() => void queue(false)}
           className="trust-button"
@@ -209,7 +209,7 @@ export default function BlogSectionRevisionPanel({
           ) : (
             <RotateCcw className="h-4 w-4" />
           )}{" "}
-          Live NVIDIA revision
+          Live Groq revision
         </button>
         {provider.fixtureAvailable && post.fixtureTest && (
           <button

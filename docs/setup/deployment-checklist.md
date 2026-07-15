@@ -1,6 +1,6 @@
 # Deployment Checklist
 
-Apply `supabase/migrations/013_blog_provider_and_editor_completion.sql` after migration 012, then apply `supabase/migrations/014_blog_provider_free_editorial_operations.sql`. Verify RLS policies, review thresholds, section revisions, image variants, provider health, approved sources, and the fixture publication guard before deploying application code.
+Apply migrations in numeric order through `015_vercel_blog_workflow.sql`. Verify RLS, the Vercel claim/complete/recovery RPCs, review thresholds, section revisions, image variants, approved sources, and fixture publication guards before deploying code.
 
 ## Pre-Deploy
 
@@ -25,10 +25,10 @@ git diff --check
 
 - Set `VITE_SUPABASE_URL`.
 - Set `VITE_SUPABASE_ANON_KEY`.
-- Do not set `NVIDIA_API_KEY` on Vercel; blog provider calls run in the worker.
-- Confirm no `VITE_NVIDIA_*` environment variable exists.
+- Set server-only `GROQ_*`, `BLOG_DISPATCH_SECRET`, and `BLOG_CRON_SECRET` values on Vercel.
+- Confirm no `VITE_GROQ_*` environment variable exists.
 - Do not set the Supabase service role key in public `VITE_*` variables.
-- Deploy frontend and lightweight API routes only.
+- Deploy frontend, lightweight audit APIs, and bounded Vercel blog stages.
 - Do not run audit workers or multi-page crawlers in Vercel serverless functions.
 - Confirm response security headers are present on preview deployments.
 - Configure Vercel Firewall for production:
@@ -37,17 +37,17 @@ git diff --check
   - Add a rate limit rule for `/api/` traffic that matches expected usage.
   - Enable OWASP managed rules if available on the plan.
 
-## Worker
+## Render Audit Worker
 
 - Set `SUPABASE_URL`.
 - Set `SUPABASE_SERVICE_ROLE_KEY`.
-- Keep `NVIDIA_BLOG_ENABLED=false` initially. Set `NVIDIA_API_KEY`, `NVIDIA_API_BASE_URL`, and `NVIDIA_BLOG_MODEL` on the worker, test the provider, then enable it deliberately.
 - Run `npm run worker:audit`.
 - Verify worker logs show the worker started and can claim queued audits.
+- Confirm Render has no `BLOG_*`, `GROQ_*`, scheduler, or provider variables.
 
 ## Supabase
 
-- Apply every file in `supabase/migrations/` in numeric order through `012_blog_automation_platform.sql`. Existing projects must apply 011 before 012; never rewrite an earlier migration.
+- Apply every file in `supabase/migrations/` in numeric order through 015; never rewrite an earlier migration.
 - Confirm Supabase Realtime is enabled for audit tables.
 - Confirm the live audit page shows `WebSocket live` after opening an audit.
 - Confirm RLS is enabled on audit tables.

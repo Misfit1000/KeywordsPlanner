@@ -6,7 +6,16 @@ export type BlogAssetStatus = BlogQualityStatus | 'not_required';
 export type BlogJobState = 'queued' | 'discovering' | 'researching' | 'briefing' | 'drafting' | 'validating' | 'checking_originality' | 'optimising' | 'sourcing_images' | 'prerendering' | 'ready_for_review' | 'scheduled' | 'publishing' | 'published' | 'skipped' | 'failed' | 'cancelled';
 export type BlogArticleType = 'urgent_news' | 'news_analysis' | 'glossary' | 'checklist' | 'evergreen_guide' | 'troubleshooting_guide' | 'technical_guide' | 'comparison';
 export type BlogLengthMode = 'automatic' | 'brief' | 'standard' | 'detailed' | 'custom';
-export type BlogProviderErrorCode = 'NVIDIA_NOT_CONFIGURED' | 'NVIDIA_AUTH_FAILED' | 'NVIDIA_MODEL_UNAVAILABLE' | 'NVIDIA_RATE_LIMITED' | 'NVIDIA_TIMEOUT' | 'NVIDIA_UNAVAILABLE' | 'NVIDIA_INVALID_RESPONSE' | 'NVIDIA_SCHEMA_VALIDATION_FAILED' | 'NVIDIA_OUTPUT_TOO_LARGE' | 'NVIDIA_CANCELLED';
+export type BlogProviderErrorCode =
+  | 'GROQ_NOT_CONFIGURED' | 'GROQ_DISABLED' | 'GROQ_AUTH_FAILED' | 'GROQ_MODEL_PERMISSION_DENIED'
+  | 'GROQ_MODEL_UNAVAILABLE' | 'GROQ_RATE_LIMITED' | 'GROQ_TIMEOUT' | 'GROQ_UNAVAILABLE'
+  | 'GROQ_INVALID_RESPONSE' | 'GROQ_SCHEMA_VALIDATION_FAILED' | 'GROQ_OUTPUT_TOO_LARGE' | 'GROQ_CANCELLED';
+export type BlogExecutionTarget = 'legacy_render' | 'vercel';
+export type BlogWorkflowStage = 'queued' | 'source_collection' | 'source_validation' | 'topic_evaluation'
+  | 'research_organisation' | 'content_gap_analysis' | 'brief_generation' | 'outline_generation'
+  | 'section_drafting' | 'article_assembly' | 'editorial_review' | 'metadata_generation'
+  | 'claim_validation' | 'originality_validation' | 'link_validation' | 'image_processing'
+  | 'quality_gate' | 'ready_for_review' | 'scheduled' | 'publishing' | 'published' | 'failed' | 'cancelled';
 export type BlogFixtureScenario = 'evergreen' | 'news' | 'invalid' | 'timeout' | 'malformed' | 'originality_failure' | 'missing_sources' | 'image_failure';
 
 export interface BlogSource {
@@ -227,6 +236,15 @@ export interface BlogGenerationJob {
   error: string;
   createdAt: string;
   updatedAt: string;
+  executionTarget: BlogExecutionTarget;
+  workflowStage: BlogWorkflowStage;
+  stageAttemptCount: number;
+  stageOutputs: Record<string, unknown>;
+  stageProgress: number;
+  statusMessage: string;
+  nextRetryAt: string | null;
+  leaseExpiresAt: string | null;
+  lastSafeErrorCode: string;
 }
 
 export interface BlogAdminOverview {
@@ -261,6 +279,9 @@ export interface BlogAdminOverview {
   automaticApproved: number;
   automaticRejected: number;
   strictAutopilotUnlocked: boolean;
+  vercelJobs: number;
+  stalledVercelJobs: number;
+  lastSuccessfulStageAt: string | null;
 }
 
 export interface BlogImageVariant {
@@ -311,7 +332,17 @@ export interface BlogApprovedSource {
 }
 
 export interface BlogOperationsSnapshot {
+  execution: string;
+  provider: string;
+  structuredModel: string;
+  writerModel: string;
   providerStatus: 'disabled' | 'not_configured' | 'ready';
+  lastDispatchAt: string | null;
+  lastSuccessfulStageAt: string | null;
+  lastRecoveryAt: string | null;
+  recoveredJobs: number;
+  dispatcherErrorCode: string;
+  providerPauseUntil: string | null;
   fixtureAvailable: boolean;
   activeJobs: number;
   failedJobs: number;

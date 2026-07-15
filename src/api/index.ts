@@ -28,7 +28,8 @@ import { renderBlogArticleHtml } from '../lib/blog/render';
 import { blogAutomationRepository } from '../lib/blog/automation-repository';
 import { blogJobIdempotencyKey, validateManualBatch } from '../lib/blog/automation';
 import { importBlogImage } from '../lib/blog/images';
-import { getNvidiaBlogConfiguration, NVIDIA_DEFAULT_BLOG_MODEL } from '../lib/blog/nvidia';
+import { getGroqBlogConfiguration, GROQ_DEFAULT_STRUCTURED_MODEL, GROQ_DEFAULT_WRITER_MODEL, testGroqProvider } from '../lib/blog/server/groq';
+import { dispatchVercelBlogStages, getVercelBlogRuntimeInfo, recoverAndDispatchVercelBlogWork } from '../lib/blog/server/vercel-workflow';
 import { normalizeBlogArticleType } from '../lib/blog/length-policy';
 import { validateCalendarMove } from '../lib/blog/freshness';
 import { BLOG_FIXTURE_MODEL, BLOG_FIXTURE_PROVIDER, getBlogFixtureConfiguration, requireBlogFixtureProvider } from '../lib/blog/fixture-provider';
@@ -80,10 +81,26 @@ function hashGuestValue(value: string) {
 }
 
 function schedulerRequestAllowed(req: any) {
-  const expected = String(process.env.BLOG_SCHEDULER_SECRET || process.env.CRON_SECRET || '');
+  const expected = String(process.env.BLOG_DISPATCH_SECRET || process.env.BLOG_CRON_SECRET || process.env.BLOG_SCHEDULER_SECRET || process.env.CRON_SECRET || '');
   const supplied = firstHeaderValue(req.headers?.authorization).replace(/^Bearer\s+/i, '') || firstHeaderValue(req.headers?.['x-blog-scheduler-secret']);
   if (expected.length < 24 || supplied.length < 24) return false;
   return createHash('sha256').update(expected).digest('hex') === createHash('sha256').update(supplied).digest('hex');
+}
+
+function requestOrigin(req: any) {
+  const proto = firstHeaderValue(req.headers?.['x-forwarded-proto']) || 'https';
+  const host = firstHeaderValue(req.headers?.['x-forwarded-host']) || firstHeaderValue(req.headers?.host);
+  return host ? `${proto}://${host}` : '';
+}
+
+function requestImmediateBlogDispatch(req: any, jobId: string, chainDepth = 0) {
+  const secret = String(process.env.BLOG_DISPATCH_SECRET || '');
+  const origin = requestOrigin(req);
+  if (!origin || secret.length < 24 || process.env.NODE_ENV === 'test') return;
+  void fetch(`${origin}/api/tools/blog/jobs/dispatch`, {
+    method: 'POST', headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jobId, maxStages: 3, chainDepth }), signal: AbortSignal.timeout(8_000),
+  }).catch(() => undefined);
 }
 
 function getCookieValue(req: any, name: string) {
@@ -485,9 +502,9 @@ apiRouter.get('/blog/news-sitemap.xml', asyncJsonRoute(async (req, res) => {
 
 const runBlogScheduler = asyncJsonRoute(async (req: any, res: any) => {
   if (!schedulerRequestAllowed(req)) throw new ApiError('BLOG_SCHEDULER_UNAUTHORIZED', 'Scheduler authentication failed.', 401);
-  const [publishedIds, settings] = await Promise.all([blogRepository.publishDueScheduled(10), blogAutomationRepository.getSettings()]);
+  const settings = await blogAutomationRepository.getSettings();
   let discoveryJob = null;
-  if (settings.enabled && Array.isArray(settings.approved_feed_urls) && settings.approved_feed_urls.length) {
+  if (process.env.BLOG_AUTOMATION_ENABLED === 'true' && settings.enabled && Array.isArray(settings.approved_feed_urls) && settings.approved_feed_urls.length) {
     const now = new Date();
     const sixHourBucket = `${now.toISOString().slice(0, 10)}-${Math.floor(now.getUTCHours() / 6)}`;
     discoveryJob = await blogAutomationRepository.createJob({
@@ -496,11 +513,35 @@ const runBlogScheduler = asyncJsonRoute(async (req: any, res: any) => {
       idempotencyKey: blogJobIdempotencyKey({ origin: 'autopilot', topic: 'scheduled-discovery', dateBucket: sixHourBucket }),
     });
   }
+  const dispatch = await recoverAndDispatchVercelBlogWork(1);
   res.setHeader('Cache-Control', 'private, no-store');
-  res.json({ success: true, data: { publishedCount: publishedIds.length, publishedIds, discoveryJobId: discoveryJob?.id || null } });
+  res.json({ success: true, data: { ...dispatch, discoveryJobId: discoveryJob?.id || null } });
 });
 apiRouter.get('/blog/scheduler/run', runBlogScheduler);
 apiRouter.post('/blog/scheduler/run', runBlogScheduler);
+
+const runBlogDispatcher = asyncJsonRoute(async (req: any, res: any) => {
+  if (!schedulerRequestAllowed(req)) throw new ApiError('BLOG_DISPATCH_UNAUTHORIZED', 'Dispatcher authentication failed.', 401);
+  const requestedJobId = String(req.body?.jobId || req.query?.jobId || '').trim() || null;
+  if (requestedJobId && !/^[0-9a-f-]{36}$/i.test(requestedJobId)) throw new ApiError('BLOG_JOB_ID_INVALID', 'The requested blog job ID is invalid.', 400);
+  const data = await dispatchVercelBlogStages({ requestedJobId, maxStages: Math.max(1, Math.min(3, Number(req.body?.maxStages || req.query?.maxStages || 1))) });
+  const chainDepth = Math.max(0, Math.min(7, Number(req.body?.chainDepth || 0)));
+  const latestJob = data.results.at(-1)?.job;
+  if (latestJob && !['ready_for_review', 'scheduled', 'published', 'failed', 'cancelled'].includes(latestJob.workflowStage) && chainDepth < 7) {
+    requestImmediateBlogDispatch(req, latestJob.id, chainDepth + 1);
+  }
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data });
+});
+apiRouter.get('/blog/jobs/dispatch', runBlogDispatcher);
+apiRouter.post('/blog/jobs/dispatch', runBlogDispatcher);
+
+apiRouter.post('/blog/jobs/recover', asyncJsonRoute(async (req, res) => {
+  if (!schedulerRequestAllowed(req)) throw new ApiError('BLOG_RECOVERY_UNAUTHORIZED', 'Recovery authentication failed.', 401);
+  const data = await recoverAndDispatchVercelBlogWork(Math.max(1, Math.min(3, Number(req.body?.maxStages || 1))));
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data });
+}));
 
 apiRouter.get('/blog/html/:slug', asyncJsonRoute(async (req, res) => {
   const post = await blogRepository.getPublishedBySlug(normalizeBlogSlug(req.params.slug));
@@ -541,18 +582,19 @@ apiRouter.get('/admin/blog/overview', asyncJsonRoute(async (req, res) => {
     blogAutomationRepository.getSettings(),
   ]);
   res.setHeader('Cache-Control', 'private, no-store');
-  const providerConfiguration = getNvidiaBlogConfiguration();
+  const providerConfiguration = getGroqBlogConfiguration();
   const fixtureConfiguration = getBlogFixtureConfiguration();
-  res.json({ success: true, data: { overview, jobs, discoveries, provider: { provider: 'NVIDIA NIM', enabled: Boolean(settings.provider_enabled), configured: providerConfiguration.configured, model: NVIDIA_DEFAULT_BLOG_MODEL, baseUrlHost: 'integrate.api.nvidia.com', health: settings.provider_last_error_code ? 'attention required' : settings.provider_last_success_at ? 'connected' : providerConfiguration.configured ? 'not tested' : 'not configured', lastSuccessAt: settings.provider_last_success_at || null, lastErrorCode: settings.provider_last_error_code || '', lastDurationMs: settings.provider_last_duration_ms ?? null, liveVerificationStatus: settings.provider_live_verification_status || 'not_run', fixtureAvailable: fixtureConfiguration.enabled } } });
+  res.json({ success: true, data: { overview, jobs, discoveries, provider: { provider: 'Groq', execution: 'Vercel server workflow', enabled: Boolean(settings.provider_enabled && providerConfiguration.enabled), configured: providerConfiguration.configured, model: providerConfiguration.structuredModel, structuredModel: providerConfiguration.structuredModel, writerModel: providerConfiguration.writerModel, baseUrlHost: providerConfiguration.baseUrlHost, health: settings.provider_last_error_code ? 'attention required' : settings.provider_last_success_at ? 'connected' : providerConfiguration.configured ? 'not tested' : providerConfiguration.enabled ? 'not configured' : 'disabled', lastSuccessAt: settings.provider_last_success_at || null, lastErrorCode: settings.provider_last_error_code || '', lastDurationMs: settings.provider_last_duration_ms ?? null, liveVerificationStatus: settings.provider_live_verification_status || 'not_run', fixtureAvailable: fixtureConfiguration.enabled } } });
 }));
 
 apiRouter.post('/admin/blog/provider/test', asyncJsonRoute(async (req, res) => {
   const requester = await requireAdminRequester(req, res);
   if (!requester) return;
-  const job = await blogAutomationRepository.createJob({ origin: 'admin_manual', topic: 'NVIDIA provider connectivity test', requestedBy: requester.userId, payload: { jobType: 'provider_test' }, idempotencyKey: blogJobIdempotencyKey({ origin: 'admin_manual', topic: 'nvidia-provider-test', dateBucket: new Date().toISOString().slice(0, 16) }) });
-  await logBlogAction(requester.userId, 'queue_blog_provider_test', 'nvidia_nim', { jobId: job.id });
+  const result = await testGroqProvider();
+  await blogAutomationRepository.recordProviderHealth({ status: result.status, errorCode: result.errorCode, durationMs: result.durationMs, actorId: requester.userId, testKind: 'admin_test' });
+  await logBlogAction(requester.userId, 'test_blog_provider', 'groq', { status: result.status, model: result.model });
   res.setHeader('Cache-Control', 'private, no-store');
-  res.status(202).json({ success: true, data: { result: { status: 'queued', model: NVIDIA_DEFAULT_BLOG_MODEL, host: 'integrate.api.nvidia.com', durationMs: null, errorCode: null }, job } });
+  res.json({ success: true, data: { result } });
 }));
 
 apiRouter.get('/admin/blog/settings', asyncJsonRoute(async (req, res) => {
@@ -565,7 +607,7 @@ apiRouter.put('/admin/blog/settings', asyncJsonRoute(async (req, res) => {
   const requester = await requireAdminRequester(req, res);
   if (!requester) return;
   const feedUrls = Array.isArray(req.body?.approved_feed_urls) ? req.body.approved_feed_urls.slice(0, 20).map(String) : [];
-  if (req.body?.enabled === true && !getNvidiaBlogConfiguration().configured) throw new ApiError('BLOG_PROVIDER_NOT_CONFIGURED', 'Configure and enable NVIDIA NIM on the worker before enabling automatic generation.', 409);
+  if (req.body?.enabled === true && !getGroqBlogConfiguration().configured) throw new ApiError('BLOG_PROVIDER_NOT_CONFIGURED', 'Configure and enable Groq in the Vercel server environment before enabling automatic generation.', 409);
   if (feedUrls.some((value) => { try { return new URL(value).protocol !== 'https:'; } catch { return true; } })) throw new ApiError('INVALID_BLOG_FEED', 'Approved feeds must use valid public HTTPS URLs.', 400);
   const timezone = String(req.body?.timezone || 'UTC');
   try { new Intl.DateTimeFormat('en', { timeZone: timezone }).format(); } catch { throw new ApiError('INVALID_TIMEZONE', 'Enter a valid IANA timezone.', 400); }
@@ -643,13 +685,23 @@ apiRouter.post('/admin/blog/trends/:id/action', asyncJsonRoute(async (req, res) 
 
 apiRouter.get('/admin/blog/operations', asyncJsonRoute(async (req, res) => {
   if (!(await requireAdminRequester(req, res))) return;
-  const [jobs, posts, sources, staleLeases, settings] = await Promise.all([
-    blogAutomationRepository.listJobs(200), blogRepository.listAdmin(300), blogSourceRepository.list(), blogAutomationRepository.countStaleLeases(), blogAutomationRepository.getSettings(),
+  const [jobs, posts, sources, staleLeases, settings, dispatcher] = await Promise.all([
+    blogAutomationRepository.listJobs(200), blogRepository.listAdmin(300), blogSourceRepository.list(), blogAutomationRepository.countStaleLeases(), blogAutomationRepository.getSettings(), blogAutomationRepository.getDispatcherState(),
   ]);
-  const providerConfiguration = getNvidiaBlogConfiguration();
+  const providerConfiguration = getGroqBlogConfiguration();
   const now = Date.now();
   const snapshot = {
-    providerStatus: !settings.provider_enabled ? 'disabled' : providerConfiguration.configured ? 'ready' : 'not_configured',
+    execution: 'Vercel server workflow',
+    provider: 'Groq',
+    structuredModel: providerConfiguration.structuredModel,
+    writerModel: providerConfiguration.writerModel,
+    providerStatus: !settings.provider_enabled || !providerConfiguration.enabled ? 'disabled' : providerConfiguration.configured ? 'ready' : 'not_configured',
+    lastDispatchAt: dispatcher?.last_dispatch_at || null,
+    lastSuccessfulStageAt: dispatcher?.last_successful_stage_at || null,
+    lastRecoveryAt: dispatcher?.last_recovery_at || null,
+    recoveredJobs: Number(dispatcher?.recovered_jobs || 0),
+    dispatcherErrorCode: String(dispatcher?.last_safe_error_code || ''),
+    providerPauseUntil: dispatcher?.provider_pause_until || null,
     fixtureAvailable: getBlogFixtureConfiguration().enabled,
     activeJobs: jobs.filter((job) => !['published', 'ready_for_review', 'scheduled', 'skipped', 'failed', 'cancelled'].includes(job.state)).length,
     failedJobs: jobs.filter((job) => job.state === 'failed').length,
@@ -661,7 +713,7 @@ apiRouter.get('/admin/blog/operations', asyncJsonRoute(async (req, res) => {
     sitemapReady: posts.filter((post) => post.status === 'published' && !post.robotsDirective.includes('noindex')).length,
     rssReady: posts.filter((post) => post.status === 'published' && !post.robotsDirective.includes('noindex')).length,
     databaseCompatible: true,
-    migrationVersion: '014',
+    migrationVersion: '015',
     checkedAt: new Date().toISOString(),
   };
   res.setHeader('Cache-Control', 'private, no-store');
@@ -725,8 +777,8 @@ apiRouter.post('/admin/blog/jobs', asyncJsonRoute(async (req, res) => {
     topic,
     customHeadline: headline,
     requestedBy: requester.userId,
-    provider: mode === 'fixture' ? BLOG_FIXTURE_PROVIDER : 'nvidia_nim',
-    model: mode === 'fixture' ? BLOG_FIXTURE_MODEL : NVIDIA_DEFAULT_BLOG_MODEL,
+    provider: mode === 'fixture' ? BLOG_FIXTURE_PROVIDER : 'groq',
+    model: mode === 'fixture' ? BLOG_FIXTURE_MODEL : GROQ_DEFAULT_STRUCTURED_MODEL,
     payload: {
       jobType: mode === 'discover' ? 'discover_trends' : 'generate_article',
       manualDiscovery: mode === 'discover',
@@ -745,7 +797,37 @@ apiRouter.post('/admin/blog/jobs', asyncJsonRoute(async (req, res) => {
     idempotencyKey: blogJobIdempotencyKey({ origin, topic, customHeadline: headline, dateBucket }),
   });
   await logBlogAction(requester.userId, 'queue_blog_job', job.id, { origin, mode, batchId: null });
-  res.status(202).json({ success: true, data: { job } });
+  requestImmediateBlogDispatch(req, job.id);
+  res.status(202).json({ success: true, data: { jobId: job.id, status: 'queued', job } });
+}));
+
+apiRouter.get('/admin/blog/jobs/:id', asyncJsonRoute(async (req, res) => {
+  if (!(await requireAdminRequester(req, res))) return;
+  const job = await blogAutomationRepository.getJob(req.params.id);
+  if (!job) throw new ApiError('BLOG_JOB_NOT_FOUND', 'Blog job not found.', 404);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: { job } });
+}));
+
+apiRouter.post('/admin/blog/jobs/:id/cancel', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const reason = String(req.body?.reason || '').trim().slice(0, 500);
+  if (reason.length < 4) throw new ApiError('BLOG_OPERATION_REASON_REQUIRED', 'Provide a reason for cancelling this job.', 400);
+  const job = await blogAutomationRepository.cancelJob(req.params.id, reason);
+  if (!job) throw new ApiError('BLOG_JOB_NOT_CANCELLABLE', 'This job cannot be cancelled.', 409);
+  await logBlogAction(requester.userId, 'cancel_blog_job', job.id, { reason });
+  res.json({ success: true, data: { job } });
+}));
+
+apiRouter.post('/admin/blog/jobs/:id/process', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const existing = await blogAutomationRepository.getJob(req.params.id);
+  if (!existing || existing.executionTarget !== 'vercel') throw new ApiError('BLOG_JOB_NOT_PROCESSABLE', 'This Vercel blog job is not available.', 409);
+  const data = await dispatchVercelBlogStages({ requestedJobId: existing.id, maxStages: 1 });
+  await logBlogAction(requester.userId, 'process_blog_job_stage', existing.id, { processedStages: data.processedStages });
+  res.json({ success: true, data });
 }));
 
 apiRouter.post('/admin/blog/jobs/:id/retry', asyncJsonRoute(async (req, res) => {
@@ -754,6 +836,7 @@ apiRouter.post('/admin/blog/jobs/:id/retry', asyncJsonRoute(async (req, res) => 
   const job = await blogAutomationRepository.retryJob(req.params.id);
   if (!job) throw new ApiError('BLOG_JOB_NOT_RETRYABLE', 'This job is not in a retryable state.', 409);
   await logBlogAction(requester.userId, 'retry_blog_job', job.id, { provider: job.provider, model: job.model });
+  requestImmediateBlogDispatch(req, job.id);
   res.status(202).json({ success: true, data: { job } });
 }));
 
@@ -776,6 +859,7 @@ apiRouter.post('/admin/blog/batches', asyncJsonRoute(async (req, res) => {
     }));
   }
   await logBlogAction(requester.userId, 'queue_blog_batch', batch.id, { count: jobs.length });
+  if (jobs[0]) requestImmediateBlogDispatch(req, jobs[0].id);
   res.status(202).json({ success: true, data: { batch, jobs } });
 }));
 
@@ -879,10 +963,11 @@ apiRouter.post('/admin/blog/posts/:id/section-regeneration', asyncJsonRoute(asyn
     requireBlogFixtureProvider();
     if (!existing.fixtureTest) throw new ApiError('BLOG_FIXTURE_ARTICLE_REQUIRED', 'Fixture section revisions are limited to private fixture test drafts.', 400);
   }
-  const idempotencyKey = blogJobIdempotencyKey({ origin: 'editor_update', topic: `${existing.id}:${sectionKey}:${sectionAction}:${useFixture ? 'fixture' : 'nvidia'}`, dateBucket: String(existing.updatedAt) });
-  const job = await blogAutomationRepository.createJob({ origin: 'editor_update', topic: existing.title, requestedBy: requester.userId, provider: useFixture ? BLOG_FIXTURE_PROVIDER : 'nvidia_nim', model: useFixture ? BLOG_FIXTURE_MODEL : NVIDIA_DEFAULT_BLOG_MODEL, payload: { jobType: 'regenerate_section', articleId: existing.id, sectionKey, sectionAction, fixture: useFixture }, idempotencyKey });
-  await logBlogAction(requester.userId, 'queue_blog_section_regeneration', existing.id, { jobId: job.id, sectionKey, sectionAction, provider: useFixture ? BLOG_FIXTURE_PROVIDER : 'nvidia_nim' });
-  res.status(202).json({ success: true, data: { job } });
+  const idempotencyKey = blogJobIdempotencyKey({ origin: 'editor_update', topic: `${existing.id}:${sectionKey}:${sectionAction}:${useFixture ? 'fixture' : 'groq'}`, dateBucket: String(existing.updatedAt) });
+  const job = await blogAutomationRepository.createJob({ origin: 'editor_update', topic: existing.title, requestedBy: requester.userId, provider: useFixture ? BLOG_FIXTURE_PROVIDER : 'groq', model: useFixture ? BLOG_FIXTURE_MODEL : GROQ_DEFAULT_WRITER_MODEL, initialStage: 'section_drafting', payload: { jobType: 'regenerate_section', articleId: existing.id, sectionKey, sectionAction, fixture: useFixture }, idempotencyKey });
+  await logBlogAction(requester.userId, 'queue_blog_section_regeneration', existing.id, { jobId: job.id, sectionKey, sectionAction, provider: useFixture ? BLOG_FIXTURE_PROVIDER : 'groq' });
+  requestImmediateBlogDispatch(req, job.id);
+  res.status(202).json({ success: true, data: { jobId: job.id, status: 'queued', job } });
 }));
 
 apiRouter.post('/admin/blog/section-revisions/:id/decision', asyncJsonRoute(async (req, res) => {

@@ -27,4 +27,4 @@ The default urgent-content setting is hold-for-review. Automatic scheduling is p
 
 ## Content Honesty
 
-The system does not claim rankings, indexing, traffic, backlinks, or search volume. Competitor work is limited to content-gap observations and may not copy wording, examples, paragraph order, or heading structure. NVIDIA NIM drafts must cite supplied sources through standard hyperlinks and are rejected when critical quality checks fail. Article-length ranges depend on content type and never justify filler.
+The system does not claim rankings, indexing, traffic, backlinks, or search volume. Competitor work is limited to content-gap observations and may not copy wording, examples, paragraph order, or heading structure. Groq drafts run through bounded Vercel stages, must cite supplied sources through standard hyperlinks, and are rejected when critical quality checks fail. Article-length ranges depend on content type and never justify filler.

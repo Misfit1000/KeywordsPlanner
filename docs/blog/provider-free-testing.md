@@ -1,7 +1,5 @@
 # Provider-free testing
 
-Migrations 013 and 014 are required. Keep NVIDIA disabled while no credential exists. Normal CI uses deterministic fixtures and must not contact NVIDIA.
+Normal CI does not contact Groq. Deterministic fixture jobs exercise the same Vercel/Supabase stage transitions and remain draft, noindex, and public-feed excluded. Run the fixture, source, feed, editor, calendar, image, rendering, operations, architecture, audit, SEO, and security smoke commands before deployment.
 
-Run the fixture, source, feed, editor, calendar, image, rendering, operations, SEO, and security smoke commands before deployment. Credential-backed NVIDIA, scheduler, and publication scripts remain optional and must be reported as skipped until their credentials and explicit flags exist.
-
-Fixture records use `fixture_test=true` and `noindex,nofollow`. Server validation and public repository queries prevent them from entering article pages, topic hubs, sitemaps, news sitemap, or RSS.
+`smoke:groq-live`, `smoke:blog-live-vercel-workflow`, and `smoke:blog-live-vercel-publication` are opt-in. Missing credentials or explicit flags must be reported as skipped, never passed.

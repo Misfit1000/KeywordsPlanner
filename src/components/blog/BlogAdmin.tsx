@@ -190,7 +190,7 @@ export default function BlogAdmin() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div><h2 className="text-2xl font-semibold">Blog publishing</h2><p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Write, optimize, schedule, publish, and archive public SEOIntel articles. NVIDIA NIM drafts remain subject to administrator review and deterministic publication gates.</p></div>
+        <div><h2 className="text-2xl font-semibold">Blog publishing</h2><p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Write, optimize, schedule, publish, and archive public SEOIntel articles. Groq drafts run through durable Vercel stages and remain subject to administrator review and deterministic publication gates.</p></div>
         <button type="button" onClick={startNew} className="trust-button"><FilePlus2 className="h-4 w-4" /> New article</button>
       </div>
 

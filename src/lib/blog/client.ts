@@ -47,7 +47,7 @@ export async function runAdminBlogWorkflow(id: string, input: { action: 'hold' |
 }
 
 export async function getBlogAutomationDashboard() {
-  return request<{ overview: BlogAdminOverview; jobs: BlogGenerationJob[]; discoveries: Array<Record<string, any>>; provider: { provider: string; enabled: boolean; configured: boolean; model: string; baseUrlHost: string; health?: string; fixtureAvailable?: boolean } }>(API_ROUTES.adminBlogOverview, { headers: await getAuthHeaders() });
+  return request<{ overview: BlogAdminOverview; jobs: BlogGenerationJob[]; discoveries: Array<Record<string, any>>; provider: { provider: string; execution: string; enabled: boolean; configured: boolean; model: string; structuredModel: string; writerModel: string; baseUrlHost: string; health?: string; fixtureAvailable?: boolean } }>(API_ROUTES.adminBlogOverview, { headers: await getAuthHeaders() });
 }
 
 export async function getBlogAutomationSettings() {
