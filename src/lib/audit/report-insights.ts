@@ -4,7 +4,7 @@ import type {
   ResourceAuditPage,
 } from './resource-types';
 
-export type ReportScoreKey = 'overall' | 'seo' | 'technical' | 'crawlability' | 'performance' | 'security';
+export type ReportScoreKey = 'overall' | 'seo' | 'technical' | 'crawlability' | 'internalLinks' | 'performance' | 'security' | 'structuredData';
 export type ReportSectionId =
   | 'on-page'
   | 'technical'
@@ -20,8 +20,10 @@ export interface ReportScoreSnapshot {
   seo: number | null;
   technical: number | null;
   crawlability: number | null;
+  internalLinks: number | null;
   performance: number | null;
   security: number | null;
+  structuredData: number | null;
 }
 
 export interface RecommendationGroup {
@@ -65,11 +67,13 @@ function finiteScore(value: unknown): number | null {
 export function extractReportScores(scores?: Record<string, unknown> | null): ReportScoreSnapshot {
   return {
     overall: finiteScore(scores?.overall),
-    seo: finiteScore(scores?.seo),
+    seo: finiteScore(scores?.seo ?? scores?.onPage),
     technical: finiteScore(scores?.technical),
     crawlability: finiteScore(scores?.crawlability),
+    internalLinks: finiteScore(scores?.internalLinks),
     performance: finiteScore(scores?.performance),
     security: finiteScore(scores?.security),
+    structuredData: finiteScore(scores?.structuredData),
   };
 }
 

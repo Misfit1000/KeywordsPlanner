@@ -34,7 +34,7 @@ import AuditActivityPanel from './AuditActivityPanel';
 import { AuditExecutiveSummary, PriorityRecommendations } from './AuditExecutiveSummary';
 import FindingWorkspace from './FindingWorkspace';
 import { AuditReportReadyNote, AuditTerminalState } from './AuditTerminalState';
-import PublicLinkSignalsCard from '../backlinks/PublicLinkSignalsCard';
+import DomainStrengthCard from '../backlinks/DomainStrengthCard';
 import { useFindingWorkflow } from './useFindingWorkflow';
 import type { FindingWorkflowRecord, FindingWorkflowStatus } from '../../lib/audit/finding-workflow';
 
@@ -449,7 +449,7 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
         progress={progress}
         unavailableChecks={liveScore.unavailableCount}
       />
-      {data.finalReport && <PublicLinkSignalsCard domain={audit.hostname} />}
+      {data.finalReport && <DomainStrengthCard domain={audit.hostname} auditScores={data.finalReport.scores} />}
       <PriorityRecommendations issues={data.latestIssues} statuses={checklist} onViewFindings={() => document.getElementById('finding-workspace-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
       <SurfaceCard className="p-5 md:p-6">
         {livePresentation && <CurrentWorkCard presentation={livePresentation} connection={connection} now={now} onViewReport={onOpenWorkspace} />}

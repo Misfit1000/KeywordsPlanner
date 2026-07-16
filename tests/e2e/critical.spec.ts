@@ -62,7 +62,7 @@ test.describe('guest audit integration', () => {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: auditSnapshot(terminal ? 'completed' : 'running') }) });
     });
     await page.route(`**/api/tools/audit/${AUDIT_ID}/finding-workflow`, (route) => route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ success: false, error: 'Sign in to persist finding workflow.' }) }));
-    await page.route('**/api/tools/domain/link-signals?*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { domain: 'example.com', found: true, globalRank: 12345, tldRank: 8012, referringSubnets: 420, referringIps: 760, datasetDate: '16 Jul 2026', fetchedAt: '2026-07-16T00:00:00.000Z', source: 'Majestic Million', sourceUrl: 'https://majestic.com/reports/majestic-million', license: 'CC BY 3.0', scope: 'public_top_million' } }) }));
+    await page.route('**/api/tools/domain/link-signals?*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { domain: 'example.com', found: true, globalRank: 12345, tldRank: 8012, referringSubnets: 420, referringIps: 760, datasetDate: '16 Jul 2026', fetchedAt: '2026-07-16T00:00:00.000Z', source: 'Majestic Million', sourceUrl: 'https://majestic.com/reports/majestic-million', license: 'CC BY 3.0', scope: 'public_top_million', linkStatus: 'measured', webRankStatus: 'measured', webRank: 23456, previousWebRank: 25000, webRankChange: 1544, webRankHistory: [{ date: '2026-07-16', rank: 23456 }, { date: '2026-06-16', rank: 25000 }], partial: false, attributions: [{ label: 'Majestic Million', url: 'https://majestic.com/reports/majestic-million', license: 'CC BY 3.0' }, { label: 'Tranco', url: 'https://tranco-list.eu/' }] } }) }));
 
     await page.goto('/');
     await page.getByLabel('Website or domain').fill('example.com');
@@ -77,12 +77,20 @@ test.describe('guest audit integration', () => {
     await expect(summary).toContainText('Pages analysed');
     await expect(summary).toContainText('2');
     await expect(summary).toContainText('5');
-    const linkSignals = page.getByRole('region', { name: 'Public backlink signals' });
-    await expect(linkSignals).toContainText('#12,345');
-    await expect(linkSignals).toContainText('420');
-    await expect(linkSignals).toContainText('Majestic Million');
+    const domainStrength = page.getByRole('region', { name: 'Domain strength' });
+    await expect(domainStrength).toContainText('Crawlio Domain Strength');
+    await expect(domainStrength).toContainText('#23,456');
+    await expect(domainStrength).toContainText('420');
+    await expect(domainStrength).not.toContainText('Outside top million');
     await expect(page.getByText('Checking your site')).toHaveCount(0);
     await expect(expectNoHorizontalOverflow(page)).resolves.toBe(true);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(domainStrength).toBeVisible();
+    await expect(domainStrength).toContainText('Measured strength factors');
+    await expect(expectNoHorizontalOverflow(page)).resolves.toBe(true);
+    await page.getByRole('button', { name: 'Switch to dark mode' }).click();
+    await expect(page.locator('html')).toHaveClass(/dark/);
 
     await page.reload();
     await expect(page.getByText('Report ready', { exact: true }).first()).toBeVisible();

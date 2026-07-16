@@ -1464,10 +1464,12 @@ apiRouter.get('/domain/link-signals', asyncJsonRoute(async (req, res) => {
 
   try {
     const signals = await getPublicLinkSignals(domain);
-    res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800');
+    res.setHeader('Cache-Control', signals.partial
+      ? 'public, max-age=60, s-maxage=900, stale-while-revalidate=3600'
+      : 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800');
     return res.json({ success: true, data: signals });
   } catch {
-    throw new ApiError('PUBLIC_LINK_SIGNALS_UNAVAILABLE', 'Public backlink signals are temporarily unavailable. Please try again later.', 503);
+    throw new ApiError('PUBLIC_LINK_SIGNALS_UNAVAILABLE', 'External domain evidence is temporarily unavailable. Please try again later.', 503);
   }
 }));
 

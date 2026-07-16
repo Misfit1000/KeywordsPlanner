@@ -18,7 +18,7 @@ import { AuditExecutiveSummary, PriorityRecommendations, type AuditCategoryScore
 import { AuditWorkspaceProvider, useAuditWorkspace } from './AuditWorkspaceContext';
 import FindingWorkspace from './FindingWorkspace';
 import { AuditReportReadyNote, AuditTerminalState } from './AuditTerminalState';
-import PublicLinkSignalsCard from '../backlinks/PublicLinkSignalsCard';
+import DomainStrengthCard from '../backlinks/DomainStrengthCard';
 
 const sections: Array<{ id: AuditWorkspaceSection; label: string }> = [
   { id: 'overview', label: 'Overview' },
@@ -224,7 +224,7 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
           <SurfaceCard className="p-5 md:p-6"><div className="flex items-start justify-between gap-4"><div><h2 className="text-xl font-semibold">Page results</h2><p className="mt-1 text-sm text-muted-foreground">Stored response outcomes from pages the audit attempted.</p></div><Globe2 className="h-5 w-5 text-accent" /></div><div className="mt-5"><MetricBarChart items={pageResults} /></div></SurfaceCard>
           <SurfaceCard className="p-5 md:p-6"><div className="flex items-start justify-between gap-4"><div><h2 className="text-xl font-semibold">Observed delivery</h2><p className="mt-1 text-sm text-muted-foreground">Audit-time response observations, not browser-measured Core Web Vitals.</p></div><ShieldCheck className="h-5 w-5 text-accent" /></div><dl className="mt-5 grid grid-cols-2 gap-4"><div><dt className="text-xs text-muted-foreground">Average response</dt><dd className="mt-1 text-2xl font-semibold">{metrics.averageResponseMs ? `${Math.round(metrics.averageResponseMs)} ms` : '—'}</dd></div><div><dt className="text-xs text-muted-foreground">Pages with findings</dt><dd className="mt-1 text-2xl font-semibold">{data.latestPages.filter((page) => page.issueCount > 0).length}</dd></div><div><dt className="text-xs text-muted-foreground">Average page size</dt><dd className="mt-1 text-2xl font-semibold">{metrics.averagePageBytes ? `${Math.round(metrics.averagePageBytes / 1024)} KB` : '—'}</dd></div><div><dt className="text-xs text-muted-foreground">Deepest page level</dt><dd className="mt-1 text-2xl font-semibold">{data.latestPages.length ? Math.max(...data.latestPages.map((page) => page.crawlDepth)) : '—'}</dd></div></dl></SurfaceCard>
         </div>
-        <PublicLinkSignalsCard domain={audit.hostname} />
+        <DomainStrengthCard domain={audit.hostname} auditScores={data.finalReport?.scores || {}} />
         {firstPage && <SitePreviewSection url={firstPage.url || audit.normalizedUrl} hostname={audit.hostname} title={firstPage.title} description={firstPage.metaDescription} h1={firstPage.h1} canonicalUrl={firstPage.canonicalUrl} siteName={firstPage.siteName} faviconUrl={firstPage.faviconUrl} openGraphImage={firstPage.openGraphImage} screenshotUrl={firstPage.screenshotUrl} themeColor={firstPage.themeColor} />}
         <ComparisonPanel />
         <FindingWorkspace auditId={auditId} issues={data.latestIssues} statuses={checklist} onStatusChange={updateChecklist} />

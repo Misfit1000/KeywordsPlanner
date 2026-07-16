@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { parseMajesticMillionPage } from '../src/lib/backlinks/public-link-signals';
+import { parseMajesticMillionPage, parseTrancoRankResponse } from '../src/lib/backlinks/public-link-signals';
 
 const fixture = `
   <html><body>
@@ -24,22 +24,40 @@ assert.equal(found.referringIps, 648_351);
 assert.equal(found.datasetDate, '16 Jul 2026');
 assert.equal(found.license, 'CC BY 3.0');
 
-const absent = parseMajesticMillionPage('<html><body><h1>The Majestic Million</h1><p>Unfortunately example-not-ranked.test is not in the Majestic Million.</p><div>Top Million Root Domains List generated on 16 Jul 2026 using data from the Fresh Index</div></body></html>', 'example-not-ranked.test');
+const absent = parseMajesticMillionPage('<html><body><h1>The Majestic Million</h1><p>Unfortunately taxcare.com.np is not in the Majestic Million.</p><div>Top Million Root Domains List generated on 16 Jul 2026 using data from the Fresh Index</div></body></html>', 'taxcare.com.np');
 assert.equal(absent.found, false);
 assert.equal(absent.globalRank, null);
 assert.equal(absent.referringSubnets, null);
 
+const ranked = parseTrancoRankResponse({ domain: 'github.com', ranks: [{ date: '2026-07-16', rank: 31 }, { date: '2026-06-16', rank: 40 }] }, 'github.com');
+assert.equal(ranked.status, 'measured');
+assert.equal(ranked.history[0].rank, 31);
+assert.equal(ranked.history[1].rank, 40);
+const unranked = parseTrancoRankResponse({ ranks: [] }, 'taxcare.com.np');
+assert.equal(unranked.status, 'not_ranked');
+assert.deepEqual(unranked.history, []);
+assert.throws(() => parseTrancoRankResponse({ values: [] }, 'example.com'), /format/);
+assert.throws(() => parseTrancoRankResponse({ domain: 'other.example', ranks: [] }, 'example.com'), /different domain/);
+
 const source = await readFile('src/lib/backlinks/public-link-signals.ts', 'utf8');
-const client = await readFile('src/components/backlinks/PublicLinkSignalsCard.tsx', 'utf8');
+const client = await readFile('src/components/backlinks/DomainStrengthCard.tsx', 'utf8');
 const api = await readFile('src/api/index.ts', 'utf8');
-assert.match(source, /const PROVIDER_ORIGIN = 'https:\/\/majestic\.com'/);
-assert.match(source, /MAX_PROVIDER_RESPONSE_BYTES/);
+assert.match(source, /const LINK_PROVIDER_ORIGIN = 'https:\/\/majestic\.com'/);
+assert.match(source, /const RANK_PROVIDER_ORIGIN = 'https:\/\/tranco-list\.eu'/);
+assert.match(source, /MAX_LINK_RESPONSE_BYTES/);
+assert.match(source, /MAX_RANK_RESPONSE_BYTES/);
+assert.match(source, /Promise\.allSettled/);
+assert.match(source, /inFlight/);
+assert.match(source, /RANK_PROVIDER_INTERVAL_MS/);
+assert.match(source, /PARTIAL_CACHE_TTL_MS/);
 assert.match(source, /AbortController/);
-assert.doesNotMatch(source, /process\.env\..*(MAJESTIC|BACKLINK)/i, 'The public adapter must not require a provider key.');
+assert.doesNotMatch(source, /process\.env\..*(MAJESTIC|TRANCO|BACKLINK)/i, 'The adapters must not require a provider key.');
 assert.match(api, /public-link-signals.*maxRequests: 20/);
 assert.match(api, /normalizeUserUrl\(rawDomain\)/);
-assert.doesNotMatch(client, /public-link-signals['"]/i, 'The browser must import only shared backlink types, not the server provider module.');
-assert.match(client, /Try again/);
-assert.match(client, /never changes the Crawlio audit score/);
+assert.match(api, /signals\.partial/);
+assert.doesNotMatch(client, /public-link-signals['"]/i, 'The browser must import only shared domain-signal types, not the server provider module.');
+assert.match(client, /Domain strength/);
+assert.match(client, /Methodology and sources/);
+assert.doesNotMatch(client, /Public backlink signals|Outside top million/);
 
-console.log('Public backlink signals smoke test passed.');
+console.log('Domain signal provider smoke test passed.');

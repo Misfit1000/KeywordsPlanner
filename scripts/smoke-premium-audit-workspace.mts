@@ -11,7 +11,7 @@ for (const section of ['overview', 'seo', 'technical', 'crawlability', 'links', 
 }
 assert.match(workspace, /<AuditExecutiveSummary/);
 assert.match(workspace, /<PriorityRecommendations/);
-assert.match(workspace, /<PublicLinkSignalsCard/);
+assert.match(workspace, /<DomainStrengthCard/);
 assert.match(workspace, /Compare with an earlier audit/);
 assert.match(workspace, /downloadAuditExport\(auditId, 'pdf'\)/);
 assert.match(workspace, /downloadAuditExport\(auditId, 'json'\)/);
@@ -22,7 +22,7 @@ assert.match(summary, /Unavailable/);
 assert.doesNotMatch(liveAudit, /estimatedScore/, 'Live audits must not invent an independent estimated score.');
 assert.match(liveAudit, /getAuditLiveScore/);
 assert.match(liveAudit, /scoreState=/);
-assert.match(liveAudit, /<PublicLinkSignalsCard/);
+assert.match(liveAudit, /<DomainStrengthCard/);
 assert.match(summary, /Preliminary/);
 assert.match(summary, /Final score/);
 assert.match(summary, /Not available/);
