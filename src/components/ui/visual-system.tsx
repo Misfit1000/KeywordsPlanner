@@ -489,6 +489,98 @@ export function RadialScoreGauge({
   );
 }
 
+function scoreBandLabel(value: number) {
+  if (value >= 90) return 'Excellent';
+  if (value >= 80) return 'Strong';
+  if (value >= 70) return 'Good';
+  if (value >= 60) return 'Needs attention';
+  if (value >= 50) return 'Weak';
+  return 'Critical';
+}
+
+export function AuditScoreOverview({
+  score,
+  label = 'Overall score',
+  detail,
+  categoryScores = [],
+}: {
+  score: number;
+  label?: string;
+  detail?: string;
+  categoryScores?: Array<{ label: string; value: number }>;
+}) {
+  const safeValue = safeScore(score);
+  const tone = scoreTone(safeValue);
+  const grade = scoreToGrade(safeValue) || '--';
+  const measuredCategories = categoryScores.filter((item) => Number.isFinite(item.value));
+  const focusCategory = [...measuredCategories].sort((left, right) => left.value - right.value)[0];
+  const markerPosition = Math.max(2, Math.min(98, safeValue));
+
+  const gradeTone = {
+    accent: 'border-blue-500/25 bg-blue-500/10 text-blue-700 dark:text-blue-300',
+    green: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+    yellow: 'border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+    red: 'border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300',
+  }[tone];
+
+  return (
+    <div className="w-full" role="group" aria-label={`${label}: ${Math.round(safeValue)} out of 100, grade ${grade}, ${scoreBandLabel(safeValue)}`}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-muted-foreground">{label}</div>
+          <div className="mt-1 flex items-baseline gap-1.5 tabular-nums">
+            <span className={`text-5xl font-bold leading-none ${scoreTextClass(tone)}`}>{Math.round(safeValue)}</span>
+            <span className="text-sm font-semibold text-muted-foreground">/100</span>
+          </div>
+          <div className="mt-2 text-sm font-semibold">{scoreBandLabel(safeValue)} website health</div>
+        </div>
+        <div className={`flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-xl border ${gradeTone}`}>
+          <span className="text-[10px] font-semibold uppercase tracking-wider opacity-80">Grade</span>
+          <span className="text-3xl font-bold leading-none">{grade}</span>
+        </div>
+      </div>
+
+      <div className="mt-6" aria-hidden="true">
+        <div className="mb-2 flex items-center justify-between text-[11px] font-semibold text-muted-foreground">
+          <span>Score position</span>
+          <span>{scoreBandLabel(safeValue)}</span>
+        </div>
+        <div className="relative pt-2">
+          <span
+            className="absolute top-0 z-10 h-4 w-0.5 -translate-x-1/2 rounded-full bg-foreground shadow-sm transition-[left] duration-700"
+            style={{ left: `${markerPosition}%` }}
+          />
+          <div className="grid h-2.5 grid-cols-[5fr_2fr_1fr_1fr_1fr] gap-1 overflow-hidden rounded-full bg-muted">
+            <span className="bg-red-500/80" />
+            <span className="bg-amber-500/85" />
+            <span className="bg-blue-500/80" />
+            <span className="bg-emerald-500/70" />
+            <span className="bg-emerald-500" />
+          </div>
+        </div>
+        <div className="mt-1.5 flex justify-between text-[10px] tabular-nums text-muted-foreground">
+          <span>0</span><span>50</span><span>70</span><span>80</span><span>90</span><span>100</span>
+        </div>
+      </div>
+
+      {(measuredCategories.length > 0 || focusCategory) && (
+        <dl className="mt-5 grid grid-cols-2 divide-x divide-border border-y border-border py-3 text-sm">
+          <div className="pr-3">
+            <dt className="text-xs text-muted-foreground">Sections measured</dt>
+            <dd className="mt-1 font-semibold tabular-nums">{measuredCategories.length}</dd>
+          </div>
+          <div className="min-w-0 pl-3">
+            <dt className="text-xs text-muted-foreground">Focus area</dt>
+            <dd className="mt-1 truncate font-semibold" title={focusCategory?.label}>{focusCategory ? `${focusCategory.label} (${Math.round(focusCategory.value)})` : 'None'}</dd>
+          </div>
+        </dl>
+      )}
+
+      {detail && <p className="mt-3 text-xs leading-5 text-muted-foreground">{detail}</p>}
+    </div>
+  );
+}
+
 export function CategoryScoreBar({
   label,
   value,

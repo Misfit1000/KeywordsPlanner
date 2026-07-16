@@ -2,7 +2,7 @@ import { AlertTriangle, CheckCircle2, FileSearch, Layers, ShieldAlert } from 'lu
 import type { ResourceAuditDocument, ResourceAuditIssue } from '../../lib/audit/resource-types';
 import type { AuditScoreState } from '../../lib/audit/audit-live-score';
 import { issueSignature, type ChecklistStatus } from '../../lib/audit/client-insights';
-import { CategoryScoreBar, ProgressBar, RadialScoreGauge, SeverityDistribution, StatusBadge, SurfaceCard } from '../ui/visual-system';
+import { AuditScoreOverview, CategoryScoreBar, ProgressBar, SeverityDistribution, StatusBadge, SurfaceCard } from '../ui/visual-system';
 
 export interface AuditCategoryScore {
   label: string;
@@ -44,14 +44,17 @@ export function AuditExecutiveSummary({
           <ProgressBar label={audit.currentPhase || 'Audit progress'} value={progress} tone={audit.status === 'failed' ? 'red' : 'accent'} />
         </div>
       )}
-      <div className="grid lg:grid-cols-[230px_minmax(0,1fr)_minmax(280px,0.86fr)]">
-        <div className="flex flex-col items-center justify-center border-b border-border p-5 lg:border-b-0 lg:border-r lg:p-6">
-          <StatusBadge tone={scoreState === 'final' ? 'success' : scoreState === 'provisional' ? 'accent' : 'neutral'}>
-            {scoreState === 'final' ? 'Final score' : scoreState === 'provisional' ? 'Preliminary' : 'Not available yet'}
-          </StatusBadge>
+      <div className="grid lg:grid-cols-[minmax(300px,0.9fr)_minmax(0,1.05fr)_minmax(280px,0.85fr)]">
+        <div className="flex flex-col justify-center border-b border-border p-5 lg:border-b-0 lg:border-r lg:p-6">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <StatusBadge tone={scoreState === 'final' ? 'success' : scoreState === 'provisional' ? 'accent' : 'neutral'}>
+              {scoreState === 'final' ? 'Final score' : scoreState === 'provisional' ? 'Preliminary' : 'Not available yet'}
+            </StatusBadge>
+            {score != null && <span className="text-xs font-medium text-muted-foreground">Based on completed checks</span>}
+          </div>
           {score == null ? (
-            <div className="mt-4 flex h-36 w-36 flex-col items-center justify-center rounded-full border border-dashed border-border bg-muted/30 text-center"><FileSearch className="h-6 w-6 text-muted-foreground" /><div className="mt-2 font-semibold">Score pending</div><div className="mt-1 px-4 text-xs text-muted-foreground">Available after enough evidence is analysed</div></div>
-          ) : <div className="mt-4"><RadialScoreGauge value={score} label={scoreLabel} detail={scoreDetail} size="md" /></div>}
+            <div className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 px-5 text-center"><FileSearch className="h-7 w-7 text-muted-foreground" /><div className="mt-3 font-semibold">Score pending</div><div className="mt-1 max-w-56 text-xs leading-5 text-muted-foreground">Available after enough evidence is analysed</div></div>
+          ) : <AuditScoreOverview score={score} label={scoreLabel} detail={scoreDetail} categoryScores={categoryScores} />}
         </div>
 
         <div className="border-b border-border p-5 lg:border-b-0 lg:border-r lg:p-6">
