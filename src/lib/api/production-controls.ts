@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { createHash, randomUUID } from 'node:crypto';
 import { ApiError } from './errors';
 import { getSupabaseAdminClient, requireSupabaseAdminClient } from '../supabase/server';
-import { API_SCHEMA_VERSION, deploymentVersionRow, publicVersionPayload } from '../platform/version';
+import { MINIMUM_AUDIT_DATABASE_SCHEMA_VERSION, deploymentVersionRow, publicVersionPayload } from '../platform/version';
 
 export type AuditAdmissionDecision = {
   allowed: boolean;
@@ -146,7 +146,7 @@ export async function getDeploymentCompatibility() {
     return { compatible: false, status: 'migration_required', expected, database: null, worker: null };
   }
   const worker = Array.isArray(workerRows) ? workerRows[0]?.value || null : null;
-  const databaseCompatible = Number(databaseRow.api_schema_version || 0) >= API_SCHEMA_VERSION;
+  const databaseCompatible = Number(databaseRow.api_schema_version || 0) >= MINIMUM_AUDIT_DATABASE_SCHEMA_VERSION;
   const workerCompatible = !worker || (
     String(worker.auditEngineVersion || '') === expected.auditEngineVersion
     && String(worker.scoringVersion || '') === expected.scoringVersion

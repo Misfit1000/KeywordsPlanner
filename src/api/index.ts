@@ -46,6 +46,12 @@ import {
 import { publicVersionPayload } from '../lib/platform/version';
 import { buildPublicAuditExport, csvRow } from '../lib/report/export';
 import { BRAND } from '../lib/brand';
+import { buildOperationalHealth, maybeSendOperationalAlert } from '../lib/operations/health';
+import {
+  findingWorkflowKey,
+  isFindingPriorityOverride,
+  isFindingWorkflowStatus,
+} from '../lib/audit/finding-workflow';
 
 const DUPLICATE_AUDIT_WINDOW_MS = 10 * 60 * 1000;
 
@@ -212,6 +218,44 @@ async function canAccessAudit(req: any, audit: ResourceAuditDocument) {
   return false;
 }
 
+function workflowRow(row: any) {
+  return {
+    id: row.id,
+    auditId: row.audit_id,
+    findingId: row.finding_id ?? null,
+    findingKey: row.finding_key,
+    status: row.status,
+    priorityOverride: row.priority_override ?? null,
+    notes: row.notes || '',
+    dueAt: row.due_at ?? null,
+    resolvedAt: row.resolved_at ?? null,
+    resolvedBy: row.resolved_by ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    updatedBy: row.updated_by,
+    version: Number(row.version || 1),
+  };
+}
+
+async function requireWorkflowAudit(req: any, res: any) {
+  const requester = await getRequester(req);
+  if (!requester.userId) {
+    res.status(401).json({ success: false, error: 'Sign in to persist finding workflow.' });
+    return null;
+  }
+  const audit = await auditRepository.getAuditJob(String(req.params.id || ''));
+  const ownsAudit = audit?.userId === requester.userId;
+  if (!audit || (!ownsAudit && requester.profile?.role !== 'admin')) {
+    res.status(404).json({ success: false, error: 'Audit not found.' });
+    return null;
+  }
+  if (!audit.userId) {
+    res.status(403).json({ success: false, error: 'Guest finding workflow is stored on this device. Sign in before starting an audit to sync it.' });
+    return null;
+  }
+  return { audit, requester };
+}
+
 function sendEntitlementError(res: any, error: unknown) {
   if (error instanceof EntitlementError) {
     throw new ApiError(error.upgradeRequired ? 'PLAN_LIMIT_REACHED' : 'AUDIT_LIMIT_REACHED', error.message, error.status);
@@ -318,24 +362,28 @@ apiRouter.get('/admin/diagnostics', asyncJsonRoute(async (req, res) => {
   if (!(await requireAdminRequester(req, res))) return;
   const client = requireSupabaseAdminClient();
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const [compatibility, auditsResult, workersResult, errorsResult, diagnosticsResult, actionsResult] = await Promise.all([
+  const [compatibility, auditsResult, workersResult, plansResult, errorsResult, diagnosticsResult, actionsResult] = await Promise.all([
     getDeploymentCompatibility(),
-    client.from('audits').select('id,status,created_at,started_at,completed_at,lease_expires_at,warning_count,failure_counts,pages_discovered,pages_crawled').gte('created_at', since).order('created_at', { ascending: false }).limit(500),
+    client.from('audits').select('id,status,created_at,started_at,completed_at,lease_expires_at,warning_count,failure_counts,pages_discovered,pages_crawled,used_http_fallback').gte('created_at', since).order('created_at', { ascending: false }).limit(500),
     client.from('platform_settings').select('key,value,updated_at').like('key', 'audit_worker:%').order('updated_at', { ascending: false }).limit(20),
+    client.from('plan_limits').select('plan,label,max_pages_quick,max_pages_standard,max_pages_deep,allowed_modes').order('priority', { ascending: true }),
     client.from('api_error_logs').select('request_id,route,method,user_id,internal_code,internal_details,deployment_version,created_at').order('created_at', { ascending: false }).limit(50),
     client.from('audit_diagnostics').select('id,audit_id,affected_url,failure_code,phase,attempt_count,request_duration_ms,worker_id,internal_details,created_at').order('created_at', { ascending: false }).limit(100),
     client.from('admin_actions').select('*').order('created_at', { ascending: false }).limit(50),
   ]);
-  const error = [auditsResult.error, workersResult.error, errorsResult.error, diagnosticsResult.error, actionsResult.error].find(Boolean);
+  const error = [auditsResult.error, workersResult.error, plansResult.error, errorsResult.error, diagnosticsResult.error, actionsResult.error].find(Boolean);
   if (error) throw error;
   const rows = auditsResult.data || [];
   const durations = rows.map((row: any) => row.started_at && row.completed_at ? new Date(row.completed_at).getTime() - new Date(row.started_at).getTime() : 0).filter((value) => value > 0);
   const waits = rows.map((row: any) => row.started_at ? new Date(row.started_at).getTime() - new Date(row.created_at).getTime() : 0).filter((value) => value >= 0);
   const failureGroups: Record<string, number> = {};
   rows.forEach((row: any) => Object.entries(row.failure_counts || {}).forEach(([code, count]) => { failureGroups[code] = (failureGroups[code] || 0) + Number(count || 0); }));
+  const operations = buildOperationalHealth({ audits: rows, workers: workersResult.data || [], plans: plansResult.data || [], compatibility });
+  void maybeSendOperationalAlert(operations, client).catch(() => undefined);
   res.setHeader('Cache-Control', 'private, no-store');
   res.json({ success: true, data: {
     compatibility,
+    operations,
     metrics: {
       queued: rows.filter((row: any) => row.status === 'queued').length,
       running: rows.filter((row: any) => row.status === 'running').length,
@@ -1203,6 +1251,103 @@ apiRouter.get('/audit/result/:id', asyncJsonRoute(async (req, res) => {
   if (!liveData.audit || !(await canAccessAudit(req, liveData.audit))) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
   res.setHeader('Cache-Control', 'private, no-store');
   res.json({ success: true, data: liveData });
+}));
+
+apiRouter.get('/audit/:id/finding-workflow', asyncJsonRoute(async (req, res) => {
+  const access = await requireWorkflowAudit(req, res);
+  if (!access) return;
+  const client = requireSupabaseAdminClient();
+  const { data, error } = await client
+    .from('audit_finding_workflow')
+    .select('id,audit_id,finding_id,finding_key,status,priority_override,notes,due_at,resolved_at,resolved_by,created_at,updated_at,updated_by,version')
+    .eq('audit_id', access.audit.id)
+    .order('updated_at', { ascending: false })
+    .limit(1000);
+  if (error) throw error;
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: { records: (data || []).map(workflowRow), persistent: true } });
+}));
+
+apiRouter.put('/audit/:id/finding-workflow/:findingKey', durableRateLimit({ namespace: 'finding-workflow', limit: 120, windowSeconds: 60 }), asyncJsonRoute(async (req, res) => {
+  const access = await requireWorkflowAudit(req, res);
+  if (!access) return;
+  const key = String(req.params.findingKey || '').trim().toLowerCase();
+  if (!key || key.length > 512) throw new ApiError('INVALID_FINDING_KEY', 'Finding key is invalid.', 400);
+  const status = req.body?.status;
+  if (!isFindingWorkflowStatus(status)) throw new ApiError('INVALID_WORKFLOW_STATUS', 'Workflow status is invalid.', 400);
+  const notes = String(req.body?.notes || '').trim().slice(0, 2000);
+  const priorityOverride = req.body?.priorityOverride == null || req.body.priorityOverride === '' ? null : req.body.priorityOverride;
+  if (priorityOverride && !isFindingPriorityOverride(priorityOverride)) throw new ApiError('INVALID_PRIORITY_OVERRIDE', 'Priority override is invalid.', 400);
+  let dueAt: string | null = null;
+  if (req.body?.dueAt) {
+    const parsedDueAt = new Date(req.body.dueAt);
+    if (!Number.isFinite(parsedDueAt.getTime())) throw new ApiError('INVALID_DUE_DATE', 'Due date is invalid.', 400);
+    dueAt = parsedDueAt.toISOString();
+  }
+
+  const issues = await auditRepository.getLatestIssues(access.audit.id, 1000);
+  const finding = issues.find((issue) => findingWorkflowKey(issue) === key);
+  if (!finding) throw new ApiError('FINDING_NOT_FOUND', 'Finding not found for this audit.', 404);
+
+  const client = requireSupabaseAdminClient();
+  const existingResult = await client
+    .from('audit_finding_workflow')
+    .select('id,version')
+    .eq('audit_id', access.audit.id)
+    .eq('finding_key', key)
+    .maybeSingle();
+  if (existingResult.error) throw existingResult.error;
+  const terminal = ['fixed', 'ignored', 'accepted_risk'].includes(status);
+  const now = new Date().toISOString();
+  let saved: any;
+
+  if (existingResult.data) {
+    const expectedVersion = Number(req.body?.expectedVersion);
+    if (!Number.isInteger(expectedVersion) || expectedVersion !== Number(existingResult.data.version)) {
+      throw new ApiError('WORKFLOW_CONFLICT', 'This finding changed in another tab. Reload it before saving again.', 409);
+    }
+    const result = await client
+      .from('audit_finding_workflow')
+      .update({
+        finding_id: finding.id,
+        status,
+        priority_override: priorityOverride,
+        notes,
+        due_at: dueAt,
+        resolved_at: terminal ? now : null,
+        resolved_by: terminal ? access.requester.userId : null,
+        updated_by: access.requester.userId,
+        version: expectedVersion + 1,
+      })
+      .eq('id', existingResult.data.id)
+      .eq('version', expectedVersion)
+      .select('*')
+      .maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data) throw new ApiError('WORKFLOW_CONFLICT', 'This finding changed in another tab. Reload it before saving again.', 409);
+    saved = result.data;
+  } else {
+    const result = await client.from('audit_finding_workflow').insert({
+      audit_id: access.audit.id,
+      finding_id: finding.id,
+      finding_key: key,
+      user_id: access.audit.userId,
+      status,
+      priority_override: priorityOverride,
+      notes,
+      due_at: dueAt,
+      resolved_at: terminal ? now : null,
+      resolved_by: terminal ? access.requester.userId : null,
+      created_by: access.requester.userId,
+      updated_by: access.requester.userId,
+    }).select('*').single();
+    if (result.error) {
+      if (result.error.code === '23505') throw new ApiError('WORKFLOW_CONFLICT', 'This finding changed in another tab. Reload it before saving again.', 409);
+      throw result.error;
+    }
+    saved = result.data;
+  }
+  res.json({ success: true, data: { record: workflowRow(saved) } });
 }));
 
 apiRouter.post('/audit/archive/:id', asyncJsonRoute(async (req, res) => {

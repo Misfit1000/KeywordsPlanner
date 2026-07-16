@@ -1,5 +1,9 @@
 export const APPLICATION_VERSION = '1.0.0-beta';
-export const API_SCHEMA_VERSION = 12;
+export const API_SCHEMA_VERSION = 13;
+// Migration 019 is additive. Keep audit admission compatible with schema 12
+// during the database-first rollout window so automatic web deploys do not
+// interrupt the existing worker queue.
+export const MINIMUM_AUDIT_DATABASE_SCHEMA_VERSION = 12;
 export const AUDIT_ENGINE_VERSION = '2026.07';
 export const SCORING_VERSION = '2.0';
 export const CHECK_REGISTRY_VERSION = '2.0';
@@ -31,6 +35,8 @@ export function publicVersionPayload() {
     auditEngineVersion: AUDIT_ENGINE_VERSION,
     scoringVersion: SCORING_VERSION,
     checkRegistryVersion: CHECK_REGISTRY_VERSION,
+    blogAutomationEnabled: process.env.BLOG_AUTOMATION_ENABLED === 'true',
+    blogProviderEnabled: process.env.GROQ_BLOG_ENABLED === 'true',
   };
 }
 

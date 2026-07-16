@@ -1,8 +1,9 @@
 import type { ResourceAuditDocument, ResourceAuditIssue, ResourceAuditLiveData, ResourceAuditPage } from './resource-types';
 import { extractReportScores, type ReportScoreSnapshot } from './report-insights';
 import { isCompletedAuditStatus } from './audit-time';
+import { findingWorkflowKey, type FindingWorkflowStatus } from './finding-workflow';
 
-export type ChecklistStatus = 'not_started' | 'in_progress' | 'fixed' | 'ignored' | 'reopened';
+export type ChecklistStatus = FindingWorkflowStatus;
 export type IssueBucket = 'all' | 'seo' | 'technical' | 'security';
 
 export interface AuditHistoryEntry {
@@ -67,8 +68,8 @@ function hasStorage() {
   return typeof window !== 'undefined' && !!window.localStorage;
 }
 
-export function issueSignature(issue: Pick<ResourceAuditIssue, 'title' | 'affectedUrl' | 'category'>) {
-  return [issue.category, issue.title, issue.affectedUrl].map((value) => String(value || '').trim().toLowerCase()).join('|');
+export function issueSignature(issue: Pick<ResourceAuditIssue, 'findingKey' | 'title' | 'affectedUrl' | 'category'>) {
+  return findingWorkflowKey(issue);
 }
 
 export function issueBucket(issue: Pick<ResourceAuditIssue, 'category' | 'title' | 'description'>): Exclude<IssueBucket, 'all'> {
@@ -257,6 +258,12 @@ export function writeChecklist(auditId: string, statuses: Record<string, Checkli
   window.localStorage.setItem(`${CHECKLIST_PREFIX}${auditId}`, JSON.stringify(statuses));
 }
 
+export function clearChecklist(auditId: string) {
+  if (!hasStorage() || !auditId) return;
+  window.localStorage.removeItem(`${CHECKLIST_PREFIX}${auditId}`);
+  window.localStorage.removeItem(`${LEGACY_CHECKLIST_PREFIX}${auditId}`);
+}
+
 export function readFindingNotes(auditId: string): Record<string, string> {
   if (!hasStorage() || !auditId) return {};
   try {
@@ -275,6 +282,12 @@ export function writeFindingNotes(auditId: string, notes: Record<string, string>
   try {
     window.localStorage.setItem(`${FINDING_NOTES_PREFIX}${auditId}`, JSON.stringify(safeNotes));
   } catch {}
+}
+
+export function clearFindingNotes(auditId: string) {
+  if (!hasStorage() || !auditId) return;
+  window.localStorage.removeItem(`${FINDING_NOTES_PREFIX}${auditId}`);
+  window.localStorage.removeItem(`${LEGACY_FINDING_NOTES_PREFIX}${auditId}`);
 }
 
 export function checklistCompletion(issues: ResourceAuditIssue[], statuses: Record<string, ChecklistStatus>) {

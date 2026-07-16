@@ -10,6 +10,8 @@ export const API_ROUTES = {
   auditRerun: (id: string) => `/api/tools/audit/rerun/${id}`,
   auditArchive: (id: string) => `/api/tools/audit/archive/${id}`,
   auditDelete: (id: string) => `/api/tools/audit/${id}`,
+  auditFindingWorkflow: (id: string) => `/api/tools/audit/${encodeURIComponent(id)}/finding-workflow`,
+  auditFindingWorkflowItem: (id: string, findingKey: string) => `/api/tools/audit/${encodeURIComponent(id)}/finding-workflow/${encodeURIComponent(findingKey)}`,
   version: '/api/version',
   accountExport: '/api/tools/me/export',
   accountDelete: '/api/tools/me/delete',

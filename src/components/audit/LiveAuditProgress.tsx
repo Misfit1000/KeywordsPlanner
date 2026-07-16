@@ -25,10 +25,8 @@ import {
   findPreviousAudit,
   pageHealthBuckets,
   readAuditHistory,
-  readChecklist,
   scoreTrendForUrl,
   upsertAuditHistory,
-  writeChecklist,
   type AuditHistoryEntry,
   type ChecklistStatus,
 } from '../../lib/audit/client-insights';
@@ -36,6 +34,8 @@ import AuditActivityPanel from './AuditActivityPanel';
 import { AuditExecutiveSummary, PriorityRecommendations } from './AuditExecutiveSummary';
 import FindingWorkspace from './FindingWorkspace';
 import { AuditReportReadyNote, AuditTerminalState } from './AuditTerminalState';
+import { useFindingWorkflow } from './useFindingWorkflow';
+import type { FindingWorkflowRecord, FindingWorkflowStatus } from '../../lib/audit/finding-workflow';
 
 interface Props {
   auditId: string;
@@ -113,7 +113,6 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
   });
   const [now, setNow] = useState(Date.now());
   const [isCancelling, setIsCancelling] = useState(false);
-  const [checklist, setChecklist] = useState<Record<string, ChecklistStatus>>({});
   const [shareMessage, setShareMessage] = useState<string | null>(null);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [isDownloadingJson, setIsDownloadingJson] = useState(false);
@@ -124,6 +123,8 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
   const dataRef = useRef(data);
   const unsubscribeRef = useRef<() => void>(() => {});
   const audit = data.audit;
+  const findingWorkflow = useFindingWorkflow(auditId, data.latestIssues);
+  const checklist = findingWorkflow.statuses;
   const shouldRunClock = !audit || !isTerminalAuditStatus(audit.status);
   const reportPending = isFinalReportPending(data);
 
@@ -217,10 +218,6 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
   }, [shouldRunClock]);
 
   useEffect(() => {
-    setChecklist(readChecklist(auditId));
-  }, [auditId]);
-
-  useEffect(() => {
     if (data.audit) {
       upsertAuditHistory(data);
     }
@@ -267,9 +264,7 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
   };
 
   const setChecklistStatus = (signature: string, status: ChecklistStatus) => {
-    const next = { ...checklist, [signature]: status };
-    setChecklist(next);
-    writeChecklist(auditId, next);
+    void findingWorkflow.update(signature, { status }).catch(() => undefined);
   };
 
   const copyReportLink = async () => {
@@ -492,6 +487,11 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
         pageBuckets={pageBuckets}
         shareMessage={shareMessage}
         onChecklistStatus={setChecklistStatus}
+        workflowRecords={findingWorkflow.records}
+        workflowStorage={findingWorkflow.storage}
+        workflowError={findingWorkflow.error}
+        savingKeys={findingWorkflow.savingKeys}
+        onWorkflowSave={findingWorkflow.update}
         onCopyReportLink={copyReportLink}
         onRerun={onRerun ? rerunAudit : undefined}
       />
@@ -752,6 +752,11 @@ function AuditWorkflowPanel({
   pageBuckets,
   shareMessage,
   onChecklistStatus,
+  workflowRecords,
+  workflowStorage,
+  workflowError,
+  savingKeys,
+  onWorkflowSave,
   onCopyReportLink,
   onRerun,
 }: {
@@ -767,6 +772,11 @@ function AuditWorkflowPanel({
   pageBuckets: Array<{ label: string; value: number }>;
   shareMessage: string | null;
   onChecklistStatus: (signature: string, status: ChecklistStatus) => void;
+  workflowRecords: Record<string, FindingWorkflowRecord>;
+  workflowStorage: 'loading' | 'supabase' | 'device';
+  workflowError: string | null;
+  savingKeys: Set<string>;
+  onWorkflowSave: (signature: string, patch: { status?: FindingWorkflowStatus; notes?: string; dueAt?: string | null }) => Promise<FindingWorkflowRecord>;
   onCopyReportLink: () => void;
   onRerun?: () => void;
 }) {
@@ -809,7 +819,7 @@ function AuditWorkflowPanel({
         <MetricCard label="Score change" value={comparison.scoreDelta === null ? '-' : `${comparison.scoreDelta > 0 ? '+' : ''}${comparison.scoreDelta}`} detail={latestScore === null ? auditId : `Current score ${latestScore}`} icon={<Radio className="h-6 w-6" />} tone={comparison.scoreDelta && comparison.scoreDelta < 0 ? 'red' : 'green'} />
       </div>
 
-      <div className="mt-6"><FindingWorkspace auditId={auditId} issues={issues} statuses={checklist} onStatusChange={onChecklistStatus} /></div>
+      <div className="mt-6"><FindingWorkspace auditId={auditId} issues={issues} statuses={checklist} onStatusChange={onChecklistStatus} workflowRecords={workflowRecords} workflowStorage={workflowStorage} workflowError={workflowError} savingKeys={savingKeys} onWorkflowSave={onWorkflowSave} /></div>
       <div className="mt-6 grid gap-4 md:grid-cols-3">
         <InsightChart title="Score trend" emptyText="Rerun this audit to build a trend." items={scoreTrend.map((entry) => ({ label: new Date(entry.updatedAt).toLocaleDateString(), value: entry.score }))} maxValue={100} />
         <InsightChart title="Crawl depth" emptyText="Pages appear as the audit engine scans." items={crawlDepth} maxValue={maxDepthCount} />

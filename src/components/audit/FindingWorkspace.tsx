@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, CheckSquare, ChevronRight, FileText, Search, X } from 'lucide-react';
 import type { ResourceAuditIssue } from '../../lib/audit/resource-types';
-import { buildIssueInsight, issueBucket, issueSignature, readFindingNotes, writeFindingNotes, type ChecklistStatus } from '../../lib/audit/client-insights';
+import { buildIssueInsight, issueBucket, issueSignature, type ChecklistStatus } from '../../lib/audit/client-insights';
+import { FINDING_WORKFLOW_STATUSES, type FindingWorkflowRecord, type FindingWorkflowStatus } from '../../lib/audit/finding-workflow';
 import { StatusBadge } from '../ui/visual-system';
 
 const PAGE_SIZE = 20;
-const STATUSES: ChecklistStatus[] = ['not_started', 'in_progress', 'fixed', 'ignored', 'reopened'];
+const STATUSES: ChecklistStatus[] = [...FINDING_WORKFLOW_STATUSES];
 const SEVERITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
 
 function statusLabel(value: ChecklistStatus) {
@@ -23,11 +24,21 @@ export default function FindingWorkspace({
   issues,
   statuses = {},
   onStatusChange,
+  workflowRecords = {},
+  workflowStorage = 'device',
+  workflowError = null,
+  savingKeys = new Set<string>(),
+  onWorkflowSave,
 }: {
   auditId?: string;
   issues: ResourceAuditIssue[];
   statuses?: Record<string, ChecklistStatus>;
   onStatusChange?: (signature: string, status: ChecklistStatus) => void;
+  workflowRecords?: Record<string, FindingWorkflowRecord>;
+  workflowStorage?: 'loading' | 'supabase' | 'device';
+  workflowError?: string | null;
+  savingKeys?: Set<string>;
+  onWorkflowSave?: (signature: string, patch: { status?: FindingWorkflowStatus; notes?: string; dueAt?: string | null }) => Promise<FindingWorkflowRecord>;
 }) {
   const [query, setQuery] = useState('');
   const [severity, setSeverity] = useState('all');
@@ -38,8 +49,8 @@ export default function FindingWorkspace({
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
-  const [notes, setNotes] = useState<Record<string, string>>(() => readFindingNotes(auditId));
   const [noteDraft, setNoteDraft] = useState('');
+  const [dueDraft, setDueDraft] = useState('');
   const [noteMessage, setNoteMessage] = useState<string | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -64,7 +75,6 @@ export default function FindingWorkspace({
   }, [category, errorCode, issues, query, severity, sort, status, statuses]);
 
   useEffect(() => setPage(1), [query, severity, category, status, errorCode, sort]);
-  useEffect(() => setNotes(readFindingNotes(auditId)), [auditId]);
   useEffect(() => {
     if (!selectedId) return;
     window.requestAnimationFrame(() => closeRef.current?.focus());
@@ -84,11 +94,15 @@ export default function FindingWorkspace({
   const selected = selectedIndex >= 0 ? filtered[selectedIndex] : issues.find((issue) => issue.id === selectedId) || null;
   const selectedInsight = selected ? buildIssueInsight(selected) : null;
   const highPriority = issues.filter((issue) => issue.severity === 'critical' || issue.severity === 'high').length;
+  const selectedKey = selected ? issueSignature(selected) : '';
+  const selectedWorkflow = selectedKey ? workflowRecords[selectedKey] : undefined;
 
   const openInspector = (issue: ResourceAuditIssue, trigger?: HTMLElement | null) => {
     restoreFocusRef.current = trigger || document.activeElement as HTMLElement | null;
     setSelectedId(issue.id);
-    setNoteDraft(notes[issueSignature(issue)] || '');
+    const record = workflowRecords[issueSignature(issue)];
+    setNoteDraft(record?.notes || '');
+    setDueDraft(record?.dueAt ? record.dueAt.slice(0, 10) : '');
     setNoteMessage(null);
   };
   const closeInspector = () => {
@@ -99,18 +113,22 @@ export default function FindingWorkspace({
     if (selectedIndex < 0 || !filtered.length) return;
     const next = filtered[(selectedIndex + direction + filtered.length) % filtered.length];
     setSelectedId(next.id);
-    setNoteDraft(notes[issueSignature(next)] || '');
+    const record = workflowRecords[issueSignature(next)];
+    setNoteDraft(record?.notes || '');
+    setDueDraft(record?.dueAt ? record.dueAt.slice(0, 10) : '');
     setNoteMessage(null);
   };
-  const saveNote = () => {
-    if (!selected || !auditId) return;
+  const saveNote = async () => {
+    if (!selected || !auditId || !onWorkflowSave) return;
     const signature = issueSignature(selected);
-    const next = { ...notes, [signature]: noteDraft.trim() };
-    if (!next[signature]) delete next[signature];
-    setNotes(next);
-    writeFindingNotes(auditId, next);
-    setNoteMessage(next[signature] ? 'Note saved on this device.' : 'Note removed.');
-    window.setTimeout(() => setNoteMessage(null), 2500);
+    setNoteMessage(null);
+    try {
+      await onWorkflowSave(signature, { notes: noteDraft.trim(), dueAt: workflowStorage === 'supabase' && dueDraft ? new Date(`${dueDraft}T12:00:00Z`).toISOString() : null });
+      setNoteMessage(workflowStorage === 'supabase' ? 'Workflow details saved to your account.' : 'Workflow details saved on this device.');
+      window.setTimeout(() => setNoteMessage(null), 2500);
+    } catch {
+      setNoteMessage('Workflow details were not saved. Reload and try again.');
+    }
   };
   const toggleChecked = (id: string) => setCheckedIds((current) => {
     const next = new Set(current);
@@ -126,6 +144,7 @@ export default function FindingWorkspace({
   return (
     <section aria-labelledby="finding-workspace-title">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 id="finding-workspace-title" className="text-xl font-semibold">Findings</h2><p className="mt-1 text-sm text-muted-foreground">Search and filter the list, then open a finding for evidence, affected pages, status, and notes.</p></div><div className="flex flex-wrap gap-2"><StatusBadge tone="warning">{highPriority} high priority</StatusBadge><StatusBadge tone="neutral">{issues.length} total</StatusBadge></div></div>
+      <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${workflowError ? 'border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-200' : 'border-border bg-[var(--surface-inset)] text-muted-foreground'}`} role={workflowError ? 'alert' : 'status'}>{workflowError || (workflowStorage === 'supabase' ? 'Finding status and notes sync to your account.' : workflowStorage === 'loading' ? 'Loading saved finding workflow...' : 'Guest workflow is stored only on this device. Sign in before starting an audit to sync future work.')}</div>
 
       <div className="mt-4 grid gap-3 rounded-xl border border-border bg-[var(--surface-inset)] p-3 sm:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_140px_160px_150px_180px_140px]">
         <label className="relative"><span className="sr-only">Search finding URLs and titles</span><Search className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search URL or finding" className="suite-input pl-9" /></label>
@@ -170,7 +189,7 @@ export default function FindingWorkspace({
               <section><h4 className="text-xs font-semibold text-muted-foreground">Affected and source pages</h4><div className="mt-2 grid gap-2">{Array.from(new Set([selected.affectedUrl, ...(selected.sourceUrls || [])].filter(Boolean))).map((url, index) => <div key={url} className="rounded-lg border border-border px-3 py-2"><div className="text-[11px] font-semibold text-muted-foreground">{index === 0 ? 'Affected page' : 'Source page'}</div><div className="mt-1 break-all text-xs">{url}</div></div>)}</div></section>
               <section><h4 className="text-xs font-semibold text-muted-foreground">Technical details</h4><p className="mt-1 text-sm leading-6">{selectedInsight.technicalDetails}</p></section>
               {onStatusChange && <label className="block"><span className="text-xs font-semibold text-muted-foreground">Workflow status</span><select value={statuses[issueSignature(selected)] || 'not_started'} onChange={(event) => onStatusChange(issueSignature(selected), event.target.value as ChecklistStatus)} className="suite-input mt-2">{STATUSES.map((value) => <option key={value} value={value}>{statusLabel(value)}</option>)}</select></label>}
-              <section><label htmlFor={`finding-note-${selected.id}`} className="text-xs font-semibold text-muted-foreground">Implementation note</label><textarea id={`finding-note-${selected.id}`} value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} maxLength={2000} rows={4} className="suite-input mt-2 resize-y" placeholder="Add context for the person fixing this finding" /><div className="mt-2 flex items-center justify-between gap-3"><span className="text-[11px] text-muted-foreground">Stored on this device for this audit.</span><button type="button" onClick={saveNote} disabled={!auditId} className="quiet-button min-h-9 px-3 py-1.5 text-xs">Save note</button></div>{noteMessage && <p role="status" className="mt-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300">{noteMessage}</p>}</section>
+              <section><label htmlFor={`finding-note-${selected.id}`} className="text-xs font-semibold text-muted-foreground">Implementation note</label><textarea id={`finding-note-${selected.id}`} value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} maxLength={2000} rows={4} className="suite-input mt-2 resize-y" placeholder="Add context for the person fixing this finding" /><label className="mt-3 block"><span className="text-xs font-semibold text-muted-foreground">Due date</span><input type="date" value={dueDraft} onChange={(event) => setDueDraft(event.target.value)} disabled={workflowStorage !== 'supabase'} className="suite-input mt-2" /></label><div className="mt-2 flex items-center justify-between gap-3"><span className="text-[11px] text-muted-foreground">{workflowStorage === 'supabase' ? `Account synced${selectedWorkflow?.updatedAt ? ` · updated ${new Date(selectedWorkflow.updatedAt).toLocaleString()}` : ''}` : 'Stored on this device for this audit.'}</span><button type="button" onClick={() => void saveNote()} disabled={!auditId || !onWorkflowSave || savingKeys.has(selectedKey)} className="quiet-button min-h-9 px-3 py-1.5 text-xs">{savingKeys.has(selectedKey) ? 'Saving...' : 'Save details'}</button></div>{noteMessage && <p role="status" className={`mt-2 text-xs font-semibold ${noteMessage.includes('not saved') ? 'text-red-700 dark:text-red-300' : 'text-emerald-700 dark:text-emerald-300'}`}>{noteMessage}</p>}</section>
             </div>
           </aside>
         </>}
