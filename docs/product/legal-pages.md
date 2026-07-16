@@ -1,6 +1,6 @@
 # Legal And Trust Pages
 
-Public routes are `/privacy`, `/terms`, `/acceptable-use`, `/cookies`, and `/contact`. Registration records acceptance timestamps and legal version `2026-07-13` in account metadata and the user profile.
+Public routes are `/privacy`, `/terms`, `/acceptable-use`, `/cookies`, and `/contact`. Registration records acceptance timestamps and legal version `2026-07-16` in account metadata and the user profile.
 
 The current copy is suitable only for a controlled beta and does not fabricate company registration, postal address, lawyer, jurisdiction, or formal notice details. Before broader promotion, the owner must review the text and publish:
 

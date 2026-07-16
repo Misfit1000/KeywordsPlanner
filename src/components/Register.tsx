@@ -3,6 +3,7 @@ import { Eye, EyeOff, Loader2, Lock, Mail, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { BrandMark } from './ui/visual-system';
 import { FormField, Notice } from './ui/page-system';
+import { LEGAL_VERSION } from '../lib/legal/version';
 
 export default function Register({
   onToggle,
@@ -26,7 +27,7 @@ export default function Register({
     setError(null);
     setSuccess(false);
     try {
-      await register(email.trim(), password, { accepted: legalAccepted, version: '2026-07-13' });
+      await register(email.trim(), password, { accepted: legalAccepted, version: LEGAL_VERSION });
       setSuccess(true);
       window.setTimeout(() => onClose?.(), 700);
     } catch (err: any) {

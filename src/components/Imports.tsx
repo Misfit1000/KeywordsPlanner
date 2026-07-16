@@ -121,7 +121,7 @@ export default function Imports() {
         <div className="trust-card p-6 text-center space-y-4">
           <Database className="w-8 h-8 mx-auto text-accent" />
           <h3 className="font-bold text-lg font-display">Backlinks CSV</h3>
-          <p className="text-sm text-muted-foreground">Import links from Common Crawl or Generic SEO CSV.</p>
+          <p className="text-sm text-muted-foreground">Import backlink exports from Google Search Console, Bing, or another provider.</p>
           <input type="file" accept=".csv" className="hidden" ref={blFileRef} onChange={e => handleCsv(e, setBacklinkData, 'seo_backlink_data')} />
           {backlinkData.length > 0 ? (
             <div className="text-green-500 flex flex-col items-center gap-2">

@@ -20,6 +20,7 @@ export const API_ROUTES = {
   securityStart: "/api/tools/audit/start", // Based on the code, security audit calls /api/tools/audit/start with type="security"
   keywordResearch: "/api/tools/keyword/research",
   websiteAnalyze: "/api/tools/website/analyze",
+  domainLinkSignals: "/api/tools/domain/link-signals",
   clusters: "/api/tools/clusters",
   contentBrief: "/api/tools/content-brief",
   competitorGap: "/api/tools/competitor-gap",

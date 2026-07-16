@@ -62,6 +62,7 @@ test.describe('guest audit integration', () => {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: auditSnapshot(terminal ? 'completed' : 'running') }) });
     });
     await page.route(`**/api/tools/audit/${AUDIT_ID}/finding-workflow`, (route) => route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ success: false, error: 'Sign in to persist finding workflow.' }) }));
+    await page.route('**/api/tools/domain/link-signals?*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { domain: 'example.com', found: true, globalRank: 12345, tldRank: 8012, referringSubnets: 420, referringIps: 760, datasetDate: '16 Jul 2026', fetchedAt: '2026-07-16T00:00:00.000Z', source: 'Majestic Million', sourceUrl: 'https://majestic.com/reports/majestic-million', license: 'CC BY 3.0', scope: 'public_top_million' } }) }));
 
     await page.goto('/');
     await page.getByLabel('Website or domain').fill('example.com');
@@ -76,6 +77,10 @@ test.describe('guest audit integration', () => {
     await expect(summary).toContainText('Pages analysed');
     await expect(summary).toContainText('2');
     await expect(summary).toContainText('5');
+    const linkSignals = page.getByRole('region', { name: 'Public backlink signals' });
+    await expect(linkSignals).toContainText('#12,345');
+    await expect(linkSignals).toContainText('420');
+    await expect(linkSignals).toContainText('Majestic Million');
     await expect(page.getByText('Checking your site')).toHaveCount(0);
     await expect(expectNoHorizontalOverflow(page)).resolves.toBe(true);
 

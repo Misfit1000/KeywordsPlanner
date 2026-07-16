@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Cookie, FileText, Mail, Scale, ShieldCheck } from 'lucide-react';
+import { LEGAL_UPDATED_LABEL } from '../lib/legal/version';
 
 export type LegalPageKind = 'privacy' | 'terms' | 'acceptable-use' | 'cookies' | 'contact';
 
@@ -20,7 +21,7 @@ const content: Record<LegalPageKind, LegalContent> = {
       { title: 'Why we process it', paragraphs: ['Data is used to provide audits and reports, enforce fair beta limits, protect the service from abuse, recover failed work, and support account security.'] },
       { title: 'Retention', paragraphs: ['Customer reports remain until the owner deletes them or the account. Short-lived activity, diagnostics, failed guest jobs, and stale queue records use documented retention periods. Security and administrator action records may be retained longer for accountability.'] },
       { title: 'Your controls', paragraphs: ['Signed-in users can export account data, archive or delete eligible audits, and permanently delete their account from Settings. Published blog records and required security logs are separated from private account content.'] },
-      { title: 'Service providers', paragraphs: ['Crawlio currently uses Vercel for the frontend and lightweight API, Supabase for accounts and data, and Render for the audit engine. Their processing is governed by their terms and the project owner’s configuration.'] },
+      { title: 'Service providers', paragraphs: ["Crawlio currently uses Vercel for the frontend and lightweight API, Supabase for accounts and data, Render for the audit engine, and the public Majestic Million dataset for backlink-derived ranking signals. A Majestic lookup receives only the normalized public domain name; Crawlio does not send account identity, audit findings, page metadata, or stored report content. Their processing is governed by their terms and the project owner's configuration."] },
     ],
   },
   terms: {
@@ -95,7 +96,7 @@ export default function LegalPage({ kind }: { kind: LegalPageKind }) {
           <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-accent/10 text-accent"><Icon className="h-5 w-5" /></div>
           <h1 className="mt-5 text-3xl font-semibold sm:text-4xl">{page.title}</h1>
           <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground">{page.description}</p>
-          <p className="mt-4 text-sm text-muted-foreground">Last updated July 13, 2026</p>
+          <p className="mt-4 text-sm text-muted-foreground">Last updated {LEGAL_UPDATED_LABEL}</p>
         </header>
         <div className="divide-y divide-border">
           {page.sections.map((section) => (

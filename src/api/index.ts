@@ -47,6 +47,7 @@ import { publicVersionPayload } from '../lib/platform/version';
 import { buildPublicAuditExport, csvRow } from '../lib/report/export';
 import { BRAND } from '../lib/brand';
 import { buildOperationalHealth, maybeSendOperationalAlert } from '../lib/operations/health';
+import { getPublicLinkSignals } from '../lib/backlinks/public-link-signals';
 import {
   findingWorkflowKey,
   isFindingPriorityOverride,
@@ -78,6 +79,7 @@ apiRouter.use('/admin/blog/sections', durableRateLimit({ namespace: 'blog-sectio
 apiRouter.use('/blog/scheduler', durableRateLimit({ namespace: 'blog-scheduler', limit: 10, windowSeconds: 300 }));
 apiRouter.use('/audit/export', durableRateLimit({ namespace: 'report-export', limit: 10, windowSeconds: 300 }));
 apiRouter.use('/audit/cancel', durableRateLimit({ namespace: 'audit-cancel', limit: 10, windowSeconds: 300 }));
+apiRouter.use('/domain/link-signals', createRateLimiter({ namespace: 'public-link-signals', windowMs: 60 * 60 * 1000, maxRequests: 20 }));
 
 function firstHeaderValue(value: unknown) {
   return Array.isArray(value) ? String(value[0] || '') : String(value || '');
@@ -1452,6 +1454,22 @@ apiRouter.get('/audit/export/:id/:format', asyncJsonRoute(async (req, res) => {
 }));
 
 apiRouter.post('/audit/rerun/:id', asyncJsonRoute((_req, res) => res.status(409).json({ success: false, error: 'Rerun is disabled for worker-backed audits. Start a new audit instead.' })));
+
+apiRouter.get('/domain/link-signals', asyncJsonRoute(async (req, res) => {
+  const rawDomain = String(req.query?.domain || '').trim();
+  if (!rawDomain || rawDomain.length > 253) throw new ApiError('INVALID_DOMAIN', 'Enter a valid public domain.', 400);
+  const normalized = normalizeUserUrl(rawDomain);
+  if (!normalized.isValid) throw new ApiError('INVALID_DOMAIN', normalized.error || 'Enter a valid public domain.', 400);
+  const domain = normalized.hostname.replace(/^www\./, '');
+
+  try {
+    const signals = await getPublicLinkSignals(domain);
+    res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800');
+    return res.json({ success: true, data: signals });
+  } catch {
+    throw new ApiError('PUBLIC_LINK_SIGNALS_UNAVAILABLE', 'Public backlink signals are temporarily unavailable. Please try again later.', 503);
+  }
+}));
 
 apiRouter.post('/keyword/research', asyncJsonRoute((req, res) => {
   const seed = String(req.body?.seed || '').trim();
