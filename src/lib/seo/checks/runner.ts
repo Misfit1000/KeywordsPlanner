@@ -1,6 +1,5 @@
 import './all-checks';
 import type { AuditIssue } from '../../audit/types';
-import { eventEmitter } from '../../audit/event-emitter';
 import { run as checkImages } from './images';
 import { run as checkIndexability } from './indexability';
 import { run as checkInternational } from './international';
@@ -55,15 +54,10 @@ export function runCheckSetSafely(checks: Array<{ id: string; title: string; run
   let completedChecks = 0;
 
   for (const check of checks) {
-    if (auditId) eventEmitter.emitCheckStarted(auditId, check.title, pageData.url);
     try {
       const checkIssues = check.run(pageData, auditId) || [];
       issues.push(...checkIssues);
       completedChecks += 1;
-      if (auditId) {
-        checkIssues.forEach((issue) => eventEmitter.emitIssueFound(auditId, issue));
-        eventEmitter.emitCheckCompleted(auditId, check.title, pageData.url);
-      }
     } catch (error) {
       unavailableChecks.push({
         checkId: check.id,

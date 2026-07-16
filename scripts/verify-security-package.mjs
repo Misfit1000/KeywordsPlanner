@@ -1,9 +1,9 @@
 import fs from 'fs';
-import path from 'path';
 
 const REQUIRED_FILES = [
   'src/lib/security/types.ts',
-  'src/lib/security/audit-runner.ts',
+  'src/workers/audit-worker.ts',
+  'src/lib/security/safe-public-fetch.ts',
   'src/lib/security/scoring.ts',
   'src/lib/security/fetch-security-page.ts',
   'src/lib/security/checks/runner.ts',

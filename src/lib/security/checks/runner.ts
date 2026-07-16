@@ -16,9 +16,7 @@ import { run as checkEmailTrust } from './email-trust';
 import { run as checkMisconfiguration } from './misconfiguration';
 import { run as checkExposedFiles } from './exposed-files';
 
-import { eventEmitter } from '../../audit/event-emitter';
-
-export async function runSecurityChecks(pageData: any, auditId?: string): Promise<SecurityIssue[]> {
+export async function runSecurityChecks(pageData: any): Promise<SecurityIssue[]> {
   let issues: SecurityIssue[] = [];
 
   const checks = [
@@ -39,22 +37,12 @@ export async function runSecurityChecks(pageData: any, auditId?: string): Promis
   ];
 
   for (const check of checks) {
-    if (auditId) eventEmitter.emitCheckStarted(auditId, check.name, pageData.url);
     const resultIssues = check.fn(pageData);
-    if (auditId) {
-      resultIssues.forEach(issue => eventEmitter.emitIssueFound(auditId, issue));
-      eventEmitter.emitCheckCompleted(auditId, check.name, pageData.url);
-    }
     issues = issues.concat(resultIssues);
   }
 
   if (pageData.url && pageData.headers) {
-    if (auditId) eventEmitter.emitCheckStarted(auditId, 'Exposed Files', pageData.url);
     const resultIssues = await checkExposedFiles(pageData);
-    if (auditId) {
-      resultIssues.forEach(issue => eventEmitter.emitIssueFound(auditId, issue));
-      eventEmitter.emitCheckCompleted(auditId, 'Exposed Files', pageData.url);
-    }
     issues = issues.concat(resultIssues);
   }
 

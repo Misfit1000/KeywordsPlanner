@@ -1,5 +1,4 @@
 import fs from 'fs';
-import path from 'path';
 
 let fail = false;
 
@@ -13,7 +12,10 @@ function checkFile(p) {
 }
 
 const reqFiles = [
-  'src/lib/seo/crawler.ts',
+  'src/workers/audit-worker.ts',
+  'src/lib/supabase/audit-repository.ts',
+  'src/lib/audit/audit-profiles.ts',
+  'src/lib/audit/resource-types.ts',
   'src/lib/seo/robots.ts',
   'src/lib/seo/sitemap.ts',
   'src/lib/seo/url-utils.ts',
@@ -35,8 +37,6 @@ const reqFiles = [
   'src/lib/seo/checks/performance.ts',
   'src/lib/seo/checks/local.ts',
   'src/lib/seo/checks/international.ts',
-  'src/lib/audit/audit-runner.ts',
-  'src/lib/audit/audit-store.ts',
   'src/lib/audit/types.ts'
 ];
 
