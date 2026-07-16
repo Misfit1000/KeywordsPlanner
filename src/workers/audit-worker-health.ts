@@ -1,6 +1,7 @@
 import http from 'node:http';
 import type { AuditWorkerRuntimeState } from './audit-worker-runtime';
 import { BRAND } from '../lib/brand';
+import { API_SCHEMA_VERSION } from '../lib/platform/version';
 
 export function startWorkerHealthServer(
   state: AuditWorkerRuntimeState,
@@ -30,6 +31,7 @@ export function startWorkerHealthServer(
       auditEngineVersion: state.auditEngineVersion,
       scoringVersion: state.scoringVersion,
       checkRegistryVersion: state.checkRegistryVersion,
+      apiSchemaVersion: API_SCHEMA_VERSION,
       deepAuditEnabled: state.deepAuditEnabled,
       planLimitsSummary: {
         free: { modes: ['quick'], maxPages: 5, priority: 10 },

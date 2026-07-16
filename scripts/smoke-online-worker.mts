@@ -10,6 +10,7 @@ import {
 } from '../src/workers/audit-worker-runtime.ts';
 import { startWorkerHealthServer } from '../src/workers/audit-worker-health.ts';
 import { isAuditQueuedTooLong } from '../src/lib/audit/queued-worker-warning.ts';
+import { API_SCHEMA_VERSION } from '../src/lib/platform/version.ts';
 
 const root = process.cwd();
 
@@ -75,6 +76,7 @@ assert.equal('workerId' in health, false);
 assert.equal('runtime' in health, false);
 assert.equal('currentAuditId' in health, false);
 assert.equal(typeof health.commitIdentifier, 'string');
+assert.equal(health.apiSchemaVersion, API_SCHEMA_VERSION);
 assert.deepEqual(health.supportedModes, ['quick', 'standard']);
 assert.equal(health.planLimitsSummary.paid.maxPages, 50, 'Paid health metadata must report the Full Audit ceiling.');
 assert.equal(health.planLimitsSummary.agency.maxPages, 50, 'Disabled deep mode must report the standard 50-page ceiling.');

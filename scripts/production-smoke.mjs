@@ -174,6 +174,7 @@ async function runWorkerChecks() {
     for (const [workerKey, appKey] of [['auditEngineVersion', 'auditEngineVersion'], ['scoringVersion', 'scoringVersion'], ['checkRegistryVersion', 'checkRegistryVersion']]) {
       if (version && String(payload[workerKey] || '') !== String(version[appKey] || '')) throw new Error(`${workerKey} is incompatible.`);
     }
+    if (version && Number(payload.apiSchemaVersion || 0) !== Number(version.apiSchemaVersion)) throw new Error('Audit-engine API schema contract is incompatible.');
     const serialized = JSON.stringify(payload);
     if (/service[_-]?role|private[_-]?key|authorization|database[_-]?url|connection[_-]?string/i.test(serialized)) throw new Error('Audit-engine health contains a secret-like field name.');
     return {
@@ -184,6 +185,7 @@ async function runWorkerChecks() {
       auditEngineVersion: payload.auditEngineVersion,
       scoringVersion: payload.scoringVersion,
       checkRegistryVersion: payload.checkRegistryVersion,
+      apiSchemaVersion: payload.apiSchemaVersion,
       deepAuditEnabled: payload.deepAuditEnabled === true,
     };
   });
