@@ -4,6 +4,7 @@ import { safePreviewMediaUrl } from '../../lib/audit/preview-model';
 import { gradeRangeLabel, scoreToGrade, scoreTone as reportScoreTone } from '../../lib/audit/report-insights';
 import { BRAND } from '../../lib/brand';
 import { CompactWebsitePreview, DesktopHomepagePreview, MobileHomepagePreview, PreviewUnavailableState, type CompactPreviewProps } from './compact-site-preview';
+import { useAnimatedNumber } from './motion';
 
 export { CompactWebsitePreview, DesktopHomepagePreview, MobileHomepagePreview, PreviewUnavailableState } from './compact-site-preview';
 
@@ -278,7 +279,7 @@ export function ProgressBar({
         </div>
       )}
       <div className="h-2.5 overflow-hidden rounded-full bg-muted shadow-inner">
-        <div className={`h-full rounded-full ${colors[tone]} shadow-sm transition-all duration-700 ease-out`} style={{ width: `${safeValue}%` }} />
+        <div className={`data-bar-reveal h-full rounded-full ${colors[tone]} shadow-sm transition-all duration-700 ease-out`} style={{ width: `${safeValue}%` }} />
       </div>
     </div>
   );
@@ -346,23 +347,27 @@ export function SparklineChart({
   label,
   valueLabel,
   detail = 'Based on live audit events',
+  active = false,
 }: {
   values: number[];
   label: string;
   valueLabel?: string;
   detail?: string;
+  active?: boolean;
 }) {
   const fillId = React.useId().replace(/:/g, '');
   const normalized = values.length > 1 ? values : [0, values[0] || 0];
   const max = Math.max(1, ...normalized);
-  const points = normalized.map((value, index) => {
+  const coordinates = normalized.map((value, index) => {
     const x = (index / Math.max(1, normalized.length - 1)) * 100;
     const y = 42 - (Math.max(0, value) / max) * 34;
-    return `${x},${y}`;
-  }).join(' ');
+    return { x, y };
+  });
+  const points = coordinates.map(({ x, y }) => `${x},${y}`).join(' ');
+  const latestPoint = coordinates[coordinates.length - 1];
 
   return (
-    <div className="admin-data-card rounded-xl border border-border bg-background/75 p-4">
+    <div className="admin-data-card data-chart-card rounded-xl border border-border bg-background/75 p-4">
       <div className="flex items-end justify-between gap-3">
         <div>
           <div className="text-sm font-semibold">{label}</div>
@@ -377,8 +382,9 @@ export function SparklineChart({
             <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
           </linearGradient>
         </defs>
-        <path d={`M ${points.replace(/ /g, ' L ')} L 100,46 L 0,46 Z`} fill={`url(#${fillId})`} className="admin-chart-fill text-accent" />
-        <polyline points={points} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="admin-chart-line text-accent" vectorEffect="non-scaling-stroke" />
+        <path d={`M ${points.replace(/ /g, ' L ')} L 100,46 L 0,46 Z`} fill={`url(#${fillId})`} className="admin-chart-fill data-chart-fill text-accent" />
+        <polyline points={points} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="admin-chart-line data-chart-line text-accent" vectorEffect="non-scaling-stroke" />
+        {active && latestPoint && <circle cx={latestPoint.x} cy={latestPoint.y} r="2.8" fill="currentColor" className="data-chart-live-point text-accent" />}
       </svg>
     </div>
   );
@@ -400,7 +406,7 @@ export function MetricBarChart({
         <div key={item.label} className="grid grid-cols-[76px_1fr_30px] items-center gap-3 text-xs">
           <span className="font-medium text-muted-foreground">{item.label}</span>
           <span className="h-2.5 overflow-hidden rounded-full bg-muted">
-            <span className={`block h-full rounded-full transition-all duration-700 ${item.color}`} style={{ width: `${(item.value / max) * 100}%` }} />
+            <span className={`data-bar-reveal block h-full rounded-full transition-all duration-700 ${item.color}`} style={{ width: `${(item.value / max) * 100}%` }} />
           </span>
           <span className="text-right font-mono font-bold">{item.value}</span>
         </div>
@@ -455,10 +461,11 @@ export function RadialScoreGauge({
   detail?: string;
 }) {
   const safeValue = safeScore(value);
+  const animatedValue = useAnimatedNumber(safeValue);
   const resolvedTone = tone || scoreTone(safeValue);
   const radius = 48;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (safeValue / 100) * circumference;
+  const strokeDashoffset = circumference - (animatedValue / 100) * circumference;
   const sizeClass = size === 'lg' ? 'h-48 w-48' : size === 'sm' ? 'h-28 w-28' : 'h-36 w-36';
 
   return (
@@ -482,7 +489,7 @@ export function RadialScoreGauge({
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <div className={`text-3xl font-bold ${scoreTextClass(resolvedTone)} ${size === 'lg' ? 'md:text-5xl' : ''}`}>{Math.round(safeValue)}</div>
+          <div className={`text-3xl font-bold tabular-nums ${scoreTextClass(resolvedTone)} ${size === 'lg' ? 'md:text-5xl' : ''}`}>{Math.round(animatedValue)}</div>
           <div className="text-xs font-semibold text-muted-foreground">/100</div>
         </div>
       </div>
@@ -513,11 +520,12 @@ export function AuditScoreOverview({
   categoryScores?: Array<{ label: string; value: number }>;
 }) {
   const safeValue = safeScore(score);
+  const animatedValue = useAnimatedNumber(safeValue);
   const tone = scoreTone(safeValue);
   const grade = scoreToGrade(safeValue) || '--';
   const measuredCategories = categoryScores.filter((item) => Number.isFinite(item.value));
   const focusCategory = [...measuredCategories].sort((left, right) => left.value - right.value)[0];
-  const markerPosition = Math.max(2, Math.min(98, safeValue));
+  const markerPosition = Math.max(2, Math.min(98, animatedValue));
 
   const gradeTone = {
     accent: 'border-blue-500/25 bg-blue-500/10 text-blue-700 dark:text-blue-300',
@@ -532,7 +540,7 @@ export function AuditScoreOverview({
         <div className="min-w-0">
           <div className="text-sm font-semibold text-muted-foreground">{label}</div>
           <div className="mt-1 flex items-baseline gap-1.5 tabular-nums">
-            <span className={`text-5xl font-bold leading-none ${scoreTextClass(tone)}`}>{Math.round(safeValue)}</span>
+            <span className={`text-5xl font-bold leading-none ${scoreTextClass(tone)}`}>{Math.round(animatedValue)}</span>
             <span className="text-sm font-semibold text-muted-foreground">/100</span>
           </div>
           <div className="mt-2 text-sm font-semibold">{scoreBandLabel(safeValue)} website health</div>
@@ -596,6 +604,7 @@ export function CategoryScoreBar({
   tone?: ScoreTone;
 }) {
   const safeValue = safeScore(value);
+  const animatedValue = useAnimatedNumber(safeValue, 520);
   const resolvedTone = tone || scoreTone(safeValue);
   return (
     <div className="space-y-2 rounded-lg border border-border bg-background/70 p-3">
@@ -604,7 +613,7 @@ export function CategoryScoreBar({
           <div className="text-sm font-bold">{label}</div>
           {detail && <div className="text-xs text-muted-foreground">{detail}</div>}
         </div>
-        <span className={`text-sm font-bold ${scoreTextClass(resolvedTone)}`}>{Math.round(safeValue)}</span>
+        <span className={`text-sm font-bold tabular-nums ${scoreTextClass(resolvedTone)}`}>{Math.round(animatedValue)}</span>
       </div>
       <ProgressBar value={safeValue} tone={resolvedTone} />
     </div>

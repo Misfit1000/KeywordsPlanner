@@ -19,6 +19,7 @@ import {
 import { createAuditSubmitGuard } from '../lib/api/audit-submit-guard';
 import { AUDIT_TARGET_INPUT_PROPS, normalizeAuditTarget } from '../lib/url/normalize-audit-target';
 import { PUBLIC_AUDIT_PLANS, PUBLIC_PLAN_COMPARISON } from '../lib/plans/public-plan-presentation';
+import { MotionReveal } from './ui/motion';
 import { CategoryScoreBar, RadialScoreGauge, SeverityDistribution, StatusBadge } from './ui/visual-system';
 
 interface Props {
@@ -152,7 +153,7 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
         <div className="hero-grid pointer-events-none absolute inset-0 opacity-65" aria-hidden="true" />
         <div className="section-shell relative py-10 sm:py-14 lg:py-18">
           <div className="grid items-center gap-10 xl:grid-cols-[0.9fr_1.1fr] xl:gap-12">
-            <div className="min-w-0">
+            <div className="site-hero-copy min-w-0">
               <div className="mb-5 flex flex-wrap gap-3 text-xs font-semibold text-muted-foreground"><span className="inline-flex items-center gap-2"><CircleAlert className="h-4 w-4 text-accent" /> Public website audits</span><span className="inline-flex items-center gap-2"><Activity className="h-4 w-4 text-emerald-600 dark:text-emerald-300" /> Live progress</span></div>
               <h1 className="max-w-2xl text-4xl font-bold leading-[1.05] sm:text-5xl lg:text-[3.6rem]">See what is holding your website back.</h1>
               <p className="mt-5 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">Run a technical SEO audit, trace each problem to the affected pages, and understand what to fix first.</p>
@@ -180,47 +181,47 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
       </section>
 
       <section id="features" className="content-auto section-shell scroll-mt-24 py-14 md:py-18">
-        <div className="grid gap-10 xl:grid-cols-[0.7fr_1.3fr]">
+        <MotionReveal className="grid gap-10 xl:grid-cols-[0.7fr_1.3fr]">
           <div className="xl:sticky xl:top-28 xl:self-start"><p className="text-sm font-semibold text-accent">Audit coverage</p><h2 className="mt-2 text-3xl font-semibold leading-tight md:text-4xl">See what the audit actually checks.</h2><p className="mt-4 max-w-lg text-sm leading-7 text-muted-foreground">Coverage is organised around the decisions you need to make, not a wall of disconnected feature cards.</p>
             <div className="mt-7 grid gap-1 border-y border-border py-2" role="tablist" aria-label="Audit coverage categories">
               {coverageGroups.map((group) => { const Icon = group.icon; const active = group.id === selectedCoverage.id; return <button key={group.id} type="button" role="tab" aria-selected={active} onClick={() => setActiveCoverage(group.id)} className={`flex min-h-12 items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold ${active ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}><Icon className="h-4 w-4" /><span className="flex-1">{group.label}</span><span className="text-xs tabular-nums opacity-80">{group.score}</span></button>; })}
             </div>
           </div>
-          <div className="overflow-hidden rounded-xl border border-border bg-card">
+          <div key={selectedCoverage.id} className="site-panel-swap overflow-hidden rounded-xl border border-border bg-card">
             <div className="grid gap-6 border-b border-border p-5 sm:p-7 md:grid-cols-[1fr_170px] md:items-center"><div><div className="flex items-center gap-3">{React.createElement(selectedCoverage.icon, { className: 'h-6 w-6 text-accent' })}<h3 className="text-2xl font-semibold">{selectedCoverage.label}</h3></div><p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">{selectedCoverage.summary}</p></div><CategoryScoreBar label="Example category score" value={selectedCoverage.score} detail="Demonstration data" /></div>
             <div className="divide-y divide-border">
               {selectedCoverage.checks.map(([title, description], index) => <article key={title} className="grid gap-2 p-5 sm:grid-cols-[44px_180px_1fr] sm:items-start sm:p-6"><div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-sm font-semibold tabular-nums">{String(index + 1).padStart(2, '0')}</div><h4 className="font-semibold">{title}</h4><p className="text-sm leading-6 text-muted-foreground">{description}</p></article>)}
             </div>
           </div>
-        </div>
+        </MotionReveal>
       </section>
 
       <section id="example-report" className="content-auto border-y border-border bg-[var(--surface-inset)] py-14 md:py-18">
-        <div className="section-shell">
+        <MotionReveal className="section-shell">
           <div className="grid gap-8 lg:grid-cols-[0.72fr_1.28fr] lg:items-end"><div><p className="text-sm font-semibold text-accent">Specific recommendations</p><h2 className="mt-2 text-3xl font-semibold leading-tight md:text-4xl">A finding should explain the problem, not just name it.</h2><p className="mt-4 text-sm leading-7 text-muted-foreground">Select an example to see the same evidence-first structure used in reports.</p></div><div className="flex flex-wrap gap-2 lg:justify-end"><StatusBadge tone="neutral">Example report</StatusBadge><StatusBadge tone="accent">Demonstration data</StatusBadge></div></div>
           <div className="mt-8 grid overflow-hidden rounded-xl border border-border bg-card lg:grid-cols-[0.8fr_1.2fr]">
             <div className="divide-y divide-border border-b border-border lg:border-b-0 lg:border-r">
               {findingExamples.map((finding, index) => <button key={finding.title} type="button" onClick={() => setActiveFinding(index)} className={`flex w-full items-start gap-3 px-4 py-4 text-left sm:px-5 ${activeFinding === index ? 'bg-accent/8' : 'hover:bg-muted/45'}`}><span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${finding.severity === 'Critical' ? 'bg-red-500' : finding.severity === 'High' ? 'bg-orange-500' : finding.severity === 'Medium' ? 'bg-amber-500' : 'bg-sky-500'}`} /><span className="min-w-0"><span className="block text-sm font-semibold">{finding.title}</span><span className="mt-1 block text-xs text-muted-foreground">{finding.category} · {finding.pages} affected {finding.pages === 1 ? 'page' : 'pages'}</span></span></button>)}
             </div>
-            <article className="p-5 sm:p-7">
+            <article key={selectedFinding.title} className="site-panel-swap p-5 sm:p-7">
               <div className="flex flex-wrap items-start justify-between gap-4"><div><div className="flex flex-wrap gap-2"><StatusBadge tone={selectedFinding.severity === 'Critical' ? 'danger' : selectedFinding.severity === 'Low' ? 'neutral' : 'warning'}>{selectedFinding.severity}</StatusBadge><StatusBadge tone="accent">{selectedFinding.category}</StatusBadge></div><h3 className="mt-4 text-2xl font-semibold">{selectedFinding.title}</h3></div><div className="text-right"><div className="text-2xl font-semibold tabular-nums">{selectedFinding.pages}</div><div className="text-xs text-muted-foreground">Affected pages</div></div></div>
               <div className="mt-6 grid gap-0 border-y border-border md:grid-cols-2 md:divide-x md:divide-border"><div className="py-5 md:pr-6"><h4 className="text-sm font-semibold">Why it matters</h4><p className="mt-2 text-sm leading-6 text-muted-foreground">{selectedFinding.impact}</p></div><div className="py-5 md:pl-6"><h4 className="text-sm font-semibold">Recommended action</h4><p className="mt-2 text-sm leading-6 text-muted-foreground">{selectedFinding.action}</p></div></div>
               <div className="mt-5 rounded-lg border border-border bg-[var(--surface-inset)] p-4"><div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground"><Code2 className="h-4 w-4" /> Evidence preview</div><code className="mt-2 block overflow-x-auto text-sm text-foreground">{selectedFinding.evidence}</code></div>
             </article>
           </div>
-        </div>
+        </MotionReveal>
       </section>
 
       <section id="how-it-works" className="content-auto section-shell scroll-mt-24 py-14 md:py-18">
-        <div className="grid gap-10 xl:grid-cols-[0.62fr_1.38fr]"><div><p className="text-sm font-semibold text-accent">From evidence to action</p><h2 className="mt-2 text-3xl font-semibold leading-tight md:text-4xl">The report becomes a working backlog.</h2><p className="mt-4 text-sm leading-7 text-muted-foreground">Findings retain the context needed to verify, assign, fix, and compare the work.</p><button type="button" onClick={onExploreFeatures} className="quiet-button mt-6">Open your workspace <ExternalLink className="h-4 w-4" /></button></div>
+        <MotionReveal className="grid gap-10 xl:grid-cols-[0.62fr_1.38fr]"><div><p className="text-sm font-semibold text-accent">From evidence to action</p><h2 className="mt-2 text-3xl font-semibold leading-tight md:text-4xl">The report becomes a working backlog.</h2><p className="mt-4 text-sm leading-7 text-muted-foreground">Findings retain the context needed to verify, assign, fix, and compare the work.</p><button type="button" onClick={onExploreFeatures} className="quiet-button mt-6">Open your workspace <ExternalLink className="h-4 w-4" /></button></div>
           <ol className="grid border-y border-border md:grid-cols-2">
             {workflow.map(([number, title, description], index) => <li key={number} className={`grid grid-cols-[44px_1fr] gap-3 border-b border-border py-5 md:px-6 ${index % 2 === 0 ? 'md:border-r' : ''} ${index >= 4 ? 'md:border-b-0' : ''}`}><span className="font-semibold tabular-nums text-accent">{number}</span><div><h3 className="font-semibold">{title}</h3><p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p></div></li>)}
           </ol>
-        </div>
+        </MotionReveal>
       </section>
 
       <section className="content-auto border-y border-border bg-card py-14 md:py-18">
-        <div className="section-shell grid gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
+        <MotionReveal className="section-shell grid gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
           <div><div className="flex h-11 w-11 items-center justify-center rounded-lg border border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"><LockKeyhole className="h-5 w-5" /></div><h2 className="mt-5 text-3xl font-semibold leading-tight md:text-4xl">The report is clear about what it knows.</h2><p className="mt-4 text-sm leading-7 text-muted-foreground">Audit scores come from collected checks. Missing evidence remains a limitation and is never converted into a pass.</p></div>
           <div className="divide-y divide-border border-y border-border">
             {[
@@ -232,10 +233,11 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
               ['Unavailable checks', 'Blocked, failed, or unsupported evidence is not counted as passed.'],
             ].map(([title, copy]) => <div key={title} className="grid gap-2 py-4 sm:grid-cols-[180px_1fr]"><h3 className="text-sm font-semibold">{title}</h3><p className="text-sm leading-6 text-muted-foreground">{copy}</p></div>)}
           </div>
-        </div>
+        </MotionReveal>
       </section>
 
       <section id="pricing" className="content-auto section-shell scroll-mt-24 py-14 md:py-18">
+        <MotionReveal>
         <div className="max-w-3xl"><p className="text-sm font-semibold text-accent">Plans and limits</p><h2 className="mt-2 text-3xl font-semibold leading-tight md:text-4xl">Choose the audit depth you need.</h2><p className="mt-4 text-sm leading-7 text-muted-foreground">Self-service billing is not available yet. Plan access is enabled by an administrator, and server-enforced limits always take priority.</p></div>
         <div className="mt-8 grid gap-4 lg:grid-cols-3">
           {PUBLIC_AUDIT_PLANS.map((plan) => <article key={plan.id} className={`flex h-full flex-col rounded-xl border bg-card p-5 sm:p-7 ${plan.recommended ? 'border-accent ring-1 ring-accent/25' : 'border-border'}`}><div className="flex items-start justify-between gap-3"><div><h3 className="text-2xl font-semibold">{plan.name}</h3><p className="mt-1 text-sm text-muted-foreground">{plan.mode}</p></div>{plan.recommended && <StatusBadge tone="accent">Recommended</StatusBadge>}</div><div className="mt-6 border-y border-border py-4"><div className="text-lg font-semibold">Up to {plan.pagesPerAudit} analysed pages</div><div className="mt-1 text-sm text-muted-foreground">{plan.allowance}</div></div><div className="mt-5"><div className="text-xs font-semibold text-muted-foreground">Best for</div><p className="mt-1 text-sm leading-6">{plan.bestFor}</p></div><ul className="mt-5 space-y-3 text-sm">{plan.features.map((feature) => <li key={feature} className="flex gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-300" />{feature}</li>)}</ul><p className="mt-auto border-t border-border pt-5 text-xs leading-5 text-muted-foreground">{plan.footer}</p></article>)}
@@ -248,10 +250,11 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
           </table>
         </div>
         <button type="button" onClick={() => onNavigate('start-audit')} className="trust-button mt-6">Start a free audit <ArrowRight className="h-4 w-4" /></button>
+        </MotionReveal>
       </section>
 
       <section id="faq" className="content-auto border-t border-border bg-[var(--surface-inset)] py-14 md:py-18">
-        <div className="section-shell grid gap-8 lg:grid-cols-[0.58fr_1.42fr]"><div><p className="text-sm font-semibold text-accent">Before you start</p><h2 className="mt-2 text-3xl font-semibold leading-tight">Practical audit questions.</h2><p className="mt-3 text-sm leading-6 text-muted-foreground">The service is built for public websites and reports unavailable evidence directly.</p></div><div className="divide-y divide-border border-y border-border">{faqs.map(([question, answer]) => <FaqItem key={question} question={question} answer={answer} />)}</div></div>
+        <MotionReveal className="section-shell grid gap-8 lg:grid-cols-[0.58fr_1.42fr]"><div><p className="text-sm font-semibold text-accent">Before you start</p><h2 className="mt-2 text-3xl font-semibold leading-tight">Practical audit questions.</h2><p className="mt-3 text-sm leading-6 text-muted-foreground">The service is built for public websites and reports unavailable evidence directly.</p></div><div className="divide-y divide-border border-y border-border">{faqs.map(([question, answer]) => <FaqItem key={question} question={question} answer={answer} />)}</div></MotionReveal>
       </section>
     </main>
   );
@@ -259,7 +262,7 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
 
 function ExampleWorkspacePreview({ onOpen }: { onOpen: () => void }) {
   return (
-    <div className="report-grid relative min-w-0 overflow-hidden rounded-xl border border-border bg-[var(--surface-inset)] p-3 shadow-sm" aria-label="Example audit report">
+    <div className="site-hero-preview report-grid relative min-w-0 overflow-hidden rounded-xl border border-border bg-[var(--surface-inset)] p-3 shadow-sm" aria-label="Example audit report">
       <div className="overflow-hidden rounded-lg border border-border bg-card">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3"><div className="flex items-center gap-3"><div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-accent-foreground"><BarChart3 className="h-4 w-4" /></div><div><div className="flex items-center gap-2 text-xs font-semibold text-accent">Example report <span className="text-muted-foreground">· Demonstration data</span></div><div className="mt-0.5 font-semibold">example.com</div></div></div><StatusBadge tone="success">Report ready</StatusBadge></div>
         <div className="grid lg:grid-cols-[190px_minmax(0,1fr)]">

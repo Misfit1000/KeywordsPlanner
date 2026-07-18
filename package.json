@@ -83,6 +83,7 @@
     "smoke:activity-drag-position": "tsx scripts/smoke-activity-drag-position.mts",
     "smoke:activity-keyboard-position": "tsx scripts/smoke-activity-keyboard-position.mts",
     "smoke:responsive-visual-hierarchy": "tsx scripts/smoke-responsive-visual-hierarchy.mts",
+    "smoke:site-audit-motion": "tsx scripts/smoke-site-audit-motion.mts",
     "smoke:no-ui-feature-regression": "tsx scripts/smoke-no-ui-feature-regression.mts",
     "smoke:supabase-schema": "node scripts/smoke-supabase-schema.mjs",
     "smoke:finding-workflow": "tsx scripts/smoke-finding-workflow.mts",

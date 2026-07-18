@@ -355,6 +355,7 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
   }
 
   const progress = Math.max(0, Math.min(100, audit.progress || 0));
+  const auditActive = audit.status === 'queued' || audit.status === 'running';
   const firstPage = data.latestPages.find((page) => page.title || page.metaDescription) || data.latestPages[0];
   const liveScore = getAuditLiveScore({ audit, events: data.latestEvents, finalReport: data.finalReport });
   const finalCoverage = data.finalReport?.scores?.coverage as Record<string, unknown> | undefined;
@@ -401,8 +402,8 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
   const elapsedTime = formatAuditElapsed(audit, now);
 
   return (
-    <div className="w-full space-y-8 animate-rise">
-      <AuditActivityPanel events={data.latestEvents} phase={humanizeAuditText(audit.currentPhase)} progress={progress} pagesAnalysed={audit.pagesCrawled} pageLimit={audit.pageLimit} />
+    <div className="audit-workspace-enter w-full space-y-8">
+      <AuditActivityPanel events={data.latestEvents} phase={humanizeAuditText(audit.currentPhase)} progress={progress} pagesAnalysed={audit.pagesCrawled} pageLimit={audit.pageLimit} active={auditActive} />
       <div className="h-10 sm:h-12" aria-hidden="true" />
       <PageHeader
         eyebrow="Live audit"
@@ -455,7 +456,7 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
         {livePresentation && <CurrentWorkCard presentation={livePresentation} connection={connection} now={now} onViewReport={onOpenWorkspace} />}
         <div className="mt-5 grid gap-4 xl:grid-cols-[1.4fr_0.8fr_0.8fr]">
           <AuditStageTimeline progress={progress} status={audit.status} />
-          <SparklineChart values={progressSeries} label="Progress over time" valueLabel={`${Math.round(progress)}%`} />
+          <SparklineChart values={progressSeries} label="Progress over time" valueLabel={`${Math.round(progress)}%`} active={auditActive} />
           <MetricBarChart items={[{ label: 'Fix now', value: audit.criticalCount, color: 'bg-red-500' }, { label: 'High', value: audit.highCount, color: 'bg-orange-500' }, { label: 'Review', value: audit.mediumCount, color: 'bg-amber-500' }, { label: 'Low', value: audit.lowCount, color: 'bg-sky-500' }]} />
         </div>
         <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 border-t border-border pt-4 text-xs text-muted-foreground"><span>{elapsedTime} elapsed</span><span>{audit.pagesCrawled} of {audit.pageLimit} page allowance analysed</span><span>{audit.pagesDiscovered} eligible pages discovered</span><span>{audit.warningCount || 0} unavailable checks or coverage warnings</span></div>
@@ -716,6 +717,9 @@ function CurrentWorkCard({
           <span id="current-audit-state">{presentation.heading}</span>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+          <span className={`audit-work-signal ${presentation.active ? 'is-active' : ''}`} role="img" aria-label={presentation.active ? 'Audit engine is actively checking the website' : 'Audit engine activity is stopped'}>
+            {[0, 1, 2, 3, 4].map((bar) => <span key={bar} aria-hidden="true" />)}
+          </span>
           <span>{presentation.active ? formatLastUpdate(connection.lastUpdateAt, now) : presentation.timestamp}</span>
           {presentation.reportActionAvailable && onViewReport && <button type="button" onClick={onViewReport} className="quiet-button min-h-9 px-3 py-1.5 text-xs"><BarChart3 className="h-3.5 w-3.5" /> View report</button>}
         </div>

@@ -56,12 +56,14 @@ export default function AuditActivityPanel({
   progress,
   pagesAnalysed,
   pageLimit,
+  active = false,
 }: {
   events: ResourceAuditEvent[];
   phase?: string | null;
   progress?: number;
   pagesAnalysed?: number;
   pageLimit?: number;
+  active?: boolean;
 }) {
   const [layout, setLayout] = useState<ActivityPanelLayout>(() => {
     if (typeof window === 'undefined') return defaultActivityLayout(viewportSize());
@@ -233,7 +235,7 @@ export default function AuditActivityPanel({
             <GripHorizontal className="h-4 w-4" />
           </button>
           <button ref={collapsedRef} type="button" onClick={expand} className="flex min-w-0 flex-1 items-center gap-2 px-3 text-left" aria-label={`Open audit activity, ${events.length} events${unread ? `, ${unread} new` : ''}`}>
-            <Activity className="h-4 w-4 shrink-0 text-accent" />
+            <span className={`audit-live-signal h-7 w-7 ${active ? 'is-active' : ''}`} aria-hidden="true"><Activity className="h-4 w-4" /></span>
             <span className="min-w-0 flex-1 truncate font-semibold">{activityLabel}</span>
             <span className="shrink-0 text-xs text-muted-foreground">{events.length}</span>
             {unread > 0 && <span className="h-2 w-2 shrink-0 rounded-full bg-accent" aria-label={`${unread} new events`} />}
@@ -270,7 +272,10 @@ export default function AuditActivityPanel({
               <GripHorizontal className="h-5 w-5" />
             </button>
             <div className="min-w-0 flex-1">
-              <h2 id="audit-activity-title" className="truncate text-sm font-semibold">Audit activity</h2>
+              <h2 id="audit-activity-title" className="flex items-center gap-2 truncate text-sm font-semibold">
+                <span className={`audit-live-signal h-6 w-6 ${active ? 'is-active' : ''}`} aria-hidden="true"><Activity className="h-3.5 w-3.5" /></span>
+                Audit activity
+              </h2>
               <p className="truncate text-xs text-muted-foreground">{activityLabel}</p>
             </div>
             <button type="button" onClick={() => setPositionMenuOpen((open) => !open)} className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted" aria-label="Activity position options" aria-expanded={positionMenuOpen}><MoreHorizontal className="h-4 w-4" /></button>
@@ -291,7 +296,7 @@ export default function AuditActivityPanel({
             ) : visibleEvents.map((event) => {
               const message = customerSafeDiagnosticText(event.message) || 'Audit update recorded.';
               return (
-                <article key={event.id} className="grid grid-cols-[12px_minmax(0,1fr)] gap-3 border-b border-border px-4 py-3.5 last:border-0">
+                <article key={event.id} className="audit-activity-event grid grid-cols-[12px_minmax(0,1fr)] gap-3 border-b border-border px-4 py-3.5 last:border-0">
                   <span className={`mt-1.5 h-2.5 w-2.5 rounded-full ${eventDot(event)}`} aria-hidden="true" />
                   <div className="min-w-0">
                     <div className="flex items-start justify-between gap-3"><h3 className="text-sm font-semibold">{readableEventTitle(event)}</h3><time className="shrink-0 text-[11px] text-muted-foreground">{new Date(event.timestamp).toLocaleTimeString()}</time></div>
