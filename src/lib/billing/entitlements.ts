@@ -36,6 +36,7 @@ export interface UserProfileEntitlement {
   subscriptionStatus: SubscriptionStatus;
   auditQuotaUsedDaily: number;
   auditQuotaUsedMonthly: number;
+  disabled: boolean;
 }
 
 export interface AuditStartDecision {
@@ -232,6 +233,7 @@ function rowToProfile(row: any): UserProfileEntitlement {
     subscriptionStatus: normalizeSubscriptionStatus(row.subscription_status),
     auditQuotaUsedDaily: Number(row.audit_quota_used_daily ?? 0),
     auditQuotaUsedMonthly: Number(row.audit_quota_used_monthly ?? 0),
+    disabled: Boolean(row.disabled),
   };
 }
 

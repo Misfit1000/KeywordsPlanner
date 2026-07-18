@@ -58,6 +58,8 @@ import {
   flushNodeMonitoring,
 } from '../lib/monitoring/sentry-node';
 import { resolveSentryBuildConfiguration } from '../lib/monitoring/sentry-build';
+import { adminControlCenterRouter } from './admin/control-center';
+import { getUserActionGuard } from '../lib/admin/control-center';
 
 const DUPLICATE_AUDIT_WINDOW_MS = 10 * 60 * 1000;
 
@@ -86,6 +88,7 @@ apiRouter.use('/blog/scheduler', durableRateLimit({ namespace: 'blog-scheduler',
 apiRouter.use('/audit/export', durableRateLimit({ namespace: 'report-export', limit: 10, windowSeconds: 300 }));
 apiRouter.use('/audit/cancel', durableRateLimit({ namespace: 'audit-cancel', limit: 10, windowSeconds: 300 }));
 apiRouter.use('/domain/link-signals', createRateLimiter({ namespace: 'public-link-signals', windowMs: 60 * 60 * 1000, maxRequests: 20 }));
+apiRouter.use('/admin/control-center', adminControlCenterRouter);
 
 function firstHeaderValue(value: unknown) {
   return Array.isArray(value) ? String(value[0] || '') : String(value || '');
@@ -168,6 +171,9 @@ async function getRequester(req: any) {
   if (!authUser) return { userId: null, profile: null };
   req.requesterUserId = authUser.id;
   const profile = await ensureUserProfileFromAuthUser(authUser);
+  if (profile.disabled) {
+    throw new ApiError('ACCOUNT_SUSPENDED', 'This account is suspended.', 403);
+  }
   return { userId: authUser.id, profile };
 }
 
@@ -310,6 +316,7 @@ apiRouter.get('/me/profile', asyncJsonRoute(async (req, res) => {
     return res.status(401).json({ success: false, error: 'Not authenticated' });
   }
   const profile = await ensureUserProfileFromAuthUser(authUser);
+  if (profile.disabled) throw new ApiError('ACCOUNT_SUSPENDED', 'This account is suspended.', 403);
   const limits = await getPlanLimits(profile.plan);
   res.json({ success: true, data: { profile, limits } });
 }));
@@ -352,13 +359,52 @@ apiRouter.post('/me/delete', durableRateLimit({ namespace: 'account-delete', lim
     throw new ApiError('RECENT_LOGIN_REQUIRED', 'Sign in again before deleting your account.', 403);
   }
   const client = requireSupabaseAdminClient();
-  await client.from('user_profiles').update({ deletion_requested_at: new Date().toISOString() }).eq('id', authUser.id);
-  const { data, error } = await client.rpc('delete_user_owned_data', { p_user_id: authUser.id });
-  if (error) throw error;
-  const { error: authDeleteError } = await client.auth.admin.deleteUser(authUser.id);
-  if (authDeleteError) throw authDeleteError;
-  res.setHeader('Clear-Site-Data', '"cache", "cookies", "storage"');
-  res.json({ success: true, data });
+  const requestedAt = new Date().toISOString();
+  await client.from('user_profiles').update({ deletion_requested_at: requestedAt }).eq('id', authUser.id);
+  const { data: existingRequest, error: existingRequestError } = await client
+    .from('account_deletion_requests')
+    .select('id')
+    .eq('user_id', authUser.id)
+    .in('status', ['requested', 'processing'])
+    .order('requested_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (existingRequestError) throw existingRequestError;
+  const requestResult = existingRequest
+    ? await client.from('account_deletion_requests').update({
+      status: 'processing',
+      processing_started_at: requestedAt,
+      failure_code: null,
+      failure_message: null,
+    }).eq('id', existingRequest.id).select('id').single()
+    : await client.from('account_deletion_requests').insert({
+      user_id: authUser.id,
+      requester_email: authUser.email ?? null,
+      status: 'processing',
+      request_source: 'self_service',
+      processing_started_at: requestedAt,
+      requested_at: requestedAt,
+    }).select('id').single();
+  if (requestResult.error) throw requestResult.error;
+  try {
+    const { data, error } = await client.rpc('delete_user_owned_data', { p_user_id: authUser.id });
+    if (error) throw error;
+    const { error: authDeleteError } = await client.auth.admin.deleteUser(authUser.id);
+    if (authDeleteError) throw authDeleteError;
+    await client.from('account_deletion_requests').update({
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+    }).eq('id', requestResult.data.id);
+    res.setHeader('Clear-Site-Data', '"cache", "cookies", "storage"');
+    res.json({ success: true, data });
+  } catch (error) {
+    await client.from('account_deletion_requests').update({
+      status: 'failed',
+      failure_code: 'SELF_SERVICE_DELETION_FAILED',
+      failure_message: 'Automatic deletion could not finish. An administrator can safely retry this request.',
+    }).eq('id', requestResult.data.id);
+    throw error;
+  }
 }));
 
 apiRouter.get('/version', asyncJsonRoute(async (_req, res) => {
@@ -504,9 +550,20 @@ apiRouter.post('/admin/users/:id/update', asyncJsonRoute(async (req, res) => {
   }
   if (!Object.keys(patch).length) throw new ApiError('EMPTY_ADMIN_UPDATE', 'No supported user fields were provided.', 400);
   const client = requireSupabaseAdminClient();
-  const { data: before, error: readError } = await client.from('user_profiles').select('role,plan,subscription_status').eq('id', req.params.id).maybeSingle();
+  const { data: before, error: readError } = await client.from('user_profiles').select('role,plan,subscription_status,disabled').eq('id', req.params.id).maybeSingle();
   if (readError) throw readError;
   if (!before) throw new ApiError('USER_NOT_FOUND', 'User not found.', 404);
+  const { count: activeAdminCount, error: countError } = await client.from('user_profiles').select('id', { count: 'exact', head: true }).eq('role', 'admin').eq('disabled', false);
+  if (countError) throw countError;
+  const guard = getUserActionGuard({
+    actorId: requester.userId,
+    targetId: req.params.id,
+    targetRole: before.role,
+    activeAdminCount: activeAdminCount || 0,
+    action: 'update_access',
+    nextRole: patch.role as any,
+  });
+  if (!guard.allowed) throw new ApiError(guard.code, guard.message, 409);
   const { error } = await client.from('user_profiles').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', req.params.id);
   if (error) throw error;
   await client.from('admin_actions').insert({ admin_user_id: requester.userId, action: 'update_user_access', target_type: 'user', target_id: req.params.id, metadata: { reason, before, after: patch } });
@@ -1096,9 +1153,11 @@ apiRouter.post('/admin/blog/section-revisions/:id/decision', asyncJsonRoute(asyn
 apiRouter.delete('/admin/blog/posts/:id', asyncJsonRoute(async (req, res) => {
   const requester = await requireAdminRequester(req, res);
   if (!requester) return;
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 4 || reason.length > 500) throw new ApiError('ADMIN_REASON_REQUIRED', 'Provide a reason between 4 and 500 characters.', 400);
   const post = await blogRepository.update(req.params.id, { status: 'archived', updated_by: requester.userId });
   if (!post) return res.status(404).json({ success: false, error: 'Article not found.' });
-  await logBlogAction(requester.userId, 'archive_blog_post', post.id, { slug: post.slug });
+  await logBlogAction(requester.userId, 'archive_blog_post', post.id, { slug: post.slug, reason });
   res.json({ success: true, data: { post } });
 }));
 

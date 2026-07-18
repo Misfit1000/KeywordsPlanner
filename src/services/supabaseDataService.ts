@@ -51,6 +51,16 @@ async function adminApi(path: string, body: Record<string, unknown>) {
   return response.data.data || response.data;
 }
 
+async function adminApiGet(path: string) {
+  const response = await safeJsonFetch<any>(path, {
+    headers: await getAuthHeaders(),
+    credentials: 'same-origin',
+  });
+  if (response.success === false) throw new Error(response.error);
+  if (response.data.success === false) throw new Error(response.data.error?.message || response.data.error || 'Administrator request failed.');
+  return response.data.data;
+}
+
 function toCamelRow(row: any) {
   return {
     ...row,
@@ -172,73 +182,14 @@ export const updateUserProfileData = async (uid: string, data: any) => {
   if (error) throw error;
 };
 
-export const makeUserAdmin = async (uid: string) => {
-  throw new Error(`Protected administrator action required for ${uid}.`);
-};
-
-export const getAllUsers = async (limit = 100) => {
-  const client = clientOrNull();
-  if (!client) return [];
-  const { data, error } = await client.from('user_profiles').select('*').order('created_at', { ascending: false }).limit(Math.max(1, Math.min(200, limit)));
-  if (error) throw error;
-  return (data ?? []).map(toCamelRow);
-};
-
-export const updateUserRole = async (uid: string, role: string) => {
-  throw new Error(`Protected administrator action required to assign ${role} to ${uid}.`);
-};
-
-export const updateUserAdminFields = async (uid: string, patch: any, _adminUserId?: string, reason = '') => {
-  if (patch.resetQuotas) {
-    return adminApi(`/api/tools/admin/users/${encodeURIComponent(uid)}/reset-quota`, { reason });
-  }
-  return adminApi(`/api/tools/admin/users/${encodeURIComponent(uid)}/update`, { reason, patch });
-};
-
-export const deleteUserDoc = async (uid: string) => {
-  const client = assertClient();
-  const { error } = await client.from('user_profiles').delete().eq('id', uid);
-  if (error) throw error;
-};
-
-export const getAllProjects = async () => {
-  const client = clientOrNull();
-  if (!client) return [];
-  const { data, error } = await client.from('projects').select('*').order('created_at', { ascending: false }).limit(200);
-  if (error) throw error;
-  return (data ?? []).map(toCamelRow);
-};
-
-export const getAdminAudits = async (limit = 50) => {
-  const client = clientOrNull();
-  if (!client) return [];
-  const { data, error } = await client
-    .from('audits')
-    .select('id,user_id,guest_key_hash,submitted_input,normalized_url,status,plan,requested_mode,effective_mode,queue_priority,processing_tier,current_phase,locked_by,lease_expires_at,error,created_at,updated_at')
-    .order('created_at', { ascending: false })
-    .limit(limit);
-  if (error) throw error;
-  return (data ?? []).map(toCamelRow);
-};
-
 export const getAdminWorkers = async () => {
-  const client = clientOrNull();
-  if (!client) return [];
-  const { data, error } = await client
-    .from('platform_settings')
-    .select('id,key,value,updated_at')
-    .like('id', 'audit_worker:%')
-    .order('updated_at', { ascending: false });
-  if (error) throw error;
-  return (data ?? []).map(toCamelRow);
+  const data = await adminApiGet('/api/tools/admin/control-center/workers');
+  return (data.items || []).map(toCamelRow);
 };
 
 export const getPlanLimits = async () => {
-  const client = clientOrNull();
-  if (!client) return [];
-  const { data, error } = await client.from('plan_limits').select('*').order('priority', { ascending: true });
-  if (error) throw error;
-  return (data ?? []).map(toCamelRow);
+  const data = await adminApiGet('/api/tools/admin/control-center/plans');
+  return (data.items || []).map(toCamelRow);
 };
 
 export const updatePlanLimit = async (plan: string, patch: any, _adminUserId?: string, reason = '') => {
@@ -248,23 +199,6 @@ export const updatePlanLimit = async (plan: string, patch: any, _adminUserId?: s
     row[snake] = value;
   }
   return adminApi(`/api/tools/admin/plans/${encodeURIComponent(plan)}`, { reason, patch: row });
-};
-
-export const updateAuditAdminAction = async (auditId: string, patch: any, _adminUserId?: string, reason = '') => {
-  const action = patch.status === 'cancelled' ? 'cancel'
-    : patch.status === 'abandoned' ? 'abandon'
-      : 'queuePriority' in patch ? 'priority'
-      : /recover/i.test(String(patch.currentPhase || '')) ? 'requeue'
-        : 'retry';
-  return adminApi(`/api/tools/admin/audits/${encodeURIComponent(auditId)}/action`, { reason, action, queuePriority: patch.queuePriority });
-};
-
-export const getAdminActions = async (limit = 50) => {
-  const client = clientOrNull();
-  if (!client) return [];
-  const { data, error } = await client.from('admin_actions').select('*').order('created_at', { ascending: false }).limit(limit);
-  if (error) throw error;
-  return (data ?? []).map(toCamelRow);
 };
 
 export const getAdminDiagnostics = async () => {
@@ -290,62 +224,9 @@ export const sendAdminSentryTestEvent = async () => {
   return response.data.data || response.data;
 };
 
-export const logAdminAction = async (adminUserId: string | undefined, action: string, targetType?: string, targetId?: string, metadata: any = {}) => {
-  const client = clientOrNull();
-  if (!client || !adminUserId) return;
-  const { error } = await client.from('admin_actions').insert({
-    admin_user_id: adminUserId,
-    action,
-    target_type: targetType,
-    target_id: targetId,
-    metadata,
-  });
-  if (error) throw error;
-};
-
-export const getAllKeywords = async () => {
-  const client = clientOrNull();
-  if (!client) return [];
-  const { data, error } = await client.from('keywords').select('*').order('created_at', { ascending: false }).limit(1000);
-  if (error) throw error;
-  return (data ?? []).map(toCamelRow);
-};
-
-export const getAllCompetitors = async () => {
-  const client = clientOrNull();
-  if (!client) return [];
-  const { data, error } = await client.from('competitors').select('*').order('created_at', { ascending: false }).limit(500);
-  if (error) throw error;
-  return (data ?? []).map(toCamelRow);
-};
-
-export const deleteAnyDocument = async (path: string) => {
-  const client = assertClient();
-  const [, , collectionName, id] = path.split('/');
-  const tableByCollection: Record<string, string> = {
-    projects: 'projects',
-    keywords: 'keywords',
-    competitors: 'competitors',
-  };
-  const table = tableByCollection[collectionName];
-  if (!table || !id) throw new Error(`Unsupported data path: ${path}`);
-  const { error } = await client.from(table).delete().eq('id', id);
-  if (error) throw error;
-};
-
 export const getPlatformSettings = async () => {
-  const client = clientOrNull();
-  if (!client) {
-    return {
-      platformName: 'Crawlio Audit',
-      supportEmail: 'support@keywordintelligence.com',
-      requireEmailVerification: false,
-      publicRegistration: true,
-    };
-  }
-  const { data, error } = await client.from('platform_settings').select('*').eq('id', 'settings').maybeSingle();
-  if (error) throw error;
-  return data ? toCamelRow(data) : {
+  const data = await adminApiGet('/api/tools/admin/control-center/platform-settings');
+  return data.settings ? toCamelRow(data.settings) : {
     platformName: 'Crawlio Audit',
     supportEmail: 'support@keywordintelligence.com',
     requireEmailVerification: false,
