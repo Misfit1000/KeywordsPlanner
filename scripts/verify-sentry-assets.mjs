@@ -42,7 +42,6 @@ if (/(^|[^A-Z0-9_])SENTRY_DSN([^A-Z0-9_]|$)/.test(content)) {
 
 const secretValues = [
   process.env.SENTRY_AUTH_TOKEN,
-  process.env.SENTRY_DSN,
   process.env.SUPABASE_SERVICE_ROLE_KEY,
   process.env.BLOG_DISPATCH_SECRET,
   process.env.CRON_SECRET,

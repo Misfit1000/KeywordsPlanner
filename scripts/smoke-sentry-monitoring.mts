@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { renderToStaticMarkup } from 'react-dom/server';
 import AppErrorBoundary from '../src/components/AppErrorBoundary';
 import {
@@ -250,5 +253,35 @@ assert.doesNotMatch(workerSource, /vercel-handler|src\/api|from ['"].*api\//);
 assert.doesNotMatch(apiSource, /safe-public-fetch|runAllChecksSafely|audit-worker/);
 assert.match(apiSource, /requireAdminRequester\(req, res\)/);
 assert.match(apiSource, /sentry-test/);
+
+const assetVerifier = path.resolve('scripts/verify-sentry-assets.mjs');
+const assetTestRoot = await mkdtemp(path.join(tmpdir(), 'crawlio-sentry-assets-'));
+try {
+  const assetDirectory = path.join(assetTestRoot, 'dist', 'assets');
+  await mkdir(assetDirectory, { recursive: true });
+  await writeFile(path.join(assetDirectory, 'app.js'), `const browserDsn = ${JSON.stringify(mockDsn)};`);
+  const browserDsnCheck = spawnSync(process.execPath, [assetVerifier], {
+    cwd: assetTestRoot,
+    env: { ...process.env, SENTRY_DSN: mockDsn, VITE_SENTRY_DSN: mockDsn },
+    encoding: 'utf8',
+  });
+  assert.equal(
+    browserDsnCheck.status,
+    0,
+    `A browser-safe Sentry DSN was incorrectly rejected: ${browserDsnCheck.stderr}`,
+  );
+
+  const privateToken = 'private-source-map-token-value';
+  await writeFile(path.join(assetDirectory, 'app.js'), `const leakedToken = ${JSON.stringify(privateToken)};`);
+  const privateTokenCheck = spawnSync(process.execPath, [assetVerifier], {
+    cwd: assetTestRoot,
+    env: { ...process.env, SENTRY_AUTH_TOKEN: privateToken },
+    encoding: 'utf8',
+  });
+  assert.notEqual(privateTokenCheck.status, 0);
+  assert.match(privateTokenCheck.stderr, /server-only secret value/);
+} finally {
+  await rm(assetTestRoot, { recursive: true, force: true });
+}
 
 console.log('Privacy-safe Sentry monitoring smoke test passed.');
