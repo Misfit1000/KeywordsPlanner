@@ -25,6 +25,12 @@ const legacyDataService = read('src/services/supabaseDataService.ts');
 const migration = read('supabase/migrations/020_admin_control_center.sql');
 const contentView = read('src/components/admin/AdminContentHealthView.tsx');
 const resourcesView = read('src/components/admin/AdminResourcesView.tsx');
+const primitivesSource = read('src/components/admin/AdminControlPrimitives.tsx');
+const dialogSource = read('src/components/admin/AdminActionDialog.tsx');
+const usersView = read('src/components/admin/AdminUsersView.tsx');
+const operationsView = read('src/components/admin/AdminOperationsView.tsx');
+const visualSystem = read('src/components/ui/visual-system.tsx');
+const styles = read('src/index.css');
 
 function adminApiContract() {
   assert.match(routeSource, /profile\.role !== 'admin'/);
@@ -213,6 +219,35 @@ async function loadEfficiencyContract() {
   assert.equal(cachedFreshLoad.value, 12);
 }
 
+function motionContract() {
+  for (const className of [
+    'admin-view-enter',
+    'admin-stagger',
+    'admin-chart-line',
+    'admin-bar-reveal',
+    'admin-live-dot',
+    'admin-dialog-panel',
+    'admin-drawer-panel',
+  ]) {
+    assert.match(styles, new RegExp(`\\.${className}`));
+  }
+  assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(styles, /animation-duration: 0\.01ms !important/);
+  assert.match(primitivesSource, /requestAnimationFrame/);
+  assert.match(primitivesSource, /prefers-reduced-motion: reduce/);
+  assert.match(primitivesSource, /AdminAnimatedNumber/);
+  assert.match(primitivesSource, /live \? 'admin-live-dot'/);
+  assert.match(dashboardSource, /key=\{activeTab\} className="admin-view-enter"/);
+  assert.match(dialogSource, /admin-dialog-backdrop/);
+  assert.match(dialogSource, /admin-dialog-panel/);
+  assert.match(usersView, /admin-drawer-backdrop/);
+  assert.match(usersView, /admin-drawer-panel/);
+  assert.match(operationsView, /admin-stagger/);
+  assert.match(operationsView, /admin-bar-reveal/);
+  assert.match(visualSystem, /admin-chart-line/);
+  assert.match(visualSystem, /React\.useId\(\)/);
+}
+
 function migrationContract() {
   for (const value of ['admin_user_notes', 'account_deletion_requests', 'admin_operation_previews']) {
     assert.match(migration, new RegExp(`create table if not exists public\\.${value}`));
@@ -251,6 +286,7 @@ const tests: Record<string, () => void | Promise<void>> = {
   content: contentHealthContract,
   resources: resourceInventoryContract,
   load: loadEfficiencyContract,
+  motion: motionContract,
   migration: migrationContract,
 };
 

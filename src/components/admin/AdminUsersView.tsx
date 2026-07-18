@@ -177,7 +177,7 @@ export default function AdminUsersView({ currentAdminId }: { currentAdminId: str
             <div className="max-w-full overflow-x-auto">
               <table className="suite-table min-w-[940px]">
                 <thead><tr><th>User</th><th>Status</th><th>Access</th><th>Quota used</th><th>Created</th><th><span className="sr-only">Open</span></th></tr></thead>
-                <tbody>
+                <tbody className="admin-table-enter">
                   {users.map((user) => (
                     <tr key={user.id}>
                       <td>
@@ -244,10 +244,10 @@ export default function AdminUsersView({ currentAdminId }: { currentAdminId: str
       )}
 
       {selectedId && (
-        <div className="fixed inset-0 z-[60] bg-slate-950/40" role="presentation" onMouseDown={(event) => {
+        <div className="admin-drawer-backdrop fixed inset-0 z-[60] bg-slate-950/40" role="presentation" onMouseDown={(event) => {
           if (event.currentTarget === event.target) setSelectedId(null);
         }}>
-          <aside role="dialog" aria-modal="true" aria-label="User details" className="absolute inset-y-0 right-0 w-full max-w-2xl overflow-y-auto border-l border-border bg-background shadow-lg">
+          <aside role="dialog" aria-modal="true" aria-label="User details" className="admin-drawer-panel absolute inset-y-0 right-0 w-full max-w-2xl overflow-y-auto border-l border-border bg-background shadow-lg">
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-background/95 px-4 py-3 backdrop-blur sm:px-6">
               <div><div className="font-semibold">Account detail</div><div className="text-xs text-muted-foreground">Server-verified profile and activity</div></div>
               <button type="button" onClick={() => setSelectedId(null)} className="icon-button h-9 w-9" aria-label="Close user details"><X className="h-4 w-4" /></button>
@@ -263,10 +263,10 @@ export default function AdminUsersView({ currentAdminId }: { currentAdminId: str
                   <AdminStatus value={detail.user.disabled ? 'suspended' : 'active'} />
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-lg border border-border p-3"><div className="text-xs text-muted-foreground">Projects</div><div className="mt-1 text-xl font-semibold">{detail.projectCount}</div></div>
-                  <div className="rounded-lg border border-border p-3"><div className="text-xs text-muted-foreground">Recent audits</div><div className="mt-1 text-xl font-semibold">{detail.recentAudits.length}</div></div>
-                  <div className="rounded-lg border border-border p-3"><div className="text-xs text-muted-foreground">Last sign-in</div><div className="mt-1 text-xs font-semibold">{formatAdminDate(detail.account.lastSignInAt)}</div></div>
+                <div className="admin-stagger grid gap-3 sm:grid-cols-3">
+                  <div className="admin-data-card rounded-lg border border-border p-3"><div className="text-xs text-muted-foreground">Projects</div><div className="mt-1 text-xl font-semibold">{detail.projectCount}</div></div>
+                  <div className="admin-data-card rounded-lg border border-border p-3"><div className="text-xs text-muted-foreground">Recent audits</div><div className="mt-1 text-xl font-semibold">{detail.recentAudits.length}</div></div>
+                  <div className="admin-data-card rounded-lg border border-border p-3"><div className="text-xs text-muted-foreground">Last sign-in</div><div className="mt-1 text-xs font-semibold">{formatAdminDate(detail.account.lastSignInAt)}</div></div>
                 </div>
 
                 <section>
@@ -306,7 +306,7 @@ export default function AdminUsersView({ currentAdminId }: { currentAdminId: str
                     <textarea value={note} onChange={(event) => setNote(event.target.value)} className="suite-input min-h-20 flex-1 resize-y" placeholder="Add operational context" maxLength={4000} />
                     <button type="button" onClick={() => void addNote()} disabled={note.trim().length < 4 || actionPending} className="primary-button self-end">Add</button>
                   </div>
-                  <div className="mt-3 divide-y divide-border rounded-lg border border-border">
+                  <div className="admin-list-enter mt-3 divide-y divide-border rounded-lg border border-border">
                     {detail.notes.length === 0 ? <p className="p-4 text-sm text-muted-foreground">No administrator notes.</p> : detail.notes.map((item: any) => (
                       <div key={item.id} className="p-3"><p className="text-sm leading-6">{item.note}</p><div className="mt-1 text-xs text-muted-foreground">{formatAdminDate(item.created_at)}</div></div>
                     ))}
@@ -315,7 +315,7 @@ export default function AdminUsersView({ currentAdminId }: { currentAdminId: str
 
                 <section>
                   <h4 className="font-semibold">Recent audits</h4>
-                  <div className="mt-3 divide-y divide-border rounded-lg border border-border">
+                  <div className="admin-list-enter mt-3 divide-y divide-border rounded-lg border border-border">
                     {detail.recentAudits.length === 0 ? <p className="p-4 text-sm text-muted-foreground">No audits recorded.</p> : detail.recentAudits.map((audit: any) => (
                       <div key={audit.id} className="grid gap-2 p-3 sm:grid-cols-[1fr_auto] sm:items-center"><div className="min-w-0"><div className="truncate text-sm font-semibold">{audit.normalizedUrl}</div><div className="mt-1 text-xs text-muted-foreground">{audit.pagesCrawled} pages checked / {formatAdminDate(audit.createdAt)}</div></div><AdminStatus value={audit.status} /></div>
                     ))}

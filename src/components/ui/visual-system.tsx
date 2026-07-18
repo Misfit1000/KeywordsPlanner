@@ -352,6 +352,7 @@ export function SparklineChart({
   valueLabel?: string;
   detail?: string;
 }) {
+  const fillId = React.useId().replace(/:/g, '');
   const normalized = values.length > 1 ? values : [0, values[0] || 0];
   const max = Math.max(1, ...normalized);
   const points = normalized.map((value, index) => {
@@ -361,7 +362,7 @@ export function SparklineChart({
   }).join(' ');
 
   return (
-    <div className="rounded-xl border border-border bg-background/75 p-4">
+    <div className="admin-data-card rounded-xl border border-border bg-background/75 p-4">
       <div className="flex items-end justify-between gap-3">
         <div>
           <div className="text-sm font-semibold">{label}</div>
@@ -369,15 +370,15 @@ export function SparklineChart({
         </div>
         {valueLabel && <div className="font-mono text-sm font-bold text-accent">{valueLabel}</div>}
       </div>
-      <svg viewBox="0 0 100 46" role="img" aria-label={label} className="mt-3 h-24 w-full overflow-visible">
+      <svg key={points} viewBox="0 0 100 46" role="img" aria-label={label} className="mt-3 h-24 w-full overflow-visible">
         <defs>
-          <linearGradient id="auditSparkFill" x1="0" x2="0" y1="0" y2="1">
+          <linearGradient id={fillId} x1="0" x2="0" y1="0" y2="1">
             <stop offset="0%" stopColor="currentColor" stopOpacity="0.24" />
             <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
           </linearGradient>
         </defs>
-        <path d={`M ${points.replace(/ /g, ' L ')} L 100,46 L 0,46 Z`} fill="url(#auditSparkFill)" className="text-accent" />
-        <polyline points={points} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-accent" vectorEffect="non-scaling-stroke" />
+        <path d={`M ${points.replace(/ /g, ' L ')} L 100,46 L 0,46 Z`} fill={`url(#${fillId})`} className="admin-chart-fill text-accent" />
+        <polyline points={points} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="admin-chart-line text-accent" vectorEffect="non-scaling-stroke" />
       </svg>
     </div>
   );

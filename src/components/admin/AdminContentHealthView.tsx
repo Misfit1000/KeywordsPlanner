@@ -3,7 +3,7 @@ import { AlertTriangle, CheckCircle2, ExternalLink, FileSearch, PauseCircle, Ref
 import { getAdminContentHealth, runAdminContentHealthAction } from '../../lib/admin/client';
 import { Panel } from '../ui/page-system';
 import AdminActionDialog from './AdminActionDialog';
-import { AdminEmpty, AdminError, AdminLoading, AdminStatus } from './AdminControlPrimitives';
+import { AdminEmpty, AdminError, AdminLoading, AdminMetric, AdminStatus } from './AdminControlPrimitives';
 
 export default function AdminContentHealthView({ onOpenPost }: { onOpenPost: (postId?: string) => void }) {
   const [data, setData] = useState<any>(null);
@@ -81,11 +81,11 @@ export default function AdminContentHealthView({ onOpenPost }: { onOpenPost: (po
 
       {loading && !data ? <AdminLoading /> : data && (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-xl border border-border bg-card p-4"><div className="text-sm text-muted-foreground">Posts inspected</div><div className="mt-1 text-2xl font-semibold">{data.inspected.posts}</div></div>
-            <div className="rounded-xl border border-border bg-card p-4"><div className="text-sm text-muted-foreground">Jobs inspected</div><div className="mt-1 text-2xl font-semibold">{data.inspected.jobs}</div></div>
-            <div className="rounded-xl border border-border bg-card p-4"><div className="text-sm text-muted-foreground">High-priority items</div><div className="mt-1 text-2xl font-semibold">{data.items.filter((item: any) => item.severity === 'high').length}</div></div>
-            <div className="rounded-xl border border-border bg-card p-4"><div className="text-sm text-muted-foreground">Total review items</div><div className="mt-1 text-2xl font-semibold">{data.items.length}</div></div>
+          <div className="admin-stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <AdminMetric icon={FileSearch} label="Posts inspected" value={data.inspected.posts} detail="Recent editorial records" />
+            <AdminMetric icon={RotateCcw} label="Jobs inspected" value={data.inspected.jobs} detail="Recent automation jobs" />
+            <AdminMetric icon={AlertTriangle} label="High-priority items" value={data.items.filter((item: any) => item.severity === 'high').length} detail="Requires prompt review" tone="danger" />
+            <AdminMetric icon={CheckCircle2} label="Total review items" value={data.items.length} detail="Across all content checks" tone={data.items.length ? 'warning' : 'success'} />
           </div>
 
           <Panel>
@@ -100,7 +100,7 @@ export default function AdminContentHealthView({ onOpenPost }: { onOpenPost: (po
 
           <Panel className="overflow-hidden p-0">
             {items.length === 0 ? <AdminEmpty title="No content issues in this view" detail="The current content-health filter has no matching review items." /> : (
-              <div className="divide-y divide-border">
+              <div key={filter} className="admin-list-enter divide-y divide-border">
                 {items.map((item: any) => (
                   <article key={`${item.kind}:${item.id}`} className="grid gap-3 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
                     <div className="flex min-w-0 items-start gap-3">

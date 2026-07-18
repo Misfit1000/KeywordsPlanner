@@ -76,7 +76,7 @@ export default function AdminDashboard() {
               key={tab.id}
               onClick={() => switchTab(tab.id)}
               aria-current={activeTab === tab.id ? 'page' : undefined}
-              className={`flex min-h-10 shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
+              className={`flex min-h-10 shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-[background-color,color,box-shadow,transform] motion-safe:hover:-translate-y-px ${
                 activeTab === tab.id ? 'bg-accent text-accent-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
               }`}
             >
@@ -87,22 +87,24 @@ export default function AdminDashboard() {
         })}
       </UiPanel>
 
-      {activeTab === 'overview' && <AdminOperationsView />}
-      {activeTab === 'users' && <AdminUsersView currentAdminId={user.id} />}
-      {activeTab === 'audits' && <AdminAuditOperationsView />}
-      {activeTab === 'queue' && <AdminAuditOperationsView />}
-      {activeTab === 'workers' && <AdminWorkers />}
-      {activeTab === 'content-health' && <AdminContentHealthView onOpenPost={(postId) => navigate(`/admin/blog${postId ? `?post=${encodeURIComponent(postId)}` : ''}`)} />}
-      {activeTab === 'resources' && <AdminResourcesView />}
-      {activeTab === 'activity' && <AdminActivityView />}
-      {activeTab === 'diagnostics' && <AdminDiagnostics />}
-      {activeTab === 'settings' && <AdminSettings />}
-      {activeTab === 'plans' && <AdminPlans adminUserId={user.id} />}
-      {activeTab === 'blog' && (
-        <React.Suspense fallback={<div className="flex min-h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-accent" /></div>}>
-          <BlogAdmin />
-        </React.Suspense>
-      )}
+      <div key={activeTab} className="admin-view-enter">
+        {activeTab === 'overview' && <AdminOperationsView />}
+        {activeTab === 'users' && <AdminUsersView currentAdminId={user.id} />}
+        {activeTab === 'audits' && <AdminAuditOperationsView />}
+        {activeTab === 'queue' && <AdminAuditOperationsView />}
+        {activeTab === 'workers' && <AdminWorkers />}
+        {activeTab === 'content-health' && <AdminContentHealthView onOpenPost={(postId) => navigate(`/admin/blog${postId ? `?post=${encodeURIComponent(postId)}` : ''}`)} />}
+        {activeTab === 'resources' && <AdminResourcesView />}
+        {activeTab === 'activity' && <AdminActivityView />}
+        {activeTab === 'diagnostics' && <AdminDiagnostics />}
+        {activeTab === 'settings' && <AdminSettings />}
+        {activeTab === 'plans' && <AdminPlans adminUserId={user.id} />}
+        {activeTab === 'blog' && (
+          <React.Suspense fallback={<div className="flex min-h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-accent" /></div>}>
+            <BlogAdmin />
+          </React.Suspense>
+        )}
+      </div>
     </div>
   );
 }

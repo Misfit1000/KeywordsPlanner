@@ -94,6 +94,7 @@
     "smoke:admin-content-health": "tsx scripts/smoke-admin-control-center-v2.mts content",
     "smoke:admin-resources": "tsx scripts/smoke-admin-control-center-v2.mts resources",
     "smoke:admin-load": "tsx scripts/smoke-admin-control-center-v2.mts load",
+    "smoke:admin-motion": "tsx scripts/smoke-admin-control-center-v2.mts motion",
     "smoke:migration-020": "tsx scripts/smoke-admin-control-center-v2.mts migration",
     "smoke:admin-control-center-v2": "tsx scripts/smoke-admin-control-center-v2.mts all",
     "smoke:sentry": "tsx scripts/smoke-sentry-monitoring.mts",

@@ -51,7 +51,7 @@ export default function AdminActionDialog({
   const valid = reason.trim().length >= 4 && (!confirmationPhrase || confirmation === confirmationPhrase);
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => {
+    <div className="admin-dialog-backdrop fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => {
       if (event.currentTarget === event.target && !pending) onCancel();
     }}>
       <section
@@ -59,7 +59,7 @@ export default function AdminActionDialog({
         aria-modal="true"
         aria-labelledby="admin-action-title"
         aria-describedby="admin-action-description"
-        className="w-full max-w-lg rounded-xl border border-border bg-card p-5 shadow-lg sm:p-6"
+        className="admin-dialog-panel w-full max-w-lg rounded-xl border border-border bg-card p-5 shadow-lg sm:p-6"
       >
         <div className="flex items-start gap-3">
           <span className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${tone === 'danger' ? 'bg-red-500/10 text-red-600 dark:text-red-400' : 'bg-blue-500/10 text-blue-600 dark:text-blue-400'}`}>

@@ -80,13 +80,13 @@ export default function AdminResourcesView() {
       </div>
 
       {error && <AdminError message={error} />}
-      {lastResult && <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/8 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300"><div className="font-semibold">Retention cleanup applied</div><div className="mt-1">The recorded preview was applied once and stored in administrator history.</div></div>}
+      {lastResult && <div className="admin-notice-enter rounded-lg border border-emerald-500/25 bg-emerald-500/8 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300"><div className="font-semibold">Retention cleanup applied</div><div className="mt-1">The recorded preview was applied once and stored in administrator history.</div></div>}
 
       {loading && !data ? <AdminLoading /> : data && (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="admin-stagger grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             {Object.entries(data.serviceReadiness || {}).map(([service, readiness]: [string, any]) => (
-              <div key={service} className="rounded-xl border border-border bg-card p-4 shadow-sm">
+              <div key={service} className="admin-data-card rounded-xl border border-border bg-card p-4 shadow-sm">
                 <div className="flex items-center justify-between gap-3">
                   <span className="capitalize font-semibold">{service.replace(/([A-Z])/g, ' $1')}</span>
                   {readiness.healthy === true ? <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /> : readiness.healthy === false ? <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" /> : <Server className="h-4 w-4 text-muted-foreground" />}
@@ -105,7 +105,7 @@ export default function AdminResourcesView() {
               <div className="max-w-full overflow-x-auto">
                 <table className="suite-table min-w-[780px]">
                   <thead><tr><th>Resource</th><th>Approx. rows</th><th>Size</th><th>Oldest record</th><th>Retention</th><th>Eligible</th></tr></thead>
-                  <tbody>
+                  <tbody className="admin-table-enter">
                     {(data.inventory || []).map((item: any) => (
                       <tr key={item.resourceName}>
                         <td className="font-mono text-xs">{item.resourceName}</td>
@@ -124,7 +124,7 @@ export default function AdminResourcesView() {
 
             <Panel>
               <div className="flex items-center gap-2"><Database className="h-4 w-4 text-accent" /><h3 className="font-semibold">Deployment versions</h3></div>
-              <div className="mt-4 space-y-3">
+              <div className="admin-list-enter mt-4 space-y-3">
                 <VersionRow label="Application" value={data.versions.currentCommit} matches />
                 <VersionRow label="Database migration" value={data.versions.databaseCommit} matches={data.versions.matching.database} />
                 <VersionRow label="Audit engine" value={data.versions.workerCommit} matches={data.versions.matching.worker} />
@@ -155,7 +155,7 @@ export default function AdminResourcesView() {
               <div className="flex items-center gap-2"><ShieldAlert className="h-4 w-4 text-amber-600 dark:text-amber-400" /><h3 className="font-semibold">Data retention</h3></div>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">Preview eligible records first. Applying cleanup requires the same fingerprint within ten minutes and a typed confirmation.</p>
               {preview ? (
-                <div className="mt-4 rounded-lg border border-amber-500/25 bg-amber-500/6 p-4">
+                <div className="admin-notice-enter mt-4 rounded-lg border border-amber-500/25 bg-amber-500/6 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-semibold">Preview ready</span><AdminStatus value="review" /></div>
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     {Object.entries(preview.preview || {}).filter(([key]) => key !== 'applied').map(([key, value]) => (

@@ -72,7 +72,7 @@ export default function AdminActivityView() {
           <AdminEmpty title="No matching administrator actions" detail="Adjust the search text or wait for a privileged action to be recorded." />
         ) : (
           <>
-            <div className="divide-y divide-border">
+            <div className="admin-list-enter divide-y divide-border">
               {items.map((item) => (
                 <article key={item.id} className="grid gap-3 p-4 xl:grid-cols-[220px_1fr_1fr]">
                   <div>

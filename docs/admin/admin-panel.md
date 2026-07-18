@@ -120,6 +120,18 @@ Database readiness compares the stored audit API schema to the application contr
 
 Read-heavy administrator snapshots use private in-process caching: 10 seconds for operations and worker health, 30 seconds for content health, and 60 seconds for plans, settings, and resource inventory. Concurrent identical reads share one request. Responses remain `private, no-store`, and successful mutations invalidate the affected cache immediately.
 
+### Motion and accessibility
+
+The control center uses lightweight CSS motion only:
+
+- switching administrator tabs fades and lifts the selected view into place;
+- metric cards count up once, charts draw from left to right, and plan bars reveal from zero;
+- queued and running status dots pulse to distinguish active work from static labels;
+- user details slide in from the right, while guarded action dialogs use a short backdrop and panel entrance;
+- table rows, content findings, resource cards, and activity records use a brief staggered reveal.
+
+All motion is disabled through the existing `prefers-reduced-motion: reduce` rule. No animation library, background timer, Realtime subscription, or additional server/database request is used for these effects.
+
 ## Activity History
 
 The Activity page searches administrator actions and displays bounded before/after summaries. CSV exports escape spreadsheet formulas and do not contain provider credentials, raw IP addresses, tokens, or environment values.

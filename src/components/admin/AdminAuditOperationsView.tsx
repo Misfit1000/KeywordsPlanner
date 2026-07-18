@@ -181,7 +181,7 @@ export default function AdminAuditOperationsView() {
                     <th>Website</th><th>Status</th><th>Coverage</th><th>Plan</th><th>Priority</th><th>Started</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="admin-table-enter">
                   {audits.map((audit) => (
                     <tr key={audit.id}>
                       <td><button type="button" onClick={() => toggleAudit(audit.id)} className="icon-button h-8 w-8" aria-label={`${selected.includes(audit.id) ? 'Deselect' : 'Select'} audit ${audit.id}`}>{selected.includes(audit.id) ? <SquareCheckBig className="h-4 w-4 text-accent" /> : <Square className="h-4 w-4" />}</button></td>

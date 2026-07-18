@@ -1,4 +1,4 @@
-import type { ElementType, ReactNode } from 'react';
+import { useEffect, useRef, useState, type ElementType, type ReactNode } from 'react';
 import { AlertCircle, Inbox, Loader2 } from 'lucide-react';
 
 export function AdminLoading({ label = 'Loading administrator data' }: { label?: string }) {
@@ -16,7 +16,39 @@ export function AdminEmpty({ title, detail }: { title: string; detail: string })
 }
 
 export function AdminError({ message }: { message: string }) {
-  return <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/8 px-3 py-2 text-sm text-red-700 dark:text-red-300"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{message}</div>;
+  return <div role="alert" className="admin-notice-enter flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/8 px-3 py-2 text-sm text-red-700 dark:text-red-300"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{message}</div>;
+}
+
+export function AdminAnimatedNumber({ value }: { value: number }) {
+  const safeValue = Number.isFinite(value) ? value : 0;
+  const [displayValue, setDisplayValue] = useState(0);
+  const displayedRef = useRef(0);
+
+  useEffect(() => {
+    const from = displayedRef.current;
+    const change = safeValue - from;
+    if (!change || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      displayedRef.current = safeValue;
+      setDisplayValue(safeValue);
+      return;
+    }
+
+    let frame = 0;
+    const startedAt = performance.now();
+    const duration = 480;
+    const update = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / duration);
+      const eased = 1 - (1 - progress) ** 3;
+      const next = from + change * eased;
+      displayedRef.current = next;
+      setDisplayValue(next);
+      if (progress < 1) frame = window.requestAnimationFrame(update);
+    };
+    frame = window.requestAnimationFrame(update);
+    return () => window.cancelAnimationFrame(frame);
+  }, [safeValue]);
+
+  return <>{Math.round(displayValue).toLocaleString()}</>;
 }
 
 export function AdminMetric({
@@ -39,11 +71,11 @@ export function AdminMetric({
     danger: 'bg-red-500/10 text-red-600 dark:text-red-400',
   };
   return (
-    <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+    <div className="admin-data-card rounded-xl border border-border bg-card p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-sm text-muted-foreground">{label}</div>
-          <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums">{typeof value === 'number' ? <AdminAnimatedNumber value={value} /> : value}</div>
         </div>
         <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${tones[tone]}`}><Icon className="h-4 w-4" /></span>
       </div>
@@ -57,14 +89,15 @@ export function AdminStatus({ value }: { value: string | boolean | null | undefi
   const positive = ['active', 'completed', 'published', 'healthy', 'configured', 'true', 'passed'].includes(normalized);
   const negative = ['failed', 'suspended', 'critical', 'false', 'blocked', 'abandoned'].includes(normalized);
   const warning = ['queued', 'running', 'review', 'needs_review', 'scheduled', 'deletion requested', 'unknown'].includes(normalized);
+  const live = ['queued', 'running', 'processing', 'checking'].includes(normalized);
   const className = positive
     ? 'border-emerald-500/25 bg-emerald-500/8 text-emerald-700 dark:text-emerald-300'
     : negative
       ? 'border-red-500/25 bg-red-500/8 text-red-700 dark:text-red-300'
       : warning
-        ? 'border-amber-500/25 bg-amber-500/8 text-amber-700 dark:text-amber-300'
+      ? 'border-amber-500/25 bg-amber-500/8 text-amber-700 dark:text-amber-300'
         : 'border-border bg-muted text-muted-foreground';
-  return <span className={`inline-flex max-w-full items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${className}`}>{normalized.replace(/_/g, ' ')}</span>;
+  return <span className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-semibold transition-[background-color,border-color,color] ${className}`}><span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full bg-current ${live ? 'admin-live-dot' : 'opacity-65'}`} />{normalized.replace(/_/g, ' ')}</span>;
 }
 
 export function formatAdminDate(value: string | null | undefined) {
