@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { generateGroqCompletion, getGroqBlogConfiguration, getSafeGroqDiagnostics, GROQ_DEFAULT_BASE_URL, GROQ_DEFAULT_STRUCTURED_MODEL, GROQ_DEFAULT_WRITER_MODEL, testGroqProvider } from '../src/lib/blog/server/groq';
+import { generateGroqCompletion, generateGroqStructured, getGroqBlogConfiguration, getSafeGroqDiagnostics, GROQ_DEFAULT_BASE_URL, GROQ_DEFAULT_STRUCTURED_MODEL, GROQ_DEFAULT_WRITER_MODEL, testGroqProvider } from '../src/lib/blog/server/groq';
 import { blogAutomationRepository } from '../src/lib/blog/automation-repository';
-import { dispatchVercelBlogStages } from '../src/lib/blog/server/vercel-workflow';
+import { dispatchVercelBlogStages, safeBlogStageError } from '../src/lib/blog/server/vercel-workflow';
 
 const mode = process.argv[2] || 'all';
 const root = new URL('../', import.meta.url);
@@ -122,6 +122,27 @@ async function groqOnly() {
   calls = 0;
   await assert.rejects(() => generateGroqCompletion({ role: 'structured', system: 'x', user: 'x', maxAttempts: 3, fetchImpl: (async () => { calls += 1; return response('', 401); }) as typeof fetch }), (error: any) => error.code === 'GROQ_AUTH_FAILED');
   assert.equal(calls, 1);
+  let structuredCalls = 0;
+  const repaired = await generateGroqStructured({
+    role: 'structured',
+    system: 'Return JSON.',
+    user: 'Return an object with a non-empty title.',
+    validate: (value): value is { title: string } => Boolean(value && typeof value === 'object' && typeof (value as any).title === 'string' && (value as any).title.trim()),
+    fetchImpl: (async () => {
+      structuredCalls += 1;
+      return response(structuredCalls === 1 ? '{"heading":"wrong shape"}' : '{"title":"Repaired title"}');
+    }) as typeof fetch,
+  });
+  assert.equal(repaired.data.title, 'Repaired title');
+  assert.equal(structuredCalls, 2);
+  const databaseError = safeBlogStageError({
+    code: '23514',
+    message: 'new row violates check constraint',
+    details: 'private generated article content must never be returned',
+  });
+  assert.equal(databaseError.code, 'BLOG_DATABASE_23514');
+  assert.match(databaseError.message, /check constraint/);
+  assert.doesNotMatch(databaseError.message, /private generated article content/);
 }
 
 async function renderOnly() {
